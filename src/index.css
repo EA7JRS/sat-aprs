@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Modo Eco overrides: disables all CSS keyframe animations, transitions, and pulsing effects */
+.eco-mode *, 
+.eco-mode *::before, 
+.eco-mode *::after {
+  animation: none !important;
+  transition: none !important;
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}

@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User preferences and settings and profile roles",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Radio amateur callsign"
+        },
+        "dmrId": {
+          "type": "string",
+          "description": "CCS7 DMR ID (7 digits starting with 214)"
+        },
+        "isRadioaficionado": {
+          "type": "boolean",
+          "description": "Is user a radio amateur"
+        },
+        "isColaboradorEmcom": {
+          "type": "boolean",
+          "description": "Is user an EMCOM collaborator"
+        },
+        "isRemer": {
+          "type": "boolean",
+          "description": "Is user a REMER member"
+        },
+        "isApproved": {
+          "type": "boolean",
+          "description": "Is user profile verified and approved"
+        },
+        "twoFactorEnabled": {
+          "type": "boolean",
+          "description": "Is 2FA with Google Authenticator enabled"
+        },
+        "twoFactorSecret": {
+          "type": "string",
+          "description": "Base32 secret key for TOTP 2FA"
+        },
+        "twoFactorVerified": {
+          "type": "boolean",
+          "description": "Has 2FA been verified once to finalize setup"
+        },
+        "tsunamiMinSeverity": {
+          "type": "string",
+          "description": "Minimum severity threshold for tsunami alerts"
+        },
+        "soundSettings": {
+          "type": "object",
+          "description": "User custom sound synthesis alert mappings for severity levels"
+        },
+        "sosSettings": {
+          "type": "object",
+          "description": "Custom color, sound and zoom mappings for APRS emergency and status codes"
+        }
+      }
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Global system configuration, version, and maintenance status",
+      "type": "object",
+      "properties": {
+        "currentVersion": {
+          "type": "string",
+          "description": "The latest compiled application version"
+        },
+        "changelog": {
+          "type": "string",
+          "description": "Changes introduced in the current version"
+        },
+        "forceUpdate": {
+          "type": "boolean",
+          "description": "Whether to force clients to update automatically"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the version was published"
+        }
+      }
+    },
+    "SOSConfig": {
+      "title": "SOSConfig",
+      "description": "Global SOS alert sound and map configuration shared by all operators",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "description": "Sound profile, frequency and visual styling for each APRS emergency code"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the SOS configuration was last updated"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "User email or callsign who modified the configurations"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and settings"
+    },
+    "/system/config": {
+      "schema": "SystemConfig",
+      "description": "Global system settings and version"
+    },
+    "/system/sos_config": {
+      "schema": "SOSConfig",
+      "description": "Shared SOS alert sound and map configuration"
+    }
+  }
+}

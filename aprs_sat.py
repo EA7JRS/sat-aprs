@@ -1,0 +1,1036 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+================================================================================
+                 S.A.T-APRS
+                  Sentinel
+                  by EA7JRS
+          Servicio de Alerta Temprana para APRS
+================================================================================
+Este script actúa como agente centralizado para integrar y procesar:
+- gpsd: Coordenadas GNSS en tiempo real (móvil/fijo).
+- ntpsec: Sincronización temporal de alta precisión de microsegundos.
+- OpenWeatherMap: Obtención y formateo de datos climáticos a APRS WX.
+- Sismología IGN España / USGS: Detección y filtrado Haversine (< 200 km).
+- NOAA Space Weather Alerts: Boletines espaciales (Escalas G, R, S).
+- Transmisión dual: Puertos APRS-IS (14580) y KISS TCP de Direwolf (8001).
+
+Licencia: SPDX-License-Identifier: Apache-2.0
+================================================================================
+"""
+
+import os
+import sys
+import math
+import time
+import socket
+import json
+import ssl
+import configparser
+from datetime import datetime, timezone, timedelta
+import urllib.request
+import urllib.error
+
+# ==============================================================================
+# CONFIGURACIÓN DE LA ESTACIÓN (Modificar según necesidad)
+# ==============================================================================
+CALLSIGN = "CALLSING-13"          # Indicativo APRS con SSID de telemetría/WX
+APRS_PASSCODE = ""          # Código de autenticación para APRS-IS
+FILTER_RADIUS_KM = 200.0         # Radio de cobertura crítica para sismos
+OWM_API_KEY = ""                 # Tu API Key de OpenWeatherMap (Opcional)
+
+# Coordenadas de Fallback (Madrid) por si gpsd no tiene fijación o está inactivo
+FALLBACK_LAT = 40.416775
+FALLBACK_LON = -3.703790
+ALTITUDE_DEFAULT_M = 657.0
+
+# Direcciones y puertos del ecosistema local
+GPSD_HOST = "localhost"
+GPSD_PORT = 2947
+
+APRS_IS_SERVER = "euro.aprs2.net"
+APRS_IS_PORT = 14580
+
+DIREWOLF_KISS_HOST = "localhost"
+DIREWOLF_KISS_PORT = 8001       # Puerto KISS sobre TCP de Direwolf
+
+# Historial local para evitar duplicados en la red APRS
+transmitidos_sismos = set()     # IDs de sismos anunciados
+transmitido_sw_id = None        # ID de alerta clima espacial activa
+ultima_baliza_wx = 0            # Timestamp Unix de última baliza meteorológica
+last_known_weather = (20.4, 52, 5.0, 230, 1015.4, 8.0, 0.0, 0.0) # Datos iniciales de fallback/operación
+
+# ==============================================================================
+# FORMULAS DE INGENIERÍA Y TRADUCTORES APRS
+# ==============================================================================
+def haversine(lat1, lon1, lat2, lon2):
+    """
+    Calcula la distancia geodésica entre dos puntos en km mediante Haversine.
+    """
+    R = 6371.0  # Radio del planeta Tierra en kilómetros
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    
+    a = (math.sin(d_lat / 2) ** 2 + 
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * 
+         math.sin(d_lon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(R * c, 1)
+
+def decdeg_to_aprs_lat(lat):
+    """
+    Convierte latitud decimal (Ej: 40.416) a formato APRS (Ej: 4025.00N).
+    """
+    direction = 'N' if lat >= 0 else 'S'
+    val = abs(lat)
+    deg = int(val)
+    minutes = (val - deg) * 60.0
+    return f"{deg:02d}{minutes:05.2f}{direction}"
+
+def decdeg_to_aprs_lon(lon):
+    """
+    Convierte longitud decimal (Ej: -3.703) a formato APRS (Ej: 00342.18W).
+    """
+    direction = 'E' if lon >= 0 else 'W'
+    val = abs(lon)
+    deg = int(val)
+    minutes = (val - deg) * 60.0
+    return f"{deg:03d}{minutes:05.2f}{direction}"
+
+def format_aprs_wx_payload(temp_c, humidity, wind_speed_kts, wind_dir_deg, pressure_hpa, gust_kts, rain_1h_in=0.0, rain_24h_in=0.0):
+    """
+    Crea el payload de clima exacto bajo las especificaciones de APRS WX.
+    Estructura: ccrrgggttthhbbbbbpPPPrr
+    """
+    wdir = f"{int(wind_dir_deg):03d}" if wind_dir_deg is not None else "000"
+    wspeed = f"{int(wind_speed_kts):03d}" if wind_speed_kts is not None else "000"
+    
+    gust = f"g{int(gust_kts):03d}" if gust_kts else "g000"
+    
+    # Temperatura Fahrenheit
+    temp_f = int((temp_c * 9/5) + 32)
+    if temp_f < 0:
+        temp_str = f"t-{abs(temp_f):02d}"  # Manejo de bajo cero
+    else:
+        temp_str = f"t{temp_f:03d}"
+        
+    # Precipitaciones
+    r1h = f"r{int(rain_1h_in * 100):03d}"
+    r24h = f"p{int(rain_24h_in * 100):03d}"
+    
+    # Humedad (00 representa 100%)
+    hum_val = int(humidity)
+    if hum_val >= 100:
+        hum_val = 0
+    hum = f"h{hum_val:02d}"
+    
+    # Presión en décimas de hPa/milibar
+    press = f"b{int(pressure_hpa * 10):05d}" if pressure_hpa else "b00000"
+    
+    return f"_{wdir}/{wspeed}{gust}{temp_str}{r1h}{r24h}{hum}{press} (REMER S.A.T. Telemetria)"
+
+# ==============================================================================
+# DRIVERS DE CONSULTA POR HARDWARE Y API (Sockets locales / HTTP)
+# ==============================================================================
+def sync_local_config():
+    """
+    Carga dinámicamente la configuración desde el archivo externo config.ini (formato INI estándar).
+    Si no existe el archivo config.ini, se genera automáticamente basándose en sat_config.json
+    o en los valores predeterminados de la estación para asegurar alta disponibilidad.
+    """
+    global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON, ALTITUDE_DEFAULT_M
+    global GPSD_HOST, GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT
+    
+    ini_path = "config.ini"
+    json_path = "sat_config.json"
+    
+    # 1. Fallback secundario opcional a rutas absolutas si se ejecuta desde subdirectorios
+    if not os.path.exists(ini_path):
+        ini_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+    if not os.path.exists(json_path):
+        json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sat_config.json")
+        
+    # Leer sat_config.json para obtener los valores más actualizados de la UI si config.ini no existe aún
+    ui_cfg = {}
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as jf:
+                ui_cfg = json.load(jf)
+        except Exception:
+            pass
+
+    # 2. Si config.ini no existe, crearlo con valores por defecto y del panel Web
+    if not os.path.exists(ini_path):
+        try:
+            config = configparser.ConfigParser()
+            config["GPSD"] = {
+                "host": str(GPSD_HOST),
+                "port": str(ui_cfg.get("gpsdPort", GPSD_PORT))
+            }
+            config["OpenWeatherMap"] = {
+                "apiKey": str(ui_cfg.get("owmApiKey", OWM_API_KEY))
+            }
+            config["Fallback"] = {
+                "latitude": str(ui_cfg.get("fallbackLat", FALLBACK_LAT)),
+                "longitude": str(ui_cfg.get("fallbackLon", FALLBACK_LON)),
+                "altitude": str(ALTITUDE_DEFAULT_M)
+            }
+            config["Alerts"] = {
+                "filterRadiusKm": str(ui_cfg.get("filterRadiusKm", FILTER_RADIUS_KM))
+            }
+            config["APRS"] = {
+                "callsign": str(ui_cfg.get("callsign", CALLSIGN)),
+                "passcode": str(ui_cfg.get("aprsPasscode", APRS_PASSCODE)),
+                "serverIp": str(ui_cfg.get("serverIp", APRS_IS_SERVER)),
+                "serverPort": str(ui_cfg.get("aprscPort", APRS_IS_PORT)),
+                "kissTcpHost": DIREWOLF_KISS_HOST,
+                "kissTcpPort": str(ui_cfg.get("kissTcpPort", DIREWOLF_KISS_PORT))
+            }
+            with open(ini_path, "w", encoding="utf-8") as f:
+                f.write("# S.A.T-APRS - Archivo de Configuracion Externa de la Estacion\n")
+                f.write("# Generado automaticamente para simplificar la gestion de parametros de hardware y red.\n\n")
+                config.write(f)
+        except Exception as e:
+            print(f"[CONFIG WARNING] No se pudo autogenerar config.ini: {e}")
+
+    # 3. Leer valores desde config.ini de forma prioritaria
+    if os.path.exists(ini_path):
+        try:
+            config = configparser.ConfigParser()
+            config.read(ini_path, encoding="utf-8")
+            
+            # Cargar seccion GPSD
+            if "GPSD" in config:
+                GPSD_HOST = config["GPSD"].get("host", GPSD_HOST)
+                GPSD_PORT = config["GPSD"].getint("port", GPSD_PORT)
+                
+            # Cargar seccion OpenWeatherMap
+            if "OpenWeatherMap" in config:
+                OWM_API_KEY = config["OpenWeatherMap"].get("apiKey", OWM_API_KEY)
+                
+            # Cargar seccion Fallback
+            if "Fallback" in config:
+                FALLBACK_LAT = config["Fallback"].getfloat("latitude", FALLBACK_LAT)
+                FALLBACK_LON = config["Fallback"].getfloat("longitude", FALLBACK_LON)
+                ALTITUDE_DEFAULT_M = config["Fallback"].getfloat("altitude", ALTITUDE_DEFAULT_M)
+                
+            # Cargar seccion Alerts
+            if "Alerts" in config:
+                FILTER_RADIUS_KM = config["Alerts"].getfloat("filterRadiusKm", FILTER_RADIUS_KM)
+                
+            # Cargar seccion APRS
+            if "APRS" in config:
+                CALLSIGN = config["APRS"].get("callsign", CALLSIGN)
+                APRS_PASSCODE = config["APRS"].get("passcode", APRS_PASSCODE)
+                APRS_IS_SERVER = config["APRS"].get("serverIp", APRS_IS_SERVER)
+                APRS_IS_PORT = config["APRS"].getint("serverPort", APRS_IS_PORT)
+                DIREWOLF_KISS_HOST = config["APRS"].get("kissTcpHost", DIREWOLF_KISS_HOST)
+                DIREWOLF_KISS_PORT = config["APRS"].getint("kissTcpPort", DIREWOLF_KISS_PORT)
+                
+        except Exception as e:
+            print(f"[CONFIG WARNING] Error al leer config.ini ({e}). Utilizando fallback.")
+            if ui_cfg:
+                _apply_ui_config(ui_cfg)
+
+def _apply_ui_config(cfg):
+    global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON
+    global GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_PORT
+    if "callsign" in cfg and cfg["callsign"]:
+        CALLSIGN = str(cfg["callsign"])
+    if "aprsPasscode" in cfg and cfg["aprsPasscode"]:
+        APRS_PASSCODE = str(cfg["aprsPasscode"])
+    if "filterRadiusKm" in cfg and cfg["filterRadiusKm"] is not None:
+        FILTER_RADIUS_KM = float(cfg["filterRadiusKm"])
+    if "owmApiKey" in cfg:
+        OWM_API_KEY = str(cfg["owmApiKey"])
+    if "fallbackLat" in cfg and cfg["fallbackLat"] is not None:
+        FALLBACK_LAT = float(cfg["fallbackLat"])
+    if "fallbackLon" in cfg and cfg["fallbackLon"] is not None:
+        FALLBACK_LON = float(cfg["fallbackLon"])
+    if "serverIp" in cfg and cfg["serverIp"]:
+        APRS_IS_SERVER = str(cfg["serverIp"])
+    if "aprscPort" in cfg and cfg["aprscPort"] is not None:
+        APRS_IS_PORT = int(cfg["aprscPort"])
+    if "kissTcpPort" in cfg and cfg["kissTcpPort"] is not None:
+        DIREWOLF_KISS_PORT = int(cfg["kissTcpPort"])
+
+def get_gpsd_coordinates():
+    """
+    Establece conexión TCP con el socket de gpsd local (puerto 2947)
+    y decodifica la trama TPV para extraer coordenadas en tiempo real.
+    Garantiza el cierre seguro de los sockets para evitar fugas de puertos.
+    """
+    print("[GPSD] Extrayendo coordenadas GNSS en tiempo real...")
+    s = None
+    f = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect((GPSD_HOST, GPSD_PORT))
+        
+        # Leer el mensaje de bienvenida de gpsd de forma segura
+        f = s.makefile('r', encoding='utf-8', errors='ignore')
+        f.readline()
+        
+        # Activar el streaming de JSON con gpsd
+        s.sendall(b'?WATCH={"enable":true,"json":true};')
+        
+        # Esperar buscando el reporte de posición (TPV)
+        for _ in range(10):
+            line = f.readline()
+            if not line:
+                break
+            try:
+                trama = json.loads(line.strip())
+                if trama.get("class") == "TPV":
+                    lat = trama.get("lat")
+                    lon = trama.get("lon")
+                    alt = trama.get("alt", ALTITUDE_DEFAULT_M)
+                    mode = trama.get("mode", 1) # 2=2D, 3=3D
+                    if lat and lon:
+                        print(f"[GPSD] Posición fijada con éxito: {lat}, {lon} (Modo: {mode})")
+                        return lat, lon, alt, False
+            except json.JSONDecodeError:
+                continue
+    except Exception as e:
+        print(f"[GPSD WARNING] Fallo de conexión o lectura en puerto {GPSD_PORT} ({e}). Utilizando fallback estático.")
+    finally:
+        if f:
+            try:
+                f.close()
+            except Exception:
+                pass
+        if s:
+            try:
+                s.close()
+            except Exception:
+                pass
+    
+    return FALLBACK_LAT, FALLBACK_LON, ALTITUDE_DEFAULT_M, True
+
+def get_weather_data(lat, lon):
+    """
+    Consulta OpenWeatherMap utilizando HTTP con reintentos y backoff exponencial.
+    Retorna estructura formateada. Si falla, usa los últimos datos conocidos (last_known_weather).
+    """
+    global last_known_weather
+    if not OWM_API_KEY:
+        # Clima por desajuste estático de simulación si no hay API Key
+        print("[OWM] Sin API Key de OpenWeatherMap. Simulando clima estático de operación.")
+        return last_known_weather
+        
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OWM_API_KEY}&units=metric"
+    
+    max_retries = 3
+    delay = 2.0  # Retardo inicial en segundos
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                temp_c = data["main"]["temp"]
+                humidity = data["main"]["humidity"]
+                wind_speed_ms = data["wind"]["speed"]
+                wind_speed_kts = wind_speed_ms * 1.94384
+                wind_dir = data["wind"].get("deg", 0)
+                pressure = data["main"]["pressure"]
+                gust_ms = data["wind"].get("gust", wind_speed_ms * 1.2)
+                gust_kts = gust_ms * 1.94384
+                
+                rain_1h = data.get("rain", {}).get("1h", 0) / 25.4 # mm a pulgadas
+                rain_24h = data.get("rain", {}).get("3h", 0) / 25.4 * 8 # aproximación de 3h a 24h
+                
+                # Guardar en el historial de últimos datos conocidos con éxito
+                last_known_weather = (temp_c, humidity, wind_speed_kts, wind_dir, pressure, gust_kts, rain_1h, rain_24h)
+                print(f"[OWM SUCCESS] Consulta realizada con éxito en el intento {attempt}.")
+                return last_known_weather
+                
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            # Captura excepciones de red y protocolo HTTP
+            print(f"[OWM WARNING] Error de red/protocolo (HTTP/URL) en intento {attempt}/{max_retries}: {e}")
+        except socket.timeout as e:
+            # Captura excepciones de tiempo de espera (timeout)
+            print(f"[OWM WARNING] Error de tiempo de espera (Timeout) en intento {attempt}/{max_retries}: {e}")
+        except Exception as e:
+            # Captura cualquier otra excepción (incluyendo requests.exceptions si se hubiese importado)
+            print(f"[OWM WARNING] Excepción inesperada en intento {attempt}/{max_retries}: {e}")
+            
+        if attempt < max_retries:
+            print(f"[OWM RETRY] Reintentando consulta en {delay} segundos...")
+            time.sleep(delay)
+            delay *= 2  # Backoff exponencial
+            
+    print("[OWM WARNING CRÍTICO] Todos los reintentos a OpenWeatherMap fallaron. Utilizando últimos datos climáticos conocidos.")
+    return last_known_weather
+
+def query_ign_earthquakes(station_lat, station_lon):
+    """
+    Consulta la sismología nacional del Instituto Geográfico Nacional de España.
+    Aplica Haversine y filtra eventos significativos dentro de los 200 km.
+    """
+    print("[IGN] Analizando actividad geológica reciente...")
+    eventos_detectados = []
+    
+    # URL de sismos oficial de España (FDSN Event Web Service)
+    url_ign = "https://institucionales.ign.es/fdsnws/event/1/query?format=geojson&limit=15&minmagnitude=1.0"
+    
+    # Fallback seguro en caso de corte en la intranet institucional (USGS regionalizador)
+    url_usgs_fallback = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=34&maxlatitude=44&minlongitude=-10&maxlongitude=5&limit=15&minmagnitude=1.0"
+    
+    json_bytes = None
+    source = "IGN España"
+    
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        req = urllib.request.Request(url_ign, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
+            json_bytes = response.read()
+    except Exception as e:
+        print(f"[IGN WARNING] Falló consulta al IGN ({e}). Intentando fallback de USGS...")
+        try:
+            req = urllib.request.Request(url_usgs_fallback, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
+                json_bytes = response.read()
+                source = "USGS Fallback"
+        except Exception as ex:
+            print(f"[SISMOS CRITICAL ERROR] No fue posible contactar a ningún servidor geológico ({ex})")
+            return []
+
+    if json_bytes:
+        try:
+            data = json.loads(json_bytes.decode('utf-8'))
+            for feature in data.get("features", []):
+                geom = feature.get("geometry", {})
+                props = feature.get("properties", {})
+                
+                coords = geom.get("coordinates", [])
+                if len(coords) < 2: continue
+                
+                lon = coords[0]
+                lat = coords[1]
+                depth = coords[2] if len(coords) > 2 else 0
+                mag = props.get("mag", 0.0)
+                place = props.get("place", "Península Ibérica")
+                eq_id = feature.get("id") or props.get("code") or str(props.get("time"))
+                
+                # Aplicar fórmula Haversine
+                dist = haversine(station_lat, station_lon, lat, lon)
+                
+                if dist <= FILTER_RADIUS_KM:
+                    print(f"  [ALERT] SISMO EN RANGO - {place} - M{mag} a {dist}km del nodo!")
+                    eventos_detectados.append({
+                        "id": eq_id,
+                        "time": props.get("time") / 1000 if props.get("time") else time.time(),
+                        "latitude": lat,
+                        "longitude": lon,
+                        "depth": depth,
+                        "magnitude": mag,
+                        "place": place,
+                        "distance": dist
+                    })
+        except Exception as e:
+            print(f"[SISMOS] Error al decodificar la trama geojson ({e})")
+            
+    return eventos_detectados
+
+def query_noaa_space_weather():
+    """
+    Monitorea eventos severos de clima espacial de la NOAA (X-ray, Geomagnéticos).
+    Filtra y emite Boletines de Emergencia en escalas críticas G, R, S.
+    """
+    print("[NOAA] Analizando el espectro ionosférico y solar de la NOAA...")
+    url_noaa = "https://services.swpc.noaa.gov/products/alerts.json"
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        req = urllib.request.Request(url_noaa, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
+            alerts = json.loads(response.read().decode('utf-8'))
+            for item in alerts:
+                message = item.get("message", "")
+                
+                # Expresión regular para capturar G-Scale, R-Scale o S-Scale
+                # E.g., "Geomagnetic Storm Category G4", "Radio Blackout R3", etc.
+                import re
+                match = re.search(r'(Geomagnetic Storm|Solar Radiation Storm|Radio Blackout) (Level |Scale )?([G|R|S])([2-5])', message, re.IGNORECASE)
+                if match:
+                    scale = match.group(3).upper() # G, R, o S
+                    level = int(match.group(4))    # Nivel (2 a 5)
+                    issue_time = item.get("issue_datetime", "")
+                    
+                    # Filtramos de nivel 3 o superior para alertas críticas de REMER/Amateur
+                    if level >= 3:
+                        desc = "TORMENTA GEOMAGNETICA EXTREMA" if scale == 'G' else "APAGON RADIO HF EXTREMO" if scale == 'R' else "TORMENTA RADIACION FUERTE"
+                        return {
+                            "id": f"{scale}{level}_{issue_time.split()[0]}",
+                            "scale": scale,
+                            "level": level,
+                            "time": issue_time,
+                            "desc": desc,
+                            "raw": message[:100]
+                        }
+    except Exception as e:
+        print(f"[NOAA WARNING] Error consultando clima espacial NOAA ({e})")
+    return None
+
+def obtener_indice_gfz(index_name):
+    """
+    Descarga los índices Hp30 o Hp60 del GFZ Potsdam para el rango de hoy/ayer.
+    Retorna una lista de diccionarios ordenada por tiempo.
+    """
+    try:
+        import urllib.parse
+        ahora = datetime.now(timezone.utc)
+        ayer = ahora - timedelta(days=1)
+
+        start_str = ayer.strftime("%Y-%m-%dT00:00:00Z")
+        end_str = ahora.strftime("%Y-%m-%dT23:59:59Z")
+
+        params = {"start": start_str, "end": end_str, "index": index_name}
+        url = f"https://kp.gfz.de/app/json/?{urllib.parse.urlencode(params)}"
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
+            res_json = json.loads(response.read().decode('utf-8'))
+            datetimes = res_json.get("datetime", [])
+            values = res_json.get(index_name, [])
+
+            df_list = []
+            for dt_str, val in zip(datetimes, values):
+                if val is not None:
+                    cleaned = dt_str.replace("Z", "")
+                    dt_obj = datetime.strptime(cleaned, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    df_list.append({"time_tag": dt_obj, index_name: float(val)})
+            return sorted(df_list, key=lambda x: x["time_tag"])
+    except Exception as e:
+        print(f"[GFZ WARNING] Error al descargar {index_name} desde GFZ: {e}")
+        return []
+
+def parse_noaa_json_list_of_lists(data, required_cols):
+    if not isinstance(data, list) or len(data) < 2:
+        return []
+    headers = data[0]
+    rows = data[1:]
+    col_indices = {}
+    for col in required_cols:
+        col_indices[col] = -1
+        for idx, h in enumerate(headers):
+            if h.lower() == col.lower() or h.lower() == f"proton_{col.lower()}":
+                col_indices[col] = idx
+                break
+    time_idx = col_indices.get("time_tag", -1)
+    if time_idx == -1:
+        for idx, h in enumerate(headers):
+            if 'time' in h.lower():
+                time_idx = idx
+                col_indices["time_tag"] = idx
+                break
+    if time_idx == -1:
+        return []
+    parsed_rows = []
+    for row in rows:
+        if not isinstance(row, list) or len(row) <= max(col_indices.values()):
+            continue
+        try:
+            raw_time = row[time_idx]
+            if not raw_time:
+                continue
+            cleaned_time = raw_time.strip()
+            if "T" in cleaned_time:
+                cleaned_time = cleaned_time.replace("Z", "")
+                if "." in cleaned_time:
+                    dt_obj = datetime.strptime(cleaned_time.split(".")[0], "%Y-%m-%dT%H:%M:%S")
+                else:
+                    dt_obj = datetime.strptime(cleaned_time, "%Y-%m-%dT%H:%M:%S")
+            else:
+                if "." in cleaned_time:
+                    dt_obj = datetime.strptime(cleaned_time.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                else:
+                    dt_obj = datetime.strptime(cleaned_time, "%Y-%m-%d %H:%M:%S")
+            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+            item = {"time_tag": dt_obj}
+            for col, idx in col_indices.items():
+                if col == "time_tag":
+                    continue
+                val = row[idx]
+                item[col] = float(val) if (val is not None and val != "") else None
+            parsed_rows.append(item)
+        except Exception:
+            continue
+    return sorted(parsed_rows, key=lambda x: x["time_tag"])
+
+def parse_noaa_json_flexible(data, required_cols):
+    if not isinstance(data, list) or len(data) == 0:
+        return []
+    if isinstance(data[0], list):
+        return parse_noaa_json_list_of_lists(data, required_cols)
+    parsed_rows = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        raw_time = None
+        for k in ["time_tag", "time", "datetime"]:
+            if k in row:
+                raw_time = row[k]
+                break
+        if not raw_time:
+            continue
+        try:
+            cleaned_time = str(raw_time).strip()
+            if "T" in cleaned_time:
+                cleaned_time = cleaned_time.replace("Z", "")
+                if "." in cleaned_time:
+                    dt_obj = datetime.strptime(cleaned_time.split(".")[0], "%Y-%m-%dT%H:%M:%S")
+                else:
+                    dt_obj = datetime.strptime(cleaned_time, "%Y-%m-%dT%H:%M:%S")
+            else:
+                if "." in cleaned_time:
+                    dt_obj = datetime.strptime(cleaned_time.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                else:
+                    dt_obj = datetime.strptime(cleaned_time, "%Y-%m-%d %H:%M:%S")
+            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+            item = {"time_tag": dt_obj}
+            for col in required_cols:
+                if col == "time_tag":
+                    continue
+                val = None
+                for k in [col, col.lower(), col.upper(), "proton_" + col, "proton_" + col.lower()]:
+                    if k in row:
+                        val = row[k]
+                        break
+                item[col] = float(val) if (val is not None and val != "") else None
+            parsed_rows.append(item)
+        except Exception:
+            continue
+    return sorted(parsed_rows, key=lambda x: x["time_tag"])
+
+def obtener_pronostico_3h():
+    """Descarga el reporte de NOAA y extrae el valor Kp esperado para las próximas 3 horas."""
+    try:
+        import urllib.request
+        import ssl
+        import re
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request("https://services.swpc.noaa.gov/text/3-day-forecast.txt", headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
+            texto = response.read().decode('utf-8', errors='ignore')
+            
+        lineas = texto.split("\n")
+
+        # Buscar la tabla de desglose de Kp
+        inicio_tabla = -1
+        for i, linea in enumerate(lineas):
+            if "NOAA Kp index breakdown" in linea:
+                inicio_tabla = i
+                break
+
+        if inicio_tabla != -1:
+            # Determinar qué bloque de 3 horas UTC corresponde al momento actual
+            from datetime import datetime, timezone
+            hora_utc = datetime.now(timezone.utc).hour
+            bloques_dict = {
+                (0, 3): "00-03UT",
+                (3, 6): "03-06UT",
+                (6, 9): "06-09UT",
+                (9, 12): "09-12UT",
+                (12, 15): "12-15UT",
+                (15, 18): "15-18UT",
+                (18, 21): "18-21UT",
+                (21, 24): "21-00UT",
+            }
+
+            bloque_actual_str = "00-03UT"
+            for (start, end), label in bloques_dict.items():
+                if start <= hora_utc < end:
+                    # Queremos las próximas 3 horas, tomamos el siguiente bloque
+                    proximo_bloque_hora = end if end < 24 else 0
+                    for (s_next, e_next), label_next in bloques_dict.items():
+                        if s_next <= proximo_bloque_hora < e_next:
+                            bloque_actual_str = label_next
+                            break
+                    break
+
+            # Buscar la línea del rango horario en la tabla
+            for j in range(inicio_tabla, inicio_tabla + 15):
+                if j < len(lineas) and bloque_actual_str in lineas[j]:
+                    valores = re.findall(r"\d+\.\d+|\d+", lineas[j])
+                    if valores:
+                        # El primer valor corresponde al día de hoy
+                        return f"{valores[0]} Kp ({bloque_actual_str} UTC)"
+        return "No disponible en este bloque"
+    except Exception as e:
+        return f"Error al parsear el pronóstico ({e})"
+
+def obtener_clima_espacial_avanzado():
+    """
+    Descarga telemetría de satélite y geomagnética en tiempo real (NOAA y GFZ),
+    aplica compensación de desfase físico y alinea todos los índices en la Tierra.
+    """
+    print("[CLIMA ESPACIAL] Iniciando procesamiento de telemetría unificada (NOAA/GFZ Potsdam)...")
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        plasma_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
+        mag_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"
+        kp_url = "https://services.swpc.noaa.gov/json/estimated_kp_1d.json"
+        solar_url = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
+
+        # Plasma
+        plasma_data = []
+        try:
+            req = urllib.request.Request(plasma_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                plasma_data = parse_noaa_json_flexible(json.loads(r.read().decode('utf-8')), ["time_tag", "speed", "density"])
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar plasma: {e}")
+
+        # Campo Magnético
+        mag_data = []
+        try:
+            req = urllib.request.Request(mag_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                mag_data = parse_noaa_json_flexible(json.loads(r.read().decode('utf-8')), ["time_tag", "bt", "bx_gsm", "by_gsm", "bz_gsm", "bx", "by", "bz"])
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar IMF: {e}")
+
+        # Kp
+        kp_data = []
+        try:
+            req = urllib.request.Request(kp_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                kp_data = parse_noaa_json_flexible(json.loads(r.read().decode('utf-8')), ["time_tag", "kp"])
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar Kp: {e}")
+
+        # Solar Indices
+        solar_indices = []
+        try:
+            req = urllib.request.Request(solar_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                lines = r.read().decode('utf-8').strip().split('\n')
+                for line in reversed(lines):
+                    line = line.strip()
+                    if not line or line.startswith('#') or line.startswith(':'):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        year, month, day, sfi, ssn = parts[:5]
+                        solar_indices = [{
+                            'flux': sfi,
+                            'f10.7': sfi,
+                            'f10_7': sfi,
+                            'ssn': ssn,
+                            'time_tag': f"{year}-{month}-{day}"
+                        }]
+                        break
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar índices solares: {e}")
+
+        # 2. Descargar Hp30 y Hp60 desde GFZ Potsdam
+        hp30_data = obtener_indice_gfz("Hp30")
+        hp60_data = obtener_indice_gfz("Hp60")
+
+        # 3. Pronóstico de tendencias futuras (Cálculo dinámico extraído)
+        kp_predicho = obtener_pronostico_3h()
+
+        # 4. Fusionar Plasma + Mag sobre time_tag de satélite
+        if not plasma_data or not mag_data:
+            print("  [CLIMA ESPACIAL ERROR] Datos insuficientes en satélite para realizar fusión.")
+            return
+
+        plasma_map = {p["time_tag"].strftime("%Y-%m-%d %H:%M"): p for p in plasma_data}
+        mag_map = {m["time_tag"].strftime("%Y-%m-%d %H:%M"): m for m in mag_data}
+
+        merged_sat = []
+        all_minutes = sorted(list(set(plasma_map.keys()) & set(mag_map.keys())))
+        for m_str in all_minutes:
+            p_item = plasma_map[m_str]
+            m_item = mag_map[m_str]
+            merged_sat.append({
+                "time_tag": p_item["time_tag"],
+                "speed": p_item.get("speed"),
+                "density": p_item.get("density"),
+                "bt": m_item.get("bt"),
+                "bx_gsm": m_item.get("bx_gsm") or m_item.get("bx") or 0.0,
+                "by_gsm": m_item.get("by_gsm") or m_item.get("by") or 0.0,
+                "bz_gsm": m_item.get("bz_gsm") or m_item.get("bz") or 0.0,
+                "tiempo_tierra": p_item["time_tag"] + timedelta(minutes=45)
+            })
+
+        if not merged_sat:
+            print("  [CLIMA ESPACIAL ERROR] La intersección temporal de telemetría de satélite está vacía.")
+            return
+
+        actual_sat = merged_sat[-1]
+        tiempo_tierra = actual_sat["tiempo_tierra"]
+
+        def find_nearest_val(sorted_list, target_time, key_name):
+            if not sorted_list:
+                return None
+            closest = min(sorted_list, key=lambda x: abs((x["time_tag"] - target_time).total_seconds()))
+            if abs((closest["time_tag"] - target_time).total_seconds()) > 21600:
+                return None
+            return closest.get(key_name)
+
+        # 5. Alinear Kp de NOAA, Hp30 de GFZ y Hp60 de GFZ con tiempo de tierra
+        kp_val = find_nearest_val(kp_data, tiempo_tierra, "kp")
+        hp30_val = find_nearest_val(hp30_data, tiempo_tierra, "Hp30")
+        hp60_val = find_nearest_val(hp60_data, tiempo_tierra, "Hp60")
+
+        ultimo_solar = solar_indices[-1] if solar_indices else {}
+        ultimo_sfi = {'flux': 'N/D', 'f10.7': 'N/D', 'ssn': 'N/D', 'time_tag': 'N/D'}
+        if ultimo_solar:
+            sfi_val = ultimo_solar.get('f10.7') or ultimo_solar.get('f10_7') or ultimo_solar.get('flux') or 'N/D'
+            ssn_val = ultimo_solar.get('ssn') or 'N/D'
+            time_tag_val = ultimo_solar.get('time_tag') or 'N/D'
+            ultimo_sfi = {
+                'flux': sfi_val,
+                'f10.7': sfi_val,
+                'ssn': ssn_val,
+                'time_tag': time_tag_val
+            }
+
+        print("==================================================")
+        print("    MONITOR INTEGRADO: NOAA / GFZ POTSDAM API    ")
+        print("==================================================")
+        print(f"Última lectura Satélite (L1 UTC): {actual_sat['time_tag']}")
+        print(f"Impacto estimado en Tierra (UTC): {tiempo_tierra}")
+        print("-" * 50)
+        print(" [VIENTO SOLAR Y PLASMA - NOAA]")
+        print(f"  • Velocidad del Viento      : {actual_sat['speed']} km/s")
+        print(f"  • Densidad del Plasma       : {actual_sat['density']} p/cm³")
+        print("-" * 50)
+        print(" [CAMPO MAGNÉTICO INTERPLANETARIO - IMF GSM]")
+        print(f"  • Magnitud Total (Bt)       : {actual_sat['bt']} nT")
+        print(
+            f"  • Vector GSM (Bx, By, Bz)   : ({actual_sat['bx_gsm']:.2f}, {actual_sat['by_gsm']:.2f}, {actual_sat['bz_gsm']:.2f}) nT"
+        )
+        print("-" * 50)
+        print(" [ÍNDICES GEOMAGNÉTICOS COMBINADOS (TIERRA)]")
+        print(f"  • Índice Kp (NOAA - 3 horas): {kp_val}")
+        print(f"  • Índice Hp60 (GFZ - 1 hora): {hp60_val}")
+        print(f"  • Índice Hp30 (GFZ - 30 min): {hp30_val}")
+        print("-" * 50)
+        print(" [PRONÓSTICO GEOMAGNÉTICO PRÓXIMO BLOQUE]")
+        print(f"  • Tendencia Estimada Kp     : {kp_predicho}")
+        print("-" * 50)
+        print(
+            f" [ACTIVIDAD SOLAR DIARIA - Actualizado al {ultimo_sfi.get('time_tag')}]"
+        )
+        print(f"  • Flujo de Radio (SFU/F10.7): {ultimo_sfi.get('flux')} sfu")
+        print(f"  • Manchas Solares (SSN)     : {ultimo_sfi.get('ssn')}")
+        print("==================================================")
+
+    except Exception as e:
+        print(f"[ERROR CLIMA ESPACIAL] Error general en el procesamiento de telemetría: {e}")
+
+# ==============================================================================
+# TRANSPORTE DE DATOS (APRS-IS por internet y KISS de Direwolf vía radio)
+# ==============================================================================
+def transmit_aprs_packet(packet_string):
+    """
+    Realiza transmisión dual redundante del paquete APRS con alta estabilidad y control de puertos:
+    1. APRS-IS (Servidor de Internet principal) - Con reintento automático y backoff de contingencia
+    2. KISS sobre TCP (Hardware Direwolf / aprx local para irradiar por radio VHF) - Sockets seguros frente a caídas
+    """
+    print(f"\n[APRS TX] Preparando envio de paquete:\n{packet_string}")
+    
+    # 1. Enviar a APRS-IS (con reintento automático rápido en caso de microcorte de red)
+    is_success = False
+    for attempt in range(1, 3):
+        is_sock = None
+        try:
+            is_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            is_sock.settimeout(4.0)
+            is_sock.connect((APRS_IS_SERVER, APRS_IS_PORT))
+            
+            # Enviar login de APRS-IS
+            login_string = f"user {CALLSIGN} pass {APRS_PASSCODE} vers APRS_SAT_Agent 2.0\r\n"
+            is_sock.sendall(login_string.encode('ascii'))
+            
+            # Recibir línea de autenticación de forma controlada
+            is_sock.recv(512)
+            
+            # Enviar el paquete real
+            full_packet = f"{packet_string}\r\n"
+            is_sock.sendall(full_packet.encode('utf-8'))
+            print(f"[APRS-IS SUCCESS] Paquete inyectado correctamente en {APRS_IS_SERVER}:{APRS_IS_PORT} (Intento {attempt}).")
+            is_success = True
+            break
+        except socket.timeout:
+            print(f"[APRS-IS WARNING] Tiempo de espera agotado al conectar a {APRS_IS_SERVER}:{APRS_IS_PORT} (Intento {attempt}/2).")
+        except ConnectionRefusedError:
+            print(f"[APRS-IS WARNING] Conexión rechazada por el servidor APRS-IS {APRS_IS_SERVER}:{APRS_IS_PORT}. ¿Filtro activo?")
+        except Exception as e:
+            print(f"[APRS-IS WARNING] Error de red en puerto {APRS_IS_PORT} ({e}) (Intento {attempt}/2).")
+        finally:
+            if is_sock:
+                try:
+                    is_sock.close()
+                except Exception:
+                    pass
+        if attempt < 2:
+            time.sleep(1.5) # Espera rápida antes del reintento de contingencia
+            
+    if not is_success:
+        print(f"[APRS-IS ERROR CRÍTICO] Imposible conectar al canal APRS-IS ({APRS_IS_SERVER}:{APRS_IS_PORT}) tras todos los intentos.")
+
+    # 2. Enviar a Direwolf por KISS sobre TCP
+    # Formato KISS Frame:
+    # FEND (0xC0), Command Byte (0x00 para datos en puerto 0), Datos (TNC2 Packet), FEND (0xC0)
+    # Algunas integraciones con Direwolf se configuran por KISS sobre TCP
+    kiss_sock = None
+    try:
+        kiss_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        kiss_sock.settimeout(2.0)
+        kiss_sock.connect((DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT))
+        
+        # El paquete requiere preámbulo AX.25, pero Direwolf en KISS TCP
+        # acepta tramas crudas o KISS encapsuladas. Mandamos encapsulación KISS estándar:
+        raw_packet_bytes = packet_string.encode('utf-8', errors='ignore')
+        
+        # Encapsulado KISS simple: 0xC0 (FEND) + 0x00 (Port 0, Data) + Payload + 0xC0 (FEND)
+        kiss_frame = bytearray([0xC0, 0x00]) + bytearray(raw_packet_bytes) + bytearray([0xC0])
+        
+        kiss_sock.sendall(kiss_frame)
+        print(f"[DIREWOLF KISS SUCCESS] Paquete enviado al TNC local en puerto {DIREWOLF_KISS_PORT} (144.800 MHz RF).")
+    except socket.timeout:
+        print(f"[DIREWOLF KISS DEBUG] Timeout de conexión con Direwolf en {DIREWOLF_KISS_HOST}:{DIREWOLF_KISS_PORT}.")
+    except ConnectionRefusedError:
+        print(f"[DIREWOLF KISS DEBUG] Puerto local {DIREWOLF_KISS_PORT} inactivo/ocupado. Direwolf o APRX no están listos.")
+    except Exception as e:
+        # Esto es esperable si se corre en un entorno que no tiene una TNC local física
+        print(f"[DIREWOLF KISS DEBUG] Canal RF local en puerto {DIREWOLF_KISS_PORT} inaccesible ({e}). Omisión RF.")
+    finally:
+        if kiss_sock:
+            try:
+                kiss_sock.close()
+            except Exception:
+                pass
+
+# ==============================================================================
+# HILO PRINCIPAL DE OPERACIÓN (Loop de control permanente)
+# ==============================================================================
+def main():
+    global transmitido_sw_id, ultima_baliza_wx
+    
+    print("======================================================================")
+    print("     APRS S.A.T. INICIADO - CONSOLA DE EMERGENCIAS REMER")
+    print(f"     Callsign: {CALLSIGN} | Rango Crítico: {FILTER_RADIUS_KM} km")
+    print("======================================================================")
+    
+    # Carga inicial de configuración unificada
+    sync_local_config()
+    
+    ultima_lectura_clima_espacial = 0
+    
+    while True:
+        try:
+            # Sincronización en cada iteración por si hay cambios en el panel de administración
+            sync_local_config()
+            
+            # 1. Consultar geoposicionamiento en tiempo real desde gpsd
+            lat, lon, alt, is_fallback = get_gpsd_coordinates()
+            aprs_lat = decdeg_to_aprs_lat(lat)
+            aprs_lon = decdeg_to_aprs_lon(lon)
+            
+            # Formatear sellado temporal APRS en coordenadas UTC
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%d%H%Mz") # Formato APRS DDHHMMz
+            
+            # 2. Telemetría de Clima (Intervalo de 15 minutos / 900 segs)
+            curr_time = time.time()
+            if curr_time - ultima_baliza_wx >= 900 or ultima_baliza_wx == 0:
+                print("\n[SENSOR CLIMA] Adquiriendo telemetría actual de sensores integrados...")
+                weather_metrics = get_weather_data(lat, lon)
+                wx_payload = format_aprs_wx_payload(*weather_metrics)
+                
+                # Baliza meteorológica APRS (Símbolo _ en la posición de la estación)
+                # Sintaxis: @ <timestamp> <lat> / <lon> _ <wx_payload>
+                wx_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,GATEWAY:@{timestamp}{aprs_lat}/{aprs_lon}{wx_payload}"
+                transmit_aprs_packet(wx_packet)
+                ultima_baliza_wx = curr_time
+                
+            # 3. Procesamiento y Alerta Geofísica (IGN España)
+            sismos_en_rango = query_ign_earthquakes(lat, lon)
+            for sismo in sismos_en_rango:
+                eq_id = sismo["id"]
+                if eq_id not in transmitidos_sismos:
+                    mag = sismo["magnitude"]
+                    dist = sismo["distance"]
+                    place = sismo["place"]
+                    depth = sismo["depth"]
+                    
+                    # Generar Objeto APRS de Sismo (Símbolo [ o o)
+                    # El nombre del objeto debe tener exactamente 9 caracteres
+                    obj_name = f"EQ_M{int(mag*10)}".ljust(9)
+                    
+                    # Timestamp del evento sísmico
+                    eq_time = datetime.fromtimestamp(sismo["time"], tz=timezone.utc)
+                    eq_timestamp = eq_time.strftime("%d%H%Mz")
+                    
+                    eq_lat = decdeg_to_aprs_lat(sismo["latitude"])
+                    eq_lon = decdeg_to_aprs_lon(sismo["longitude"])
+                    
+                    comment = f"SISMO M{mag} {place} Prof:{depth}km a {dist}km - REMER S.A.T."
+                    
+                    # Objeto APRS: ; <9_NAME> * <timestamp> <lat> / <lon> [ <comment>
+                    eq_object_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,SISMOS:;{obj_name}*{eq_timestamp}{eq_lat}/{eq_lon}[{comment}"
+                    
+                    # Inyección dual urgente
+                    print(f"\n[ALERTA GEOLÓGICA CRÍTICA] Terremoto a {dist}km! Transmitiendo objeto sísmico...")
+                    transmit_aprs_packet(eq_object_packet)
+                    transmitidos_sismos.add(eq_id)
+            
+            # 4. Alertas Clima Espacial NOAA
+            noaa_alert = query_noaa_space_weather()
+            if noaa_alert:
+                alert_id = noaa_alert["id"]
+                if alert_id != transmitido_sw_id:
+                    scale = noaa_alert["scale"]
+                    level = noaa_alert["level"]
+                    desc = noaa_alert["desc"]
+                    
+                    # Alerta emitida mediante un Boletín APRS (BLN)
+                    # Sintaxis: CALLSIGN > APRS,TCPIP*: BLN <N> <ASOCIACION>: Mensaje
+                    bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN1REMER: NOAA SPACE CLIMA:{scale}{level} - {desc}"
+                    
+                    print(f"\n[ALERTA CLIMA ESPACIAL NOAA] Escala {scale}{level} detectada! Emitiendo boletín...")
+                    transmit_aprs_packet(bulletin_packet)
+                    transmitido_sw_id = alert_id
+            
+            # 5. Adquisición de Clima Espacial Avanzado y Alineamiento (Intervalo de 5 minutos / 300 segs)
+            if curr_time - ultima_lectura_clima_espacial >= 300 or ultima_lectura_clima_espacial == 0:
+                obtener_clima_espacial_avanzado()
+                ultima_lectura_clima_espacial = curr_time
+                    
+        except KeyboardInterrupt:
+            print("\n[INFO] Sistema APRS S.A.T. detenido de forma controlada por el operador.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"[LOOP ERROR] Error imprevisto en el bus del sistema ({e}). Auto-recuperación en 30s...")
+            time.sleep(30)
+            continue
+            
+        # Tasa de sondeo del bucle (cada 30 segundos) como exige el IGN y NOAA
+        time.sleep(30)
+
+if __name__ == "__main__":
+    main()

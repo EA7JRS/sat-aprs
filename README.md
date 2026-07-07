@@ -170,7 +170,7 @@ Abra el archivo `aprs_sat.py` con su editor de texto favorito y ajuste los pará
 # ==============================================================================
 # CONFIGURACIÓN DE LA ESTACIÓN (Modificar según necesidad)
 # ==============================================================================
-CALLSIGN = "CALLSING-10"          # Su indicativo de llamada de radioaficionado con SSID
+CALLSIGN = "CALLSING-13"          # Su indicativo de llamada de radioaficionado con SSID
 APRS_PASSCODE = "12345"         # Su código APRS-IS (passcode de validación)
 FILTER_RADIUS_KM = 200.0        # Cobertura crítica de monitoreo sísmico
 OWM_API_KEY = "SU_API_KEY_AQUÍ" # Clave de API de OpenWeatherMap (Opcional)

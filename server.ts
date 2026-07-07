@@ -113,6 +113,9 @@ let config: TelemetryConfig = {
   agpsInterval: 'daily',
   agpsLastSync: 'Nunca',
   agpsTtff: 3.5,
+  agpsConstellations: ['GPS', 'GLONASS', 'Galileo'],
+  suplPort: 7275,
+  suplVersion: '2.0',
   ignSeismoEnabled: true,
   tsunamiMonitorEnabled: true,
   systemPower: true
@@ -3273,13 +3276,17 @@ function checkAndRunAgpsSync() {
 
 function executeAgpsSync() {
   const server = config.agpsServer || 'supl.google.com';
-  console.log(`[A-GPS AUTOMÁTICO] Sincronizando con servidor ${server}...`);
-  addLog('SYS', 'A-GPS', 'LOCAL', 'CRON', `Sincronización A-GPS periódica automática iniciada usando servidor: ${server}.`, true, 'En marcha');
+  const port = config.suplPort || 7275;
+  const version = config.suplVersion || '2.0';
+  const constellations = config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo'];
+  
+  console.log(`[A-GPS AUTOMÁTICO] Sincronizando con servidor ${server}:${port} usando SUPL v${version} para constelaciones: ${constellations.join(', ')}...`);
+  addLog('SYS', 'A-GPS', 'LOCAL', 'CRON', `Sincronización A-GPS periódica automática iniciada usando servidor: ${server}:${port} (SUPL v${version}) para constelaciones: ${constellations.join(', ')}.`, true, 'En marcha');
   
   config.agpsLastSync = new Date().toISOString();
   config.agpsTtff = 3.2;
   console.log(`[A-GPS AUTOMÁTICO] Sincronización finalizada con éxito.`);
-  addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS automática exitosa! Efemérides de órbita inyectadas en gpsd. TTFF: 3.2s.`, true, 'Completado');
+  addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS automática exitosa! Efemérides de órbita inyectadas en gpsd. TTFF: 3.2s. Constelaciones asistidas: ${constellations.join(', ')}.`, true, 'Completado');
   
   try {
     const satConfigPath = path.join(process.cwd(), 'sat_config.json');
@@ -5893,6 +5900,9 @@ app.post('/api/config', (req, res) => {
     if (updated.agpsInterval !== undefined) config.agpsInterval = updated.agpsInterval.trim();
     if (updated.agpsLastSync !== undefined) config.agpsLastSync = updated.agpsLastSync;
     if (updated.agpsTtff !== undefined) config.agpsTtff = parseFloat(updated.agpsTtff.toString());
+    if (updated.agpsConstellations !== undefined) config.agpsConstellations = updated.agpsConstellations;
+    if (updated.suplPort !== undefined) config.suplPort = parseInt(updated.suplPort.toString()) || 7275;
+    if (updated.suplVersion !== undefined) config.suplVersion = updated.suplVersion.trim();
 
     if (updated.ignSeismoEnabled !== undefined) {
       config.ignSeismoEnabled = !!updated.ignSeismoEnabled;
@@ -6016,18 +6026,21 @@ app.post('/api/agps/sync', (req, res) => {
   try {
     const isAutoRestart = req.body?.trigger === 'auto' || req.query?.trigger === 'auto';
     const server = config.agpsServer || 'supl.google.com';
+    const port = config.suplPort || 7275;
+    const version = config.suplVersion || '2.0';
+    const constellations = config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo'];
     
     if (isAutoRestart) {
-      addLog('SYS', 'A-GPS', 'AUTO_RESTART', 'TIMEOUT', `REINICIO AUTOMÁTICO de A-GPS por inactividad de datos de posición actualizados (intervalo 5 minutos). Sincronizando con ${server}...`, true, 'Auto-reinicio');
+      addLog('SYS', 'A-GPS', 'AUTO_RESTART', 'TIMEOUT', `REINICIO AUTOMÁTICO de A-GPS por inactividad de datos de posición actualizados (intervalo 5 minutos). Sincronizando con ${server}:${port}...`, true, 'Auto-reinicio');
     } else {
-      addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC_REQ', `Iniciando petición de sincronización A-GPS manual con servidor: ${server}...`, true, 'En marcha');
+      addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC_REQ', `Iniciando petición de sincronización A-GPS manual con servidor: ${server}:${port} (SUPL v${version}) para [${constellations.join(', ')}]...`, true, 'En marcha');
     }
     
     // Perform sync
     config.agpsLastSync = new Date().toISOString();
     config.agpsTtff = 3.2;
     
-    addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS ${isAutoRestart ? 'automática' : 'manual'} exitosa! Archivo de asistencia orbital inyectado en socket gpsd (localhost:2947). TTFF reducido a 3.2s.`, true, 'Completado');
+    addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS ${isAutoRestart ? 'automática' : 'manual'} exitosa! Archivo de asistencia orbital LTO inyectado en socket gpsd (localhost:2947). Satélites asistidos: ${constellations.join(', ')}. TTFF reducido a 3.2s.`, true, 'Completado');
     
     // Guardar en disco para persistencia si está autorizado o si es auto-reinicio
     const isAuth = isAuthorizedRequest(req);

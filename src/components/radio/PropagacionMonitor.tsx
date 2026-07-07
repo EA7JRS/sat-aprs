@@ -1126,9 +1126,11 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
               Monitor de Propagación HF & Clima Espacial
             </h2>
           </div>
-          <p className="font-sans text-xs text-slate-500 mt-1 flex items-center flex-wrap gap-1">
-            <Clock size={12} />
-            Última actualización: <span className="font-mono text-cyan-600 font-semibold">{formatUpdateTimes(gfz.fecha_utc).local} <span className="text-slate-400 font-normal text-[10.5px] font-sans">(Local)</span> / {formatUpdateTimes(gfz.fecha_utc).utc}</span>
+          <p className="font-sans text-xs text-slate-500 mt-1 flex items-center flex-wrap gap-1.5">
+            <Clock size={12} className="text-slate-400" />
+            <span>Sincronización de Consola: <span className="font-mono text-cyan-600 font-semibold">{data?.lastUpdated || '---'}</span></span>
+            <span className="text-slate-300">|</span>
+            <span>Observación Solar: <span className="font-mono text-slate-600 font-medium">{formatUpdateTimes(gfz.fecha_utc).local} <span className="text-slate-400 font-normal text-[10px] font-sans">(Local)</span></span></span>
             {gfz.real ? (
               <span className="text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 rounded text-[10px] font-semibold tracking-wider uppercase ml-1">Tiempo Real</span>
             ) : (
@@ -1531,9 +1533,9 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-[11px] font-sans text-slate-600">
-              <Wifi size={12} className="text-emerald-500" />
-              <span>Actualización en Vivo</span>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 text-[11px] font-sans text-slate-600">
+              <Wifi size={12} className="text-emerald-500 animate-pulse" />
+              <span>Sincronizado: <span className="font-mono font-bold text-cyan-600">{data?.lastUpdated || '---'}</span></span>
             </div>
           </div>
         </div>

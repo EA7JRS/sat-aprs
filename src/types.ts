@@ -157,6 +157,9 @@ export interface TelemetryConfig {
   agpsInterval?: string;
   agpsLastSync?: string;
   agpsTtff?: number;
+  agpsConstellations?: string[];
+  suplPort?: number;
+  suplVersion?: string;
   ignSeismoEnabled?: boolean;
   tsunamiMonitorEnabled?: boolean;
   systemPower?: boolean;

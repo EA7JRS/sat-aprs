@@ -48,6 +48,65 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
   const oscTimeRef = useRef(0);
   const fftTimeRef = useRef(0);
 
+  // Web Audio API Real-time Audio Visualizer States and Refs
+  const [isRealAudioActive, setIsRealAudioActive] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const startRealAudio = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      audioContextRef.current = ctx;
+      
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256; // 128 bins
+      analyser.smoothingTimeConstant = 0.5;
+      analyserRef.current = analyser;
+      
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      setIsRealAudioActive(true);
+      setStatusMsg("Entrada de Audio Real Web Audio API activada.");
+    } catch (err: any) {
+      console.error("No se pudo iniciar Web Audio API:", err);
+      setStatusMsg(`Error al acceder al micrófono: ${err.message || err}`);
+    }
+  };
+
+  const stopRealAudio = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setIsRealAudioActive(false);
+    setStatusMsg("Entrada de Audio Real desactivada.");
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      analyserRef.current = null;
+    };
+  }, []);
+
   const [frequency, setFrequency] = useState('144.800'); // MHz Standard AFSK Europe
   const [kissClients, setKissClients] = useState([
     { id: 'aprx', app: 'APRX Gateway Daemon', port: 8001, packets: 1459, connectedSince: '6d 12h' },
@@ -146,6 +205,24 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
       const w = canvas.width;
       const h = canvas.height;
 
+      const analyser = analyserRef.current;
+      let timeArray: Uint8Array | null = null;
+      let dbFs = -Infinity;
+      if (isRealAudioActive && analyser) {
+        timeArray = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(timeArray);
+
+        let sum = 0;
+        for (let i = 0; i < timeArray.length; i++) {
+          const val = (timeArray[i] - 128) / 128;
+          sum += val * val;
+        }
+        const rms = Math.sqrt(sum / timeArray.length);
+        if (rms > 0.0001) {
+          dbFs = 20 * Math.log10(rms);
+        }
+      }
+
       // Determine colors based on active modulation format
       let traceColor = '#10b981'; // Emerald green for HF AFSK 300
       let gridColor = 'rgba(16, 185, 129, 0.05)';
@@ -242,7 +319,11 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
         
         let y = 0;
 
-        if (!isRunning) {
+        if (timeArray) {
+          const index = Math.min(timeArray.length - 1, Math.floor(normX * timeArray.length));
+          const byteValue = timeArray[index];
+          y = (byteValue - 128) / 128;
+        } else if (!isRunning) {
           // Stationary horizontal baseline with tiny thermal noise
           y = (Math.sin(normX * 50) * 0.01) + (Math.random() - 0.5) * 0.005;
         } else if (!isTxActive && !isDcdActive) {
@@ -350,6 +431,11 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
       ctx.fillStyle = agcEnabled ? '#10b981' : '#ef4444';
       ctx.fillText(agcEnabled ? `AGC: ON (${(20 * Math.log10(agcGain)).toFixed(1)} dB)` : 'AGC: OFF (0.0 dB)', margin, margin);
 
+      if (isRealAudioActive && dbFs !== -Infinity) {
+        ctx.fillStyle = '#10b981';
+        ctx.fillText(`SIG LEVEL: ${dbFs.toFixed(1)} dB FS`, margin, margin + lineHeight);
+      }
+
       animationId = requestAnimationFrame(render);
     };
 
@@ -359,7 +445,7 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [baudRate, isTxActive, isDcdActive, isRunning, agcEnabled, inputVolume]);
+  }, [baudRate, isTxActive, isDcdActive, isRunning, agcEnabled, inputVolume, isRealAudioActive]);
 
   // Real-time Canvas Spectrum Analyzer (FFT) render loop
   useEffect(() => {
@@ -391,6 +477,13 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
 
       const w = canvas.width;
       const h = canvas.height;
+
+      const analyser = analyserRef.current;
+      let freqArray: Uint8Array | null = null;
+      if (isRealAudioActive && analyser) {
+        freqArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(freqArray);
+      }
 
       // Determine styling colors based on active modulation format
       let traceColor = '#10b981'; // Emerald green for HF AFSK 300
@@ -519,7 +612,11 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
         let freq = 0;
         let db = -95; // Base noise floor in dB
 
-        if (baudRate === 9600) {
+        if (freqArray) {
+          const index = Math.min(freqArray.length - 1, Math.floor(norm * freqArray.length));
+          const byteValue = freqArray[index];
+          db = -100 + (byteValue / 255) * 90;
+        } else if (baudRate === 9600) {
           freq = norm * 12000; // 0 - 12 kHz
 
           // Wide-FM noise floor
@@ -708,7 +805,7 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [baudRate, isTxActive, isDcdActive, isRunning, agcEnabled, inputVolume]);
+  }, [baudRate, isTxActive, isDcdActive, isRunning, agcEnabled, inputVolume, isRealAudioActive]);
 
   // Audio simulation loops (DISABLED by user request to turn off simulation mode and loops)
   useEffect(() => {
@@ -1535,6 +1632,36 @@ export default function DirewolfConsole({ weather, callsign, systemLogs }: Direw
                 <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block border-b border-slate-800 pb-1.5">
                   AUDIO LINE-IN CALIBRATION
                 </span>
+
+                {/* Web Audio API Real-time Signal Input Toggle */}
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-900 flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 flex items-center gap-1.5">
+                      <Waves size={13} className={isRealAudioActive ? "text-emerald-400 animate-pulse" : "text-slate-400"} />
+                      ENTRADA DE AUDIO REAL (Web Audio API)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={isRealAudioActive ? stopRealAudio : startRealAudio}
+                      className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all border cursor-pointer ${
+                        isRealAudioActive 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-black' 
+                          : 'bg-slate-900 text-slate-400 border-slate-850 hover:bg-slate-850'
+                      }`}
+                    >
+                      {isRealAudioActive ? 'CONECTADO' : 'CONECTAR'}
+                    </button>
+                  </div>
+                  <p className="text-[8.5px] text-slate-500 leading-normal">
+                    Conecta el micrófono o la línea física de salida de tu transceptor VHF para analizar el espectro real y la intensidad de señal de la radio.
+                  </p>
+                  {isRealAudioActive && (
+                    <div className="text-[8.5px] text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 p-1.5 rounded flex justify-between font-bold">
+                      <span>Muestreo: {audioContextRef.current?.sampleRate || 44100} Hz</span>
+                      <span className="animate-pulse">● CAPTURANDO EN TRÁNSITO...</span>
+                    </div>
+                  )}
+                </div>
 
                 {/* Level VU Meter and Slider */}
                 <div className="bg-slate-950 p-3 rounded-lg border border-slate-900 flex flex-col gap-2">

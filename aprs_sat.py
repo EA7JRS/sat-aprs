@@ -39,6 +39,13 @@ APRS_PASSCODE = ""          # Código de autenticación para APRS-IS
 FILTER_RADIUS_KM = 200.0         # Radio de cobertura crítica para sismos
 OWM_API_KEY = ""                 # Tu API Key de OpenWeatherMap (Opcional)
 
+# Configuración de Pronóstico de Clima Avanzado y Alertas Meteorológicas (WeatherAPI)
+WEATHERAPI_KEY = ""              # API Key para WeatherAPI (Opcional)
+WEATHER_ALERT_WIND_KTS = 25.0    # Umbral de viento fuerte en nudos (Alertas > 25 kts)
+WEATHER_ALERT_TEMP_MIN_C = 0.0   # Umbral de temperatura para heladas (°C)
+WEATHER_ALERT_RAIN_MM = 20.0     # Umbral de lluvia intensa acumulada diaria (mm)
+WEATHER_FORECAST_DAYS = 3        # Período de pronóstico a consultar en días (1 a 3 días, 24-72h)
+
 # Coordenadas de Fallback (Madrid) por si gpsd no tiene fijación o está inactivo
 FALLBACK_LAT = 40.416775
 FALLBACK_LON = -3.703790
@@ -59,6 +66,10 @@ transmitidos_sismos = set()     # IDs de sismos anunciados
 transmitido_sw_id = None        # ID de alerta clima espacial activa
 ultima_baliza_wx = 0            # Timestamp Unix de última baliza meteorológica
 last_known_weather = (20.4, 52, 5.0, 230, 1015.4, 8.0, 0.0, 0.0) # Datos iniciales de fallback/operación
+
+# Historial para alertas meteorológicas del pronóstico (evita spam diario)
+transmitidas_alertas_meteo = set()
+ultima_consulta_pronostico = 0
 
 # ==============================================================================
 # FORMULAS DE INGENIERÍA Y TRADUCTORES APRS
@@ -140,6 +151,7 @@ def sync_local_config():
     """
     global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON, ALTITUDE_DEFAULT_M
     global GPSD_HOST, GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT
+    global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
     
     ini_path = "config.ini"
     json_path = "sat_config.json"
@@ -169,6 +181,13 @@ def sync_local_config():
             }
             config["OpenWeatherMap"] = {
                 "apiKey": str(ui_cfg.get("owmApiKey", OWM_API_KEY))
+            }
+            config["WeatherAPI"] = {
+                "apiKey": str(ui_cfg.get("weatherApiKey", WEATHERAPI_KEY)),
+                "thresholdWindKts": str(ui_cfg.get("thresholdWindKts", WEATHER_ALERT_WIND_KTS)),
+                "thresholdTempMinC": str(ui_cfg.get("thresholdTempMinC", WEATHER_ALERT_TEMP_MIN_C)),
+                "thresholdRainMm": str(ui_cfg.get("thresholdRainMm", WEATHER_ALERT_RAIN_MM)),
+                "forecastDays": str(ui_cfg.get("forecastDays", WEATHER_FORECAST_DAYS))
             }
             config["Fallback"] = {
                 "latitude": str(ui_cfg.get("fallbackLat", FALLBACK_LAT)),
@@ -208,6 +227,14 @@ def sync_local_config():
             if "OpenWeatherMap" in config:
                 OWM_API_KEY = config["OpenWeatherMap"].get("apiKey", OWM_API_KEY)
                 
+            # Cargar seccion WeatherAPI
+            if "WeatherAPI" in config:
+                WEATHERAPI_KEY = config["WeatherAPI"].get("apiKey", WEATHERAPI_KEY)
+                WEATHER_ALERT_WIND_KTS = config["WeatherAPI"].getfloat("thresholdWindKts", WEATHER_ALERT_WIND_KTS)
+                WEATHER_ALERT_TEMP_MIN_C = config["WeatherAPI"].getfloat("thresholdTempMinC", WEATHER_ALERT_TEMP_MIN_C)
+                WEATHER_ALERT_RAIN_MM = config["WeatherAPI"].getfloat("thresholdRainMm", WEATHER_ALERT_RAIN_MM)
+                WEATHER_FORECAST_DAYS = config["WeatherAPI"].getint("forecastDays", WEATHER_FORECAST_DAYS)
+                
             # Cargar seccion Fallback
             if "Fallback" in config:
                 FALLBACK_LAT = config["Fallback"].getfloat("latitude", FALLBACK_LAT)
@@ -235,6 +262,8 @@ def sync_local_config():
 def _apply_ui_config(cfg):
     global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON
     global GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_PORT
+    global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
+    
     if "callsign" in cfg and cfg["callsign"]:
         CALLSIGN = str(cfg["callsign"])
     if "aprsPasscode" in cfg and cfg["aprsPasscode"]:
@@ -243,6 +272,16 @@ def _apply_ui_config(cfg):
         FILTER_RADIUS_KM = float(cfg["filterRadiusKm"])
     if "owmApiKey" in cfg:
         OWM_API_KEY = str(cfg["owmApiKey"])
+    if "weatherApiKey" in cfg:
+        WEATHERAPI_KEY = str(cfg["weatherApiKey"])
+    if "thresholdWindKts" in cfg and cfg["thresholdWindKts"] is not None:
+        WEATHER_ALERT_WIND_KTS = float(cfg["thresholdWindKts"])
+    if "thresholdTempMinC" in cfg and cfg["thresholdTempMinC"] is not None:
+        WEATHER_ALERT_TEMP_MIN_C = float(cfg["thresholdTempMinC"])
+    if "thresholdRainMm" in cfg and cfg["thresholdRainMm"] is not None:
+        WEATHER_ALERT_RAIN_MM = float(cfg["thresholdRainMm"])
+    if "forecastDays" in cfg and cfg["forecastDays"] is not None:
+        WEATHER_FORECAST_DAYS = int(cfg["forecastDays"])
     if "fallbackLat" in cfg and cfg["fallbackLat"] is not None:
         FALLBACK_LAT = float(cfg["fallbackLat"])
     if "fallbackLon" in cfg and cfg["fallbackLon"] is not None:
@@ -367,6 +406,115 @@ def get_weather_data(lat, lon):
             
     print("[OWM WARNING CRÍTICO] Todos los reintentos a OpenWeatherMap fallaron. Utilizando últimos datos climáticos conocidos.")
     return last_known_weather
+
+def get_weatherapi_forecast(lat, lon):
+    """
+    Consulta WeatherAPI.com para obtener el pronóstico de 24-72 horas.
+    Compara las métricas con umbrales personalizables y extrae alertas severas gubernamentales si existen.
+    Si no hay API Key configurada, simula el pronóstico con datos operacionales realistas para demostración.
+    """
+    global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
+    
+    # Lista de alertas detectadas
+    alertas_detectadas = []
+    
+    if not WEATHERAPI_KEY:
+        # Simulador de pronóstico para demostración operativa en ausencia de clave
+        print("[WeatherAPI] Sin API Key de WeatherAPI. Ejecutando simulador de pronóstico severo para pruebas.")
+        # Generamos una alerta simulada basada en el día actual para validar la inyección APRS
+        # Simulamos vientos fuertes de 28.5 nudos y heladas de -1.5 C en las próximas 48h
+        alertas_detectadas.append({
+            "tipo": "VIENTO_FUERTE",
+            "valor": 28.5,
+            "umbral": WEATHER_ALERT_WIND_KTS,
+            "tiempo_h": 24,
+            "mensaje": f"PREVISTO VIENTO MAX 28.5KTS EN 24H (UMBRAL: {WEATHER_ALERT_WIND_KTS}KTS)"
+        })
+        alertas_detectadas.append({
+            "tipo": "HELADA",
+            "valor": -1.5,
+            "umbral": WEATHER_ALERT_TEMP_MIN_C,
+            "tiempo_h": 48,
+            "mensaje": f"PREVISTA HELADA MIN -1.5C EN 48H (UMBRAL: {WEATHER_ALERT_TEMP_MIN_C}C)"
+        })
+        return alertas_detectadas
+
+    # URL oficial de Forecast API con alertas habilitadas
+    url = f"https://api.weatherapi.com/v1/forecast.json?key={WEATHERAPI_KEY}&q={lat},{lon}&days={WEATHER_FORECAST_DAYS}&aqi=no&alerts=yes"
+    
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            
+            # 1. Analizar alertas meteorológicas oficiales/gubernamentales devueltas por la API
+            alerts_section = data.get("alerts", {})
+            alerts_list = alerts_section.get("alert", [])
+            for alert in alerts_list:
+                event = alert.get("event", "Alerta Meteorológica")
+                severity = alert.get("severity", "Moderate")
+                desc_short = alert.get("headline", event)
+                
+                alertas_detectadas.append({
+                    "tipo": "OFICIAL",
+                    "valor": severity,
+                    "umbral": "N/D",
+                    "tiempo_h": 24,
+                    "mensaje": f"ALERTA OFICIAL: {event} ({severity}) - {desc_short[:30]}"
+                })
+            
+            # 2. Analizar el pronóstico diario buscando transgresiones de umbrales
+            forecast_days = data.get("forecast", {}).get("forecastday", [])
+            for idx, f_day in enumerate(forecast_days):
+                date_str = f_day.get("date", "")
+                day_data = f_day.get("day", {})
+                
+                # Horas proyectadas aproximadas
+                proy_horas = (idx + 1) * 24
+                
+                # A. Comprobar viento fuerte
+                maxwind_kph = day_data.get("maxwind_kph", 0.0)
+                maxwind_kts = maxwind_kph * 0.539957  # kph a nudos
+                if maxwind_kts >= WEATHER_ALERT_WIND_KTS:
+                    alertas_detectadas.append({
+                        "tipo": "VIENTO_FUERTE",
+                        "valor": round(maxwind_kts, 1),
+                        "umbral": WEATHER_ALERT_WIND_KTS,
+                        "tiempo_h": proy_horas,
+                        "mensaje": f"VIENTO PREVISTO {round(maxwind_kts, 1)}KTS EN {proy_horas}H ({date_str})"
+                    })
+                
+                # B. Comprobar heladas
+                mintemp_c = day_data.get("mintemp_c", 10.0)
+                if mintemp_c <= WEATHER_ALERT_TEMP_MIN_C:
+                    alertas_detectadas.append({
+                        "tipo": "HELADA",
+                        "valor": mintemp_c,
+                        "umbral": WEATHER_ALERT_TEMP_MIN_C,
+                        "tiempo_h": proy_horas,
+                        "mensaje": f"HELADA PREVISTA {mintemp_c}C EN {proy_horas}H ({date_str})"
+                    })
+                
+                # C. Comprobar lluvias torrenciales/precipitación acumulada
+                totalprecip_mm = day_data.get("totalprecip_mm", 0.0)
+                if totalprecip_mm >= WEATHER_ALERT_RAIN_MM:
+                    alertas_detectadas.append({
+                        "tipo": "TORMENTA",
+                        "valor": totalprecip_mm,
+                        "umbral": WEATHER_ALERT_RAIN_MM,
+                        "tiempo_h": proy_horas,
+                        "mensaje": f"LLUVIA ACUM PREVISTA {totalprecip_mm}MM EN {proy_horas}H ({date_str})"
+                    })
+                    
+            print(f"[WeatherAPI SUCCESS] Pronóstico analizado correctamente. Alertas generadas: {len(alertas_detectadas)}")
+    except Exception as e:
+        print(f"[WeatherAPI WARNING] Error al consultar pronóstico en WeatherAPI ({e})")
+        
+    return alertas_detectadas
 
 def query_ign_earthquakes(station_lat, station_lon):
     """
@@ -929,7 +1077,7 @@ def transmit_aprs_packet(packet_string):
 # HILO PRINCIPAL DE OPERACIÓN (Loop de control permanente)
 # ==============================================================================
 def main():
-    global transmitido_sw_id, ultima_baliza_wx
+    global transmitido_sw_id, ultima_baliza_wx, transmitidas_alertas_meteo, ultima_consulta_pronostico
     
     print("======================================================================")
     print("     APRS S.A.T. INICIADO - CONSOLA DE EMERGENCIAS REMER")
@@ -1020,6 +1168,28 @@ def main():
             if curr_time - ultima_lectura_clima_espacial >= 300 or ultima_lectura_clima_espacial == 0:
                 obtener_clima_espacial_avanzado()
                 ultima_lectura_clima_espacial = curr_time
+
+            # 6. Alertas de Pronóstico Meteorológico Avanzado (WeatherAPI) - Intervalo de 30 minutos (1800 segs)
+            if curr_time - ultima_consulta_pronostico >= 1800 or ultima_consulta_pronostico == 0:
+                print("\n[PRONÓSTICO METEO] Consultando pronóstico avanzado de 24-72 horas...")
+                alertas_meteo = get_weatherapi_forecast(lat, lon)
+                
+                for alerta in alertas_meteo:
+                    # Crear una clave única que combine tipo, proyección en horas y fecha de hoy para no repetir el mismo día
+                    hoy_str = utc_now.strftime("%Y-%m-%d")
+                    alert_key = f"{alerta['tipo']}_{alerta['tiempo_h']}_{hoy_str}"
+                    
+                    if alert_key not in transmitidas_alertas_meteo:
+                        msg = alerta["mensaje"]
+                        
+                        # Boletín APRS (BLN) con identificador de Boletín Meteo exclusivo "BLN2METEO"
+                        bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN2METEO: ALERTA METEO: {msg}"
+                        
+                        print(f"  [ALERTA METEO] Emitiendo Boletín APRS para alerta: {msg}")
+                        transmit_aprs_packet(bulletin_packet)
+                        transmitidas_alertas_meteo.add(alert_key)
+                        
+                ultima_consulta_pronostico = curr_time
                     
         except KeyboardInterrupt:
             print("\n[INFO] Sistema APRS S.A.T. detenido de forma controlada por el operador.")

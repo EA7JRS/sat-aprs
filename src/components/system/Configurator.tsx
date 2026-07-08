@@ -696,6 +696,11 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
   const [owmApiKey, setOwmApiKey] = useState(config.owmApiKey || '');
   const [aemetApiKey, setAemetApiKey] = useState(config.aemetApiKey || '');
   const [iqAirApiKey, setIqAirApiKey] = useState(config.iqAirApiKey || '');
+  const [weatherApiKey, setWeatherApiKey] = useState(config.weatherApiKey || '');
+  const [thresholdWindKts, setThresholdWindKts] = useState(config.thresholdWindKts !== undefined ? config.thresholdWindKts : 25.0);
+  const [thresholdTempMinC, setThresholdTempMinC] = useState(config.thresholdTempMinC !== undefined ? config.thresholdTempMinC : 0.0);
+  const [thresholdRainMm, setThresholdRainMm] = useState(config.thresholdRainMm !== undefined ? config.thresholdRainMm : 20.0);
+  const [forecastDays, setForecastDays] = useState(config.forecastDays !== undefined ? config.forecastDays : 3);
   
   // Tab 4: Extras
   const [aisCatcherPort, setAisCatcherPort] = useState(config.aisCatcherPort || 5015);
@@ -1109,6 +1114,11 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       winlinkSsid: winlinkSsid.trim().toUpperCase(),
       aemetApiKey: aemetApiKey.trim(),
       iqAirApiKey: iqAirApiKey.trim(),
+      weatherApiKey: weatherApiKey.trim(),
+      thresholdWindKts: Number(thresholdWindKts),
+      thresholdTempMinC: Number(thresholdTempMinC),
+      thresholdRainMm: Number(thresholdRainMm),
+      forecastDays: Number(forecastDays),
       agpsEnabled: Boolean(isAgpsEnabled),
       agpsServer: agpsServer.trim(),
       agpsInterval: agpsInterval,
@@ -2984,6 +2994,86 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                   onChange={(e) => setIqAirApiKey(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-slate-100 text-xs focus:outline-none focus:border-zinc-500/40"
                 />
+              </div>
+            </div>
+
+            {/* WeatherAPI Pronóstico Avanzado y Umbrales de Alerta */}
+            <div className="bg-slate-900/40 border border-slate-900 p-4 rounded-xl space-y-3.5 font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-[9.5px] text-zinc-300 uppercase font-black tracking-widest block font-bold">Pronóstico Meteorológico Avanzado (24-72h) y Alertas</span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="api-weatherapi" className="text-slate-400 text-[10px]">WeatherAPI Key:</label>
+                  <input
+                    type="password"
+                    id="api-weatherapi"
+                    placeholder="Ej: d7919a28cf1b4f..."
+                    value={weatherApiKey}
+                    onChange={(e) => setWeatherApiKey(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                  />
+                  <p className="text-[8px] text-slate-500 font-mono mt-0.5">Clave para alertas de heladas, vientos fuertes y tormentas desde WeatherAPI.com.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="input-forecast-days" className="text-slate-400 text-[10px]">Período de Pronóstico (Días 1-3):</label>
+                  <select
+                    id="input-forecast-days"
+                    value={forecastDays}
+                    onChange={(e) => setForecastDays(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                  >
+                    <option value={1}>1 Día (Próximas 24 horas)</option>
+                    <option value={2}>2 Días (Próximas 48 horas)</option>
+                    <option value={3}>3 Días (Próximas 72 horas)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-950 pt-3">
+                <span className="text-[8.5px] text-slate-400 uppercase font-bold tracking-wider block mb-2 font-sans">Umbrales de Alerta Personalizables (Inyección de Boletines APRS)</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-threshold-wind" className="text-slate-400 text-[10px]">Viento Fuerte (Nudos):</label>
+                    <input
+                      type="number"
+                      id="input-threshold-wind"
+                      step="0.1"
+                      value={thresholdWindKts}
+                      onChange={(e) => setThresholdWindKts(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Activar alerta si el viento supera este umbral.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-threshold-temp" className="text-slate-400 text-[10px]">Helada/Frío Mínimo (°C):</label>
+                    <input
+                      type="number"
+                      id="input-threshold-temp"
+                      step="0.1"
+                      value={thresholdTempMinC}
+                      onChange={(e) => setThresholdTempMinC(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Activar alerta si la temperatura cae por debajo.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-threshold-rain" className="text-slate-400 text-[10px]">Tormenta/Lluvia Acum. (mm):</label>
+                    <input
+                      type="number"
+                      id="input-threshold-rain"
+                      step="0.1"
+                      value={thresholdRainMm}
+                      onChange={(e) => setThresholdRainMm(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Activar alerta si la precipitación acumulada supera.</p>
+                  </div>
+                </div>
               </div>
             </div>
 

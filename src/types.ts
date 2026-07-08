@@ -163,6 +163,11 @@ export interface TelemetryConfig {
   ignSeismoEnabled?: boolean;
   tsunamiMonitorEnabled?: boolean;
   systemPower?: boolean;
+  weatherApiKey?: string;
+  thresholdWindKts?: number;
+  thresholdTempMinC?: number;
+  thresholdRainMm?: number;
+  forecastDays?: number;
 }
 
 export interface IQAirStatus {

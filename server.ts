@@ -156,6 +156,13 @@ try {
     if (iniData.OpenWeatherMap && iniData.OpenWeatherMap.apiKey) {
       config.owmApiKey = iniData.OpenWeatherMap.apiKey.trim();
     }
+    if (iniData.WeatherAPI) {
+      if (iniData.WeatherAPI.apiKey) config.weatherApiKey = iniData.WeatherAPI.apiKey.trim();
+      if (iniData.WeatherAPI.thresholdWindKts) config.thresholdWindKts = parseFloat(iniData.WeatherAPI.thresholdWindKts) || config.thresholdWindKts;
+      if (iniData.WeatherAPI.thresholdTempMinC) config.thresholdTempMinC = parseFloat(iniData.WeatherAPI.thresholdTempMinC) || config.thresholdTempMinC;
+      if (iniData.WeatherAPI.thresholdRainMm) config.thresholdRainMm = parseFloat(iniData.WeatherAPI.thresholdRainMm) || config.thresholdRainMm;
+      if (iniData.WeatherAPI.forecastDays) config.forecastDays = parseInt(iniData.WeatherAPI.forecastDays) || config.forecastDays;
+    }
     if (iniData.Fallback) {
       if (iniData.Fallback.latitude) config.fallbackLat = parseFloat(iniData.Fallback.latitude) || config.fallbackLat;
       if (iniData.Fallback.longitude) config.fallbackLon = parseFloat(iniData.Fallback.longitude) || config.fallbackLon;
@@ -5954,6 +5961,18 @@ port = 2947
 [OpenWeatherMap]
 # Clave API para integrar reportes climáticos WX sobre APRS
 apiKey = ${config.owmApiKey || ''}
+
+[WeatherAPI]
+# Clave API para integrar pronósticos meteorológicos avanzados de 24-72h (WeatherAPI.com)
+apiKey = ${config.weatherApiKey || ''}
+# Umbral de viento fuerte en nudos (Ej: Alertas > 25.0 kts)
+thresholdWindKts = ${config.thresholdWindKts !== undefined ? config.thresholdWindKts : 25.0}
+# Umbral de temperatura mínima en °C para heladas (Ej: Alertas <= 0.0 °C)
+thresholdTempMinC = ${config.thresholdTempMinC !== undefined ? config.thresholdTempMinC : 0.0}
+# Umbral de lluvia acumulada diaria en mm para tormentas (Ej: Alertas >= 20.0 mm)
+thresholdRainMm = ${config.thresholdRainMm !== undefined ? config.thresholdRainMm : 20.0}
+# Período de proyección de pronóstico en días (1 a 3 días, 24-72h)
+forecastDays = ${config.forecastDays !== undefined ? config.forecastDays : 3}
 
 [Fallback]
 # Coordenadas geográficas por defecto si el receptor GPS local pierde fijación

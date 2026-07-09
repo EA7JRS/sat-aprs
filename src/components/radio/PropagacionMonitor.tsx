@@ -63,6 +63,61 @@ function getBandStatusText(band: string, sfi: number, kp: number) {
   }
 }
 
+export function getUvDetailedStyle(uvVal: number | string | undefined) {
+  const val = typeof uvVal === 'number' ? uvVal : parseFloat(uvVal || '0') || 0;
+  if (val <= 2) {
+    return {
+      text: "Bajo",
+      pantone: "PMS 375",
+      rgb: "(142, 211, 0)",
+      hex: "#8ED300",
+      textColor: "text-[#8ED300]",
+      bgColor: "bg-[#8ED300]",
+      badgeClass: "bg-[#8ED300]/10 text-[#8ED300] border-[#8ED300]/30",
+    };
+  } else if (val <= 5) {
+    return {
+      text: "Moderado",
+      pantone: "PMS 102",
+      rgb: "(255, 242, 0)",
+      hex: "#FFF200",
+      textColor: "text-amber-500", // using high contrast amber for readability on light/white, but keeping hex/rgb
+      bgColor: "bg-[#FFF200]",
+      badgeClass: "bg-[#FFF200]/20 text-amber-700 border-yellow-400/50",
+    };
+  } else if (val <= 7) {
+    return {
+      text: "Alto",
+      pantone: "PMS 151",
+      rgb: "(255, 127, 0)",
+      hex: "#FF7F00",
+      textColor: "text-[#FF7F00]",
+      bgColor: "bg-[#FF7F00]",
+      badgeClass: "bg-[#FF7F00]/10 text-[#FF7F00] border-[#FF7F00]/30",
+    };
+  } else if (val <= 10) {
+    return {
+      text: "Muy Alto",
+      pantone: "PMS 032",
+      rgb: "(238, 28, 37)",
+      hex: "#EE1C25",
+      textColor: "text-[#EE1C25]",
+      bgColor: "bg-[#EE1C25]",
+      badgeClass: "bg-[#EE1C25]/10 text-[#EE1C25] border-[#EE1C25]/30",
+    };
+  } else {
+    return {
+      text: "Extremadamente Alto",
+      pantone: "PMS 265",
+      rgb: "(146, 75, 159)",
+      hex: "#924B9F",
+      textColor: "text-[#924B9F]",
+      bgColor: "bg-[#924B9F]",
+      badgeClass: "bg-[#924B9F]/10 text-[#924B9F] border-[#924B9F]/30",
+    };
+  }
+}
+
 interface PropagacionMonitorProps {
   data?: PropagationData;
 }
@@ -272,73 +327,99 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
   const getBandCondition = (band: string, sfiStr: string, hpValue: number) => {
     const sfi = parseInt(sfiStr) || 120;
     
-    // Geomagnetic Storm Impact: High Hp compromises the ionosphere (F2 layer reflection is disturbed)
+    // Reconstruct Day and Night MUF and LUF based on solar elevation limits
+    const mufBase = 7.0 + (sfi - 65) * 0.06;
+    const mufDay = mufBase + (12.0 + (sfi - 70) * 0.12);
+    const mufNight = Math.max(4.5, mufBase * 0.85);
+
+    const lufBase = 1.5 + (sfi - 65) * 0.005;
+    // Add xray impact to LUF if available in noaa.xrayFlux
+    const xrayFlux = noaa.xrayFlux || 1e-7;
+    let xrayAbs = 0;
+    if (xrayFlux > 1e-4) xrayAbs = 8.0;
+    else if (xrayFlux > 1e-5) xrayAbs = 4.0;
+    else if (xrayFlux > 1e-6) xrayAbs = 1.5;
+    else if (xrayFlux > 1e-7) xrayAbs = 0.5;
+
+    const lufDay = lufBase + (2.0 + (sfi - 70) * 0.015) + xrayAbs;
+    const lufNight = Math.max(0.5, lufBase * 0.7) + (xrayAbs * 0.1); // minor impact at night
+
     const isStorm = hpValue >= 4.5;
-    const isMinorStorm = hpValue >= 4.0 && hpValue < 4.5;
+    const isMinorStorm = hpValue >= 3.5 && hpValue < 4.5;
+
+    // Helper to evaluate a specific frequency
+    const evalFreq = (freq: number, isNight: boolean) => {
+      const m = isNight ? mufNight : mufDay;
+      const l = isNight ? lufNight : lufDay;
+
+      if (isStorm) {
+        if (freq < l) return { cond: "Mala (Ruidosa)", color: "text-red-700 bg-red-50 border-red-200" };
+        return { cond: "Degradada", color: "text-red-600 bg-red-50 border-red-100" };
+      }
+
+      if (isMinorStorm) {
+        if (freq < l) return { cond: "Mala (QRN)", color: "text-amber-700 bg-amber-50 border-amber-200" };
+        return { cond: "Regular (Fading)", color: "text-amber-600 bg-amber-50 border-amber-100" };
+      }
+
+      if (freq > m) {
+        return { cond: "Cerrada", color: "text-slate-500 bg-slate-50 border-slate-200" };
+      }
+
+      if (freq < l) {
+        return { cond: "Cerrada (Absorción)", color: "text-slate-500 bg-slate-50 border-slate-100" };
+      }
+
+      // Open! Calculate suitability position
+      const window = m - l;
+      const pos = window > 0 ? ((freq - l) / window) * 100 : 50;
+
+      if (pos > 70) {
+        return { cond: "Excelente", color: "text-emerald-700 bg-emerald-50 border-emerald-200 font-bold" };
+      }
+      if (pos > 30) {
+        return { cond: "Buena", color: "text-emerald-600 bg-emerald-50 border-emerald-100" };
+      }
+      return { cond: "Regular", color: "text-amber-600 bg-amber-50 border-amber-200" };
+    };
 
     let dayCondition = "Regular";
     let nightCondition = "Regular";
     let dayColor = "text-amber-600 bg-amber-50 border-amber-200";
     let nightColor = "text-amber-600 bg-amber-50 border-amber-200";
 
-    switch(band) {
-      case "80m-40m": // Low bands: Less affected by low SFU, but highly compromised by D-layer absorption or storm noise
-        if (isStorm) {
-          dayCondition = "Mala";
-          nightCondition = "Mala";
-          dayColor = "text-red-600 bg-red-50 border-red-200";
-          nightColor = "text-red-600 bg-red-50 border-red-200";
-        } else if (isMinorStorm) {
-          dayCondition = "Mala";
-          nightCondition = "Regular";
-          dayColor = "text-red-600 bg-red-50 border-red-200";
-          nightColor = "text-amber-600 bg-amber-50 border-amber-200";
-        } else {
-          dayCondition = "Regular";
-          nightCondition = "Excelente";
-          dayColor = "text-amber-600 bg-amber-50 border-amber-200";
-          nightColor = "text-emerald-600 bg-emerald-50 border-emerald-200";
-        }
-        break;
-      case "20m": // Workhorse band: Needs moderate SFU. Compromised in strong storms.
-        if (isStorm) {
-          dayCondition = "Mala";
-          nightCondition = "Mala";
-          dayColor = "text-red-600 bg-red-50 border-red-200";
-          nightColor = "text-red-600 bg-red-50 border-red-200";
-        } else {
-          dayCondition = sfi > 90 ? "Excelente" : sfi > 70 ? "Buena" : "Regular";
-          nightCondition = sfi > 110 ? "Buena" : "Regular";
-          dayColor = sfi > 90 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200";
-          nightColor = sfi > 110 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200";
-        }
-        break;
-      case "15m-17m": // High bands: Love high SFU, absolutely ruined by geomagnetic storms.
-        if (isStorm) {
-          dayCondition = "Muy Mala";
-          nightCondition = "Cerrada";
-          dayColor = "text-red-800 bg-red-100 border-red-300";
-          nightColor = "text-slate-500 bg-slate-50 border-slate-200";
-        } else {
-          dayCondition = sfi > 120 ? "Excelente" : sfi > 95 ? "Buena" : sfi > 80 ? "Regular" : "Mala";
-          nightCondition = "Cerrada";
-          dayColor = sfi > 120 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : sfi > 95 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200";
-          nightColor = "text-slate-500 bg-slate-50 border-slate-200";
-        }
-        break;
-      case "10m-12m": // High bands / Sporadic E: Needs high SFU or Sporadic E clouds. Completely closed during major storms.
-        if (isStorm) {
-          dayCondition = "Cerrada";
-          nightCondition = "Cerrada";
-          dayColor = "text-slate-500 bg-slate-50 border-slate-200";
-          nightColor = "text-slate-500 bg-slate-50 border-slate-200";
-        } else {
-          dayCondition = sfi > 140 ? "Excelente" : sfi > 110 ? "Buena" : sfi > 90 ? "Regular" : "Muy Mala";
-          nightCondition = "Cerrada";
-          dayColor = sfi > 140 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : sfi > 110 ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200";
-          nightColor = "text-slate-500 bg-slate-50 border-slate-200";
-        }
-        break;
+    if (band === "80m-40m") {
+      // 80m and 40m are lower bands, evaluated around 5.0 MHz
+      const d = evalFreq(5.0, false);
+      const n = evalFreq(5.0, true);
+      dayCondition = d.cond;
+      dayColor = d.color;
+      nightCondition = n.cond;
+      nightColor = n.color;
+    } else if (band === "20m") {
+      // 20m center is 14.15 MHz
+      const d = evalFreq(14.15, false);
+      const n = evalFreq(14.15, true);
+      dayCondition = d.cond;
+      dayColor = d.color;
+      nightCondition = n.cond;
+      nightColor = n.color;
+    } else if (band === "15m-17m") {
+      // 17m-15m center is 19.5 MHz
+      const d = evalFreq(19.5, false);
+      const n = evalFreq(19.5, true);
+      dayCondition = d.cond;
+      dayColor = d.color;
+      nightCondition = n.cond;
+      nightColor = n.color;
+    } else if (band === "10m-12m") {
+      // 12m-10m center is 27.2 MHz
+      const d = evalFreq(27.2, false);
+      const n = evalFreq(27.2, true);
+      dayCondition = d.cond;
+      dayColor = d.color;
+      nightCondition = n.cond;
+      nightColor = n.color;
     }
 
     return { dayCondition, nightCondition, dayColor, nightColor };
@@ -359,7 +440,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
   const currentSfi = parseInt(noaa.dia1) || 120;
   const hpValue = gfz.Hp60;
 
-  const calculateBandStatus = (bandId: string) => {
+  const legacyCalculateBandStatus = (bandId: string) => {
     const isStorm = hpValue >= 5.0;
     const isModerateStorm = hpValue >= 4.0 && hpValue < 5.0;
     
@@ -1083,6 +1164,199 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     }
   };
 
+  const calculateBandStatus = (bandId: string) => {
+    // 13 Bands Parameters configuration:
+    const bandConfigs: Record<string, { freq: number; sfiMin: number; targetSfi: number; name: string; category: string; sfiLabel: string }> = {
+      "160m": { freq: 1.8, sfiMin: 60, targetSfi: 100, name: "160 metros (1.8 MHz)", category: "low", sfiLabel: "Flujo SFU sugerido: 60." },
+      "80m": { freq: 3.5, sfiMin: 65, targetSfi: 110, name: "80 metros (3.5 MHz)", category: "low", sfiLabel: "Flujo SFU sugerido: 65." },
+      "60m": { freq: 5.3, sfiMin: 65, targetSfi: 120, name: "60 metros (5.3 MHz)", category: "low", sfiLabel: "Flujo SFU sugerido: 65. Banda REMER estatal." },
+      "40m": { freq: 7.05, sfiMin: 70, targetSfi: 120, name: "40 metros (7 MHz)", category: "low", sfiLabel: "Flujo SFU sugerido: 70. Banda para enlaces nacionales." },
+      "30m": { freq: 10.12, sfiMin: 75, targetSfi: 140, name: "30 metros (10.1 MHz)", category: "medium", sfiLabel: "Flujo SFU sugerido: 75. Excelente telegrafía." },
+      "20m": { freq: 14.15, sfiMin: 80, targetSfi: 150, name: "20 metros (14 MHz)", category: "medium", sfiLabel: "Flujo SFU sugerido: 80. Banda principal diurna." },
+      "17m": { freq: 18.12, sfiMin: 95, targetSfi: 160, name: "17 metros (18.1 MHz)", category: "medium", sfiLabel: "Flujo SFU sugerido: 95. Óptima cobertura global." },
+      "15m": { freq: 21.22, sfiMin: 105, targetSfi: 170, name: "15 metros (21.0 MHz)", category: "medium", sfiLabel: "Flujo SFU sugerido: 105." },
+      "12m": { freq: 24.94, sfiMin: 110, targetSfi: 175, name: "12 metros (24.9 MHz)", category: "high", sfiLabel: "Flujo SFU sugerido: 110. Banda diurna experimental." },
+      "11m": { freq: 27.2, sfiMin: 115, targetSfi: 180, name: "11 metros (CB / 27 MHz)", category: "high", sfiLabel: "Flujo SFU sugerido: 115. Canales de Banda Ciudadana (CB)." },
+      "10m": { freq: 28.5, sfiMin: 120, targetSfi: 180, name: "10 metros (28 MHz)", category: "high", sfiLabel: "Flujo SFU sugerido: 120. Excelente para enlaces DX diurnos." },
+      "8m": { freq: 40.1, sfiMin: 130, targetSfi: 200, name: "8 metros (experimental / 40 MHz)", category: "vhf", sfiLabel: "Flujo SFU sugerido: 130. Uso experimental." },
+      "6m": { freq: 50.1, sfiMin: 140, targetSfi: 220, name: "6 metros (50.0 MHz)", category: "vhf", sfiLabel: "Flujo SFU sugerido: 140. 'La Banda Mágica' de VHF." }
+    };
+
+    const cfg = bandConfigs[bandId];
+    if (!cfg) {
+      return {
+        name: "Banda Desconocida",
+        status: "Cerrada",
+        color: "text-slate-400 bg-slate-50 border-slate-200",
+        badgeColor: "bg-slate-300",
+        textColor: "text-slate-500",
+        icon: XCircle,
+        desc: "Sin datos específicos.",
+        sfiMin: 100,
+        sfiLabel: "",
+        pct: 50,
+        category: "medium"
+      };
+    }
+
+    const muf = noaa.muf || 14.5;
+    const luf = noaa.luf || 2.0;
+    const isStorm = hpValue >= 4.5;
+    const isMinorStorm = hpValue >= 3.5 && hpValue < 4.5;
+    const pct = Math.min(100, Math.round((currentSfi / cfg.targetSfi) * 100));
+
+    // Dynamic state assessment:
+    // 1. Is the band's frequency above the current MUF?
+    if (cfg.freq > muf) {
+      // Sporadic E exception for VHF (6m/8m) or 10m
+      if (bandId === "6m" || bandId === "8m") {
+        if (currentSfi > 140 && !isStorm) {
+          return {
+            ...cfg,
+            status: "Apertura Esporádica",
+            color: "text-amber-700 bg-amber-50 border-amber-200",
+            badgeColor: "bg-amber-500",
+            textColor: "text-amber-800",
+            icon: AlertTriangle,
+            desc: "Frecuencia superior a la MUF base, pero las nubes de ionización esporádica Sporadic-E permiten enlaces rápidos.",
+            pct
+          };
+        }
+        return {
+          ...cfg,
+          status: "Cerrada (Supera MUF)",
+          color: "text-slate-400 bg-slate-50 border-slate-200",
+          badgeColor: "bg-slate-300",
+          textColor: "text-slate-500",
+          icon: XCircle,
+          desc: "Frecuencia superior a la Máxima Usable (MUF). Las señales de radio atraviesan la ionósfera rumbo al espacio.",
+          pct
+        };
+      }
+
+      if ((bandId === "10m" || bandId === "11m" || bandId === "12m") && currentSfi > 120 && !isStorm) {
+        return {
+          ...cfg,
+          status: "Apertura Marginal",
+          color: "text-amber-600 bg-amber-50/50 border-amber-200/50",
+          badgeColor: "bg-amber-400",
+          textColor: "text-amber-800",
+          icon: AlertTriangle,
+          desc: "Ligeramente por encima de la MUF calculada. Contactos esporádicos breves hacia zonas ecuatoriales.",
+          pct
+        };
+      }
+
+      return {
+        ...cfg,
+        status: "Cerrada (Supera MUF)",
+        color: "text-slate-400 bg-slate-50/50 border-slate-200/50",
+        badgeColor: "bg-slate-300",
+        textColor: "text-slate-500",
+        icon: XCircle,
+        desc: `Inactiva. Frecuencia superior a la Máxima Usable (MUF actual: ${muf.toFixed(2)} MHz). Las ondas no se refractan.`,
+        pct
+      };
+    }
+
+    // 2. Is the band's frequency below the current LUF?
+    if (cfg.freq < luf) {
+      if (isStorm) {
+        return {
+          ...cfg,
+          status: "Blackout / Absorbida",
+          color: "text-red-700 bg-red-50 border-red-200",
+          badgeColor: "bg-red-600",
+          textColor: "text-red-950",
+          icon: XCircle,
+          desc: `Absorción de tormenta severa en la capa D. Frecuencia inferior a la LUF (${luf.toFixed(2)} MHz). Redes REMER en HF degradadas.`,
+          pct
+        };
+      }
+      return {
+        ...cfg,
+        status: "Absorbida (Menor que LUF)",
+        color: "text-slate-400 bg-slate-50/30 border-slate-200/40",
+        badgeColor: "bg-slate-300",
+        textColor: "text-slate-400",
+        icon: XCircle,
+        desc: `Frecuencia inferior a la LUF actual de ${luf.toFixed(2)} MHz. Las ondas son completamente absorbidas por colisiones en la capa D.`,
+        pct
+      };
+    }
+
+    // 3. Band is Open! (LUF <= Freq <= MUF)
+    if (isStorm) {
+      return {
+        ...cfg,
+        status: "Abierta con Ruido Severo",
+        color: "text-red-700 bg-red-50 border-red-200",
+        badgeColor: "bg-red-500",
+        textColor: "text-red-900",
+        icon: AlertTriangle,
+        desc: `Refractiva pero inútil por ruido extremo. Tormenta geomagnética (Hp60: ${hpValue.toFixed(2)}) genera QRN masivo y desvanecimientos.`,
+        pct
+      };
+    }
+
+    if (isMinorStorm) {
+      return {
+        ...cfg,
+        status: "Operativa (Fading Severo)",
+        color: "text-amber-700 bg-amber-50 border-amber-200",
+        badgeColor: "bg-amber-500",
+        textColor: "text-amber-900",
+        icon: AlertTriangle,
+        desc: "Enlaces viables pero inestables debido al centelleo ionosférico y desvanecimientos rápidos.",
+        pct
+      };
+    }
+
+    // Evaluate position within the useful ionospheric window
+    const windowSize = muf - luf;
+    const positionPercent = windowSize > 0 ? ((cfg.freq - luf) / windowSize) * 100 : 50;
+
+    // FOT (Frequency of Optimum Transmission) near MUF (upper 30% of the window)
+    if (positionPercent > 70) {
+      return {
+        ...cfg,
+        status: "Excelente / Canal Óptimo",
+        color: "text-cyan-700 bg-cyan-50 border-cyan-200",
+        badgeColor: "bg-cyan-500",
+        textColor: "text-cyan-850",
+        icon: Zap,
+        desc: `FOT Óptima. Muy baja pérdida de propagación al estar cerca del límite superior (MUF: ${muf.toFixed(2)} MHz). Señales potentes y estables.`,
+        pct
+      };
+    }
+
+    // Main window (middle 40%)
+    if (positionPercent > 30) {
+      return {
+        ...cfg,
+        status: "Totalmente Operativa",
+        color: "text-emerald-700 bg-emerald-50 border-emerald-200",
+        badgeColor: "bg-emerald-500",
+        textColor: "text-emerald-800",
+        icon: CheckCircle,
+        desc: "Muy estable. La banda se sitúa perfectamente dentro del espectro refractivo útil. Bajos niveles de ruido y buena atenuación.",
+        pct
+      };
+    }
+
+    // Near LUF (lower 30%)
+    return {
+      ...cfg,
+      status: "Operatividad Parcial",
+      color: "text-amber-600 bg-amber-50 border-amber-200/60",
+      badgeColor: "bg-amber-500",
+      textColor: "text-amber-800",
+      icon: AlertTriangle,
+      desc: `Abierta pero con atenuación moderada. Frecuencia muy cercana al límite inferior LUF (${luf.toFixed(2)} MHz). Requiere más potencia.`,
+      pct
+    };
+  };
+
   const allBands = [
     { id: "160m" },
     { id: "80m" },
@@ -1244,6 +1518,140 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                   {rtsw.speed ? Math.round(rtsw.speed) : "412"} km/s
                 </span>
               </div>
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Índice UV Dinámico</span>
+                  {(() => {
+                    const uvStyle = getUvDetailedStyle(noaa.iuv);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${uvStyle.textColor}`}>
+                          {noaa.iuv !== undefined ? noaa.iuv.toFixed(1) : "0.0"}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${uvStyle.badgeClass}`}>
+                            {uvStyle.text}
+                          </span>
+                          <span className="text-[7px] text-slate-400 font-mono font-medium block mt-0.5">
+                            {uvStyle.pantone} | {uvStyle.hex}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
+                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Ruido Radio HF</span>
+                <span className="text-[11px] font-bold text-indigo-600 font-sans block mt-2 leading-tight">
+                  {noaa.solarNoise || "Mínimo"}
+                </span>
+              </div>
+              
+              {/* MUF & LUF Ionospheric Window */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl col-span-2">
+                <div className="flex justify-around items-center">
+                  <div className="text-center">
+                    <span className="text-slate-500 text-[8.5px] uppercase block tracking-wider font-sans font-bold">MUF (Máxima)</span>
+                    <span className="text-base font-extrabold text-sky-600 font-mono block mt-0.5">
+                      {noaa.muf !== undefined ? `${noaa.muf.toFixed(2)}` : "14.50"}<span className="text-[10px] ml-0.5">MHz</span>
+                    </span>
+                  </div>
+                  <div className="h-6 w-px bg-slate-200"></div>
+                  <div className="text-center">
+                    <span className="text-slate-500 text-[8.5px] uppercase block tracking-wider font-sans font-bold">LUF (Mínima)</span>
+                    <span className="text-base font-extrabold text-rose-500 font-mono block mt-0.5">
+                      {noaa.luf !== undefined ? `${noaa.luf.toFixed(2)}` : "2.00"}<span className="text-[10px] ml-0.5">MHz</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 flex justify-between items-center text-[9px] font-sans">
+                  <span className="text-slate-400">Espectro útil de propagación:</span>
+                  {(() => {
+                    const mufVal = noaa.muf || 14.5;
+                    const lufVal = noaa.luf || 2.0;
+                    if (mufVal > lufVal) {
+                      return (
+                        <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                          {(mufVal - lufVal).toFixed(2)} MHz Útil
+                        </span>
+                      );
+                    } else {
+                      return (
+                        <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 animate-pulse">
+                          APAGÓN (LUF ≥ MUF)
+                        </span>
+                      );
+                    }
+                  })()}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center col-span-2">
+                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Alertas NOAA (R, S, G)</span>
+                <span className="text-[10.5px] font-mono font-bold text-slate-700 block mt-1">
+                  R: <span className="text-red-500 font-extrabold">{noaa.rScale || "R0"}</span> | S: <span className="text-red-500 font-extrabold">{noaa.sScale || "S0"}</span> | G: <span className="text-red-500 font-extrabold">{noaa.gScale || "G0"}</span>
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center col-span-2">
+                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Ubicación y Estado GNSS</span>
+                <span className="text-[10px] font-semibold text-emerald-600 font-sans block mt-1">
+                  {noaa.gps_status || "GPS Real (Fijado)"}
+                </span>
+              </div>
+            </div>
+
+            {/* Viento Solar en Vivo (NOAA RTSW) - Integrado */}
+            <div className="mt-4 border-t border-slate-100 pt-3.5 font-sans">
+              <span className="text-slate-500 text-[9px] uppercase tracking-wider font-bold block mb-2 flex items-center gap-1.5">
+                <Waves size={12} className="text-emerald-500 animate-pulse" />
+                Viento Solar en Vivo (NOAA RTSW)
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
+                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Velocidad</span>
+                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
+                    {typeof rtsw.speed === 'number' ? `${rtsw.speed.toFixed(1)} km/s` : '---'}
+                  </span>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
+                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Densidad</span>
+                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
+                    {typeof rtsw.density === 'number' ? `${rtsw.density.toFixed(1)} p/cm³` : '---'}
+                  </span>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
+                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">IMF Bz (N/S)</span>
+                  <span className={`font-mono text-xs font-extrabold block mt-0.5 ${
+                    typeof rtsw.bz === 'number' && rtsw.bz < -4.0 
+                      ? 'text-red-600 font-black animate-pulse' 
+                      : typeof rtsw.bz === 'number' && rtsw.bz < 0 
+                      ? 'text-amber-600' 
+                      : 'text-emerald-600'
+                  }`}>
+                    {typeof rtsw.bz === 'number' ? `${rtsw.bz > 0 ? '+' : ''}${rtsw.bz.toFixed(1)} nT` : '---'}
+                  </span>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
+                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Campo Total Bt</span>
+                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
+                    {typeof rtsw.bt === 'number' ? `${rtsw.bt.toFixed(1)} nT` : '---'}
+                  </span>
+                </div>
+              </div>
+              <div className={`mt-2 border rounded-lg py-1 px-2 text-center text-[9px] font-bold ${
+                typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
+                  ? 'bg-red-50 text-red-700 border-red-100' 
+                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
+                  ? 'bg-amber-50 text-amber-700 border-amber-100' 
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+              }`}>
+                {typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
+                  ? 'Bz Sur fuerte (Riesgo de tormenta)' 
+                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
+                  ? 'Bz Sur leve (Inestabilidad leve)' 
+                  : 'Bz Norte (Campo magnético estable)'}
+              </div>
             </div>
 
             {/* Band propagation conditions matrix (HamClock Classic) */}
@@ -1290,167 +1698,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                 Sincronización solar NOAA: {noaa.solar_updated}
               </span>
             )}
-          </div>
-        </div>
-
-        {/* Card 1: GFZ Potsdam High Resolution Geomagnetic Indices */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-xs font-bold text-slate-400 uppercase tracking-wider">GFZ POTSDAM INDEX</span>
-              <Activity size={14} className="text-cyan-500" />
-            </div>
-            
-            <h3 className="font-sans font-bold text-base text-slate-700 mt-2">
-              Ahora Geomagnético
-            </h3>
-            
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                <span className="font-sans text-[10px] text-slate-500 font-semibold block uppercase tracking-wider">ÍNDICE Hp30</span>
-                <span className="font-mono text-3xl font-extrabold text-slate-800 tracking-tight block mt-1">
-                  {gfz.Hp30.toFixed(2)}
-                </span>
-                <span className="font-sans text-[10px] text-slate-400 block mt-0.5">ap30: {gfz.ap30}</span>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl text-center">
-                <span className="font-sans text-[10px] text-slate-500 font-semibold block uppercase tracking-wider">ÍNDICE Hp60</span>
-                <span className="font-mono text-3xl font-extrabold text-slate-800 tracking-tight block mt-1">
-                  {gfz.Hp60.toFixed(2)}
-                </span>
-                <span className="font-sans text-[10px] text-slate-400 block mt-0.5">ap60: {gfz.ap60}</span>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <div className={`border rounded-lg py-2.5 px-3 text-center font-sans text-xs font-bold ${hp60Badge.bg}`}>
-                Condición actual: {hp60Badge.text}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-100 pt-4 mt-6 text-slate-400 font-sans text-[10px] leading-relaxed">
-            Los índices de 30 y 60 minutos miden la fluctuación instantánea del viento solar sobre el magnetismo terrestre. Un Hp60 menor a 3.0 es óptimo para DX.
-          </div>
-        </div>
-
-        {/* Card 2: NOAA Solar Flux Unit (SFU) */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-xs font-bold text-slate-400 uppercase tracking-wider">NOAA FLUX FORECAST</span>
-              <Sun size={14} className="text-amber-500" />
-            </div>
-
-            <h3 className="font-sans font-bold text-base text-slate-700 mt-2">
-              Predicción SFU (10.7cm)
-            </h3>
-
-            <div className="bg-gradient-to-br from-amber-50 to-orange-50/60 border border-amber-100 p-4 rounded-xl mt-4 flex items-center justify-between">
-              <div>
-                <span className="font-sans text-[10px] text-amber-800 font-bold uppercase tracking-wider block">FLUJO SOLAR DÍA 1</span>
-                <span className="font-mono text-4xl font-extrabold text-amber-900 tracking-tight block mt-1">
-                  {noaa.dia1} <span className="text-xs font-semibold">SFU</span>
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="font-sans text-[10px] text-slate-500 font-semibold uppercase block tracking-wider">DÍA 2 &amp; DÍA 3</span>
-                <span className="font-mono text-base font-bold text-slate-700 block mt-1">
-                  {noaa.dia2} / {noaa.dia3} SFU
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-4 text-center">
-              <div className="p-2 border border-slate-100 rounded-lg text-xs bg-slate-50 font-sans">
-                <span className="text-[10px] text-slate-400 block">Ionización general</span>
-                <span className="font-semibold text-slate-700 mt-0.5 block">Suficiente</span>
-              </div>
-              <div className="p-2 border border-slate-100 rounded-lg text-xs bg-slate-50 font-sans">
-                <span className="text-[10px] text-slate-400 block">Capas reflectivas</span>
-                <span className="font-semibold text-slate-700 mt-0.5 block">Ionizadas</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-100 pt-4 mt-6 text-slate-400 font-sans text-[10px] leading-relaxed">
-            El flujo de 10.7 cm se correlaciona con la radiación ultravioleta solar extrema que mantiene activa la capa F2 de la ionósfera terrestre.
-          </div>
-        </div>
-
-        {/* Card 3: NOAA RTSW (Real-Time Solar Wind) */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-xs font-bold text-slate-400 uppercase tracking-wider">NOAA RTSW LIVE</span>
-              <Waves size={14} className="text-emerald-500 animate-pulse" />
-            </div>
-
-            <h3 className="font-sans font-bold text-base text-slate-700 mt-2">
-              Viento Solar en Vivo
-            </h3>
-
-            <div className="space-y-3 mt-4">
-              <div className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                <div>
-                  <span className="font-sans text-[10px] text-slate-400 font-bold uppercase tracking-wider block">VELOCIDAD</span>
-                  <span className="font-mono text-sm font-extrabold text-slate-800">
-                    {typeof rtsw.speed === 'number' ? `${rtsw.speed.toFixed(1)} km/s` : '---'}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="font-sans text-[10px] text-slate-400 font-bold uppercase tracking-wider block">DENSIDAD</span>
-                  <span className="font-mono text-sm font-extrabold text-slate-800">
-                    {typeof rtsw.density === 'number' ? `${rtsw.density.toFixed(1)} p/cm³` : '---'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded-xl">
-                <div>
-                  <span className="font-sans text-[10px] text-slate-400 font-bold uppercase tracking-wider block">IMF Bz (N/S)</span>
-                  <span className={`font-mono text-sm font-extrabold ${
-                    typeof rtsw.bz === 'number' && rtsw.bz < -4.0 
-                      ? 'text-red-600 font-black animate-pulse' 
-                      : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                      ? 'text-amber-600' 
-                      : 'text-emerald-600'
-                  }`}>
-                    {typeof rtsw.bz === 'number' ? `${rtsw.bz > 0 ? '+' : ''}${rtsw.bz.toFixed(1)} nT` : '---'}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="font-sans text-[10px] text-slate-400 font-bold uppercase tracking-wider block">CAMPO TOTAL Bt</span>
-                  <span className="font-mono text-sm font-extrabold text-slate-800">
-                    {typeof rtsw.bt === 'number' ? `${rtsw.bt.toFixed(1)} nT` : '---'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <div className={`border rounded-lg py-1.5 px-2 text-center font-sans text-[10px] font-bold ${
-                typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
-                  ? 'bg-red-50 text-red-700 border-red-100' 
-                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                  ? 'bg-amber-50 text-amber-700 border-amber-100' 
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-              }`}>
-                {typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
-                  ? 'Bz Sur fuerte (Riesgo de tormenta)' 
-                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                  ? 'Bz Sur leve (Inestabilidad leve)' 
-                  : 'Bz Norte (Campo magnético estable)'}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-100 pt-3 mt-4 text-slate-400 font-sans text-[9px] leading-relaxed flex justify-between items-center">
-            <span>RTSW (Satélite DSCOVR)</span>
-            <span className="font-mono text-[8px] text-slate-500 uppercase">
-              {rtsw.real ? 'REAL' : 'MOCK'} {rtsw.time ? rtsw.time.substring(11, 16) : ''} UTC
-            </span>
           </div>
         </div>
 

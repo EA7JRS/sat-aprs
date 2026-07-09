@@ -3972,6 +3972,237 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
   }
 }
 
+let cachedXrays = 0.0;
+let lastXraysFetch = 0;
+
+async function fetchNoaaXrays() {
+  const now = Date.now();
+  if (now - lastXraysFetch < 300000 && cachedXrays > 0) {
+    return cachedXrays;
+  }
+  const url = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      const xray_long = data.filter((d: any) => d.energy_band === "0.1-0.8nm" || d.energy === "0.1-0.8nm");
+      if (xray_long.length > 0) {
+        cachedXrays = parseFloat(xray_long[xray_long.length - 1].flux) || 0.0;
+        lastXraysFetch = now;
+        return cachedXrays;
+      }
+    }
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    console.warn("Error fetching NOAA Xrays:", err.message);
+  }
+  return cachedXrays || 1.2e-7;
+}
+
+let cachedProtons = 0.0;
+let lastProtonsFetch = 0;
+
+async function fetchNoaaProtons() {
+  const now = Date.now();
+  if (now - lastProtonsFetch < 300000 && cachedProtons > 0) {
+    return cachedProtons;
+  }
+  const url = 'https://services.swpc.noaa.gov/json/goes/primary/protons-1-day.json';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      cachedProtons = parseFloat(data[data.length - 1].flux) || 0.0;
+      lastProtonsFetch = now;
+      return cachedProtons;
+    }
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    console.warn("Error fetching NOAA Protons:", err.message);
+  }
+  return cachedProtons || 0.15;
+}
+
+function calculateUvIndex(sfi: number, lat: number, lon: number): number {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 0);
+    const diff = now.getTime() - start.getTime();
+    const oneDay = 1000 * 60 * 60 * 24;
+    const dayOfYear = Math.floor(diff / oneDay);
+
+    const declination = 23.45 * Math.sin((360 / 365) * (284 + dayOfYear) * Math.PI / 180);
+    const hourAngle = (now.getUTCHours() + now.getUTCMinutes() / 60 + lon / 15 - 12) * 15;
+
+    const sinElevation = Math.sin(lat * Math.PI / 180) * Math.sin(declination * Math.PI / 180) +
+                         Math.cos(lat * Math.PI / 180) * Math.cos(declination * Math.PI / 180) * Math.cos(hourAngle * Math.PI / 180);
+
+    const elevationDeg = Math.asin(Math.max(-1.0, Math.min(1.0, sinElevation))) * 180 / Math.PI;
+
+    if (elevationDeg <= 0) {
+      return 0.0;
+    }
+
+    const baseUv = 12.5 * sinElevation;
+    const sfiFactor = 1.0 + ((sfi - 70) / 200);
+
+    return parseFloat(Math.max(0.0, baseUv * Math.min(1.2, sfiFactor)).toFixed(1));
+  } catch (err) {
+    return 0.0;
+  }
+}
+
+function estimateSolarNoise(sfi: number): string {
+  if (sfi <= 70) return "Mínimo (Fondo térmico normal)";
+  if (sfi <= 120) return "Bajo (+0.5 dB)";
+  if (sfi <= 200) return "Moderado (+1.5 dB en 10m/12m)";
+  return "Elevado (Ruido constante en bandas altas)";
+}
+
+function getNoaaScales(xrayFlux: number, protonFlux: number, kp: number) {
+  let rScale = "R0 (Normal)";
+  if (xrayFlux >= 2e-4) rScale = "R5 (Extremo)";
+  else if (xrayFlux >= 1e-4) rScale = "R4 (Grave)";
+  else if (xrayFlux >= 1e-5) rScale = "R3 (Fuerte)";
+  else if (xrayFlux >= 5e-6) rScale = "R2 (Moderado)";
+  else if (xrayFlux >= 1e-6) rScale = "R1 (Menor)";
+
+  let sScale = "S0 (Normal)";
+  if (protonFlux >= 100000) sScale = "S5 (Extremo)";
+  else if (protonFlux >= 10000) sScale = "S4 (Grave)";
+  else if (protonFlux >= 1000) sScale = "S3 (Fuerte)";
+  else if (protonFlux >= 100) sScale = "S2 (Moderado)";
+  else if (protonFlux >= 10) sScale = "S1 (Menor)";
+
+  let gScale = "G0 (Normal)";
+  if (kp >= 9) gScale = "G5 (Extremo)";
+  else if (kp === 8) gScale = "G4 (Severo)";
+  else if (kp === 7) gScale = "G3 (Fuerte)";
+  else if (kp === 6) gScale = "G2 (Moderado)";
+  else if (kp === 5) gScale = "G1 (Menor)";
+
+  return { rScale, sScale, gScale };
+}
+
+function calculateSolarElevation(lat: number, lon: number): number {
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 0);
+    const diff = now.getTime() - start.getTime();
+    const oneDay = 1000 * 60 * 60 * 24;
+    const dayOfYear = Math.floor(diff / oneDay);
+    
+    const declination = 23.45 * Math.sin(((360 / 365) * (284 + dayOfYear) * Math.PI) / 180);
+    const hourAngle = (now.getUTCHours() + now.getUTCMinutes() / 60 + lon / 15 - 12) * 15;
+    
+    const sinElevation = Math.sin((lat * Math.PI) / 180) * Math.sin((declination * Math.PI) / 180) +
+                         Math.cos((lat * Math.PI) / 180) * Math.cos((declination * Math.PI) / 180) * Math.cos((hourAngle * Math.PI) / 180);
+    
+    return Math.asin(Math.max(-1.0, Math.min(1.0, sinElevation)));
+  } catch (err) {
+    return 0.0;
+  }
+}
+
+function calculateMufAndBands(sfi: number, lat: number, lon: number) {
+  try {
+    const elevationRad = calculateSolarElevation(lat, lon);
+    const elevationDeg = (elevationRad * 180) / Math.PI;
+    
+    const mufBase = 7.0 + (sfi - 65) * 0.06;
+    let mufTotal = mufBase;
+    
+    if (elevationDeg > 0) {
+      const diurnalFactor = Math.sin(elevationRad) * (12.0 + (sfi - 70) * 0.12);
+      mufTotal = mufBase + diurnalFactor;
+    } else {
+      mufTotal = Math.max(4.5, mufBase * 0.85);
+    }
+    
+    mufTotal = parseFloat(mufTotal.toFixed(2));
+    
+    const status20m = mufTotal >= 14.0 ? "Abierta" : "Cerrada";
+    const status15m = mufTotal >= 21.0 ? "Abierta" : "Cerrada";
+    const status10m = mufTotal >= 28.0 ? "Abierta" : mufTotal >= 26.0 ? "Propagación Crítica" : "Cerrada";
+    
+    return { muf: mufTotal, b20: status20m, b15: status15m, b10: status10m };
+  } catch (err) {
+    return { muf: 14.0, b20: "Indeterminado", b15: "Indeterminado", b10: "Indeterminado" };
+  }
+}
+
+function calculateLuf(sfi: number, xrayFlux: number, lat: number, lon: number): number {
+  try {
+    const elevationRad = calculateSolarElevation(lat, lon);
+    const elevationDeg = (elevationRad * 180) / Math.PI;
+    
+    // LUF nocturna base
+    const lufBase = 1.5 + (sfi - 65) * 0.005;
+    let lufTotal = lufBase;
+    
+    if (elevationDeg > 0) {
+      // Absorción diurna por inclinación solar y fotoionización
+      const diurnalAbs = Math.sin(elevationRad) * (2.0 + (sfi - 70) * 0.015);
+      lufTotal = lufBase + diurnalAbs;
+    } else {
+      lufTotal = Math.max(1.0, lufBase * 0.7);
+    }
+    
+    // Impacto de Rayos X (Solar Flares elevan absorción en capa D)
+    if (xrayFlux !== undefined && xrayFlux !== null) {
+      if (xrayFlux > 1e-4) {       // Clase X
+        lufTotal += 8.0;
+      } else if (xrayFlux > 1e-5) { // Clase M
+        lufTotal += 4.0;
+      } else if (xrayFlux > 1e-6) { // Clase C
+        lufTotal += 1.5;
+      } else if (xrayFlux > 1e-7) { // Clase B
+        lufTotal += 0.5;
+      }
+    }
+    
+    return parseFloat(Math.max(0.5, lufTotal).toFixed(2));
+  } catch (err) {
+    return 2.0;
+  }
+}
+
+function getXrayClass(fluxValue: number): string {
+  if (fluxValue === undefined || fluxValue === null || fluxValue === 0) return "A0.0";
+  if (fluxValue < 1e-8) return "A0.0";
+  else if (fluxValue < 1e-7) return `A${(fluxValue / 1e-9).toFixed(1)}`;
+  else if (fluxValue < 1e-6) return `B${(fluxValue / 1e-8).toFixed(1)}`;
+  else if (fluxValue < 1e-5) return `C${(fluxValue / 1e-7).toFixed(1)}`;
+  else if (fluxValue < 1e-4) return `M${(fluxValue / 1e-6).toFixed(1)}`;
+  else return `X${(fluxValue / 1e-5).toFixed(1)}`;
+}
+
+function estimateSUnitsNoise(kp: number, sfi: number): string {
+  try {
+    let geomagNoise = 0.5;
+    if (kp <= 1) geomagNoise = 0.5;
+    else if (kp <= 2) geomagNoise = 1.0;
+    else if (kp <= 3) geomagNoise = 2.0;
+    else if (kp <= 4) geomagNoise = 3.5;
+    else if (kp === 5) geomagNoise = 5.0;
+    else if (kp === 6) geomagNoise = 6.5;
+    else geomagNoise = 8.0;
+    
+    const sfiExtra = sfi > 150 ? (sfi > 220 ? 1.0 : 0.5) : 0.0;
+    return `S${(geomagNoise + sfiExtra).toFixed(1)}`;
+  } catch (err) {
+    return "S2.0";
+  }
+}
+
 async function getPropagationData(isEco: boolean = false) {
   const now = Date.now();
   const cacheLimit = isEco ? 300000 : 60000; // 5 min for eco, 1 min normally
@@ -3979,12 +4210,39 @@ async function getPropagationData(isEco: boolean = false) {
     return cachedPropagation;
   }
   
-  const [gfzResult, noaaResult, rtswResult, solarResult] = await Promise.all([
+  const [gfzResult, noaaResult, rtswResult, solarResult, xrayFlux, protonFlux] = await Promise.all([
     fetchGfzNowcast(),
     fetchNoaa3DayForecast(),
     fetchNoaaRtswData(isEco),
-    fetchNoaaSolarIndices()
+    fetchNoaaSolarIndices(),
+    fetchNoaaXrays(),
+    fetchNoaaProtons()
   ]);
+
+  const sfiVal = parseFloat(solarResult.sfi || noaaResult.dia1 || "150") || 150;
+  
+  // Obtener posición del GPS para cálculo de UV dinámico
+  const gpsLat = gpsdState.lat || 40.4167;
+  const gpsLon = gpsdState.lon || -3.7037;
+  const iuv = calculateUvIndex(sfiVal, gpsLat, gpsLon);
+  const solarNoise = estimateSolarNoise(sfiVal);
+
+  // Kp actual o estimado
+  let kpVal = 1;
+  if (gfzResult && gfzResult.Hp30 !== undefined) {
+    kpVal = Math.round(gfzResult.Hp30);
+  } else if (rtswResult && rtswResult.speed !== null) {
+    const spd = rtswResult.speed || 350;
+    const bz = rtswResult.bz || 0;
+    if (spd > 600 || bz < -8) kpVal = 5;
+    else if (spd > 500 || bz < -4) kpVal = 3;
+    else if (spd > 400) kpVal = 2;
+  }
+
+  const { rScale, sScale, gScale } = getNoaaScales(xrayFlux, protonFlux, kpVal);
+  const mufBands = calculateMufAndBands(sfiVal, gpsLat, gpsLon);
+  const lufVal = calculateLuf(sfiVal, xrayFlux, gpsLat, gpsLon);
+  const delayL1 = rtswResult && rtswResult.speed ? (1500000.0 / rtswResult.speed) / 60.0 : 45.0;
 
   cachedPropagation = {
     lastUpdated: new Date().toLocaleTimeString('es-ES'),
@@ -4000,7 +4258,23 @@ async function getPropagationData(isEco: boolean = false) {
       real: noaaResult.real || false,
       ssn: solarResult.ssn || "110",
       solar_updated: solarResult.time_tag || "",
-      kp_tendencia: noaaResult.kp_tendencia || "No disponible"
+      kp_tendencia: noaaResult.kp_tendencia || "No disponible",
+      xrayFlux,
+      protonFlux,
+      rScale,
+      sScale,
+      gScale,
+      iuv,
+      solarNoise,
+      gps_status: gpsdState.isFallback ? "Estática (Fallback / Config)" : "GPS Real (GNSS Fijado)",
+      xrayClass: getXrayClass(xrayFlux),
+      noiseS: estimateSUnitsNoise(kpVal, sfiVal),
+      muf: mufBands.muf,
+      luf: lufVal,
+      b20: mufBands.b20,
+      b15: mufBands.b15,
+      b10: mufBands.b10,
+      delayL1
     },
     rtsw: rtswResult
   };

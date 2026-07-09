@@ -1238,11 +1238,32 @@ except Exception as e:
                   const uvVal = activeCityData.uv || 5;
 
                   // UV label
-                  let uvClass = 'text-green-400 bg-green-950/40 border-green-900/60';
+                  let uvClass = 'text-[#8ED300] bg-[#8ED300]/10 border-[#8ED300]/30';
                   let uvText = 'Bajo';
-                  if (uvVal >= 8) { uvClass = 'text-rose-400 bg-rose-950/40 border-rose-900/60 animate-pulse'; uvText = 'Muy Alto / Extremo'; }
-                  else if (uvVal >= 6) { uvClass = 'text-orange-400 bg-orange-950/40 border-orange-900/60'; uvText = 'Alto'; }
-                  else if (uvVal >= 3) { uvClass = 'text-yellow-400 bg-yellow-950/40 border-yellow-900/60'; uvText = 'Moderado'; }
+                  let uvPantone = 'PMS 375';
+                  let uvHex = '#8ED300';
+                  
+                  if (uvVal >= 11) {
+                    uvClass = 'text-[#924B9F] bg-[#924B9F]/10 border-[#924B9F]/30 animate-pulse';
+                    uvText = 'Extremadamente Alto';
+                    uvPantone = 'PMS 265';
+                    uvHex = '#924B9F';
+                  } else if (uvVal >= 8) {
+                    uvClass = 'text-[#EE1C25] bg-[#EE1C25]/10 border-[#EE1C25]/30 animate-pulse';
+                    uvText = 'Muy Alto';
+                    uvPantone = 'PMS 032';
+                    uvHex = '#EE1C25';
+                  } else if (uvVal >= 6) {
+                    uvClass = 'text-[#FF7F00] bg-[#FF7F00]/10 border-[#FF7F00]/30';
+                    uvText = 'Alto';
+                    uvPantone = 'PMS 151';
+                    uvHex = '#FF7F00';
+                  } else if (uvVal >= 3) {
+                    uvClass = 'text-amber-500 bg-[#FFF200]/25 border-yellow-400/50';
+                    uvText = 'Moderado';
+                    uvPantone = 'PMS 102';
+                    uvHex = '#FFF200';
+                  }
 
                   return (
                     <div className="bg-slate-950 border border-slate-900 rounded-xl p-4.5 space-y-4 shadow-xl" id="forecast-detailed-display">
@@ -1297,10 +1318,15 @@ except Exception as e:
                           </div>
                         </div>
 
-                        <div className="bg-slate-900 border border-slate-900 rounded-lg p-3 border-l-2">
+                        <div className="bg-slate-900 border border-slate-900 rounded-lg p-2.5 border-l-2 flex flex-col justify-between">
                           <span className="text-[8px] text-slate-500 uppercase block font-bold">Radiación UV</span>
-                          <div className={`mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded border text-center ${uvClass}`}>
-                            {uvVal} - {uvText}
+                          <div className="mt-1">
+                            <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border text-center ${uvClass}`}>
+                              {uvVal} - {uvText}
+                            </div>
+                            <span className="text-[7.5px] text-slate-500 font-mono block text-center mt-1">
+                              {uvPantone} | {uvHex}
+                            </span>
                           </div>
                         </div>
                       </div>

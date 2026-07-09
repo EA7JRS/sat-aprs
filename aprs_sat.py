@@ -824,12 +824,214 @@ def obtener_pronostico_3h():
     except Exception as e:
         return f"Error al parsear el pronóstico ({e})"
 
+def calculate_uv_index(sfi, lat, lon):
+    """Calcula una aproximación del Índice UV Solar Global (IUV) basándose en coordenadas dinámicas."""
+    try:
+        now = datetime.utcnow()
+        day_of_year = now.timetuple().tm_yday
+        declination = 23.45 * math.sin(math.radians((360 / 365) * (284 + day_of_year)))
+        
+        hour_angle = (now.hour + now.minute/60 + lon/15 - 12) * 15
+        
+        sin_elevation = (math.sin(math.radians(lat)) * math.sin(math.radians(declination)) + 
+                         math.cos(math.radians(lat)) * math.cos(math.radians(declination)) * math.cos(math.radians(hour_angle)))
+        
+        elevation = math.asin(max(-1.0, min(1.0, sin_elevation)))
+        elevation_deg = math.degrees(elevation)
+        
+        if elevation_deg <= 0:
+            return 0.0
+            
+        base_uv = 12.5 * math.sin(elevation)
+        sfi_factor = 1.0 + ((float(sfi) - 70) / 200) if isinstance(sfi, (int, float)) else 1.0
+        
+        return max(0.0, round(base_uv * min(1.2, sfi_factor), 1))
+    except Exception:
+        return 0.0
+
+def get_uv_category_and_colors(uv_val):
+    """Retorna categoría, Pantone, RGB y código Hexadecimal para un índice UV dado."""
+    try:
+        val = float(uv_val)
+    except Exception:
+        val = 0.0
+        
+    if val <= 2:
+        return "Bajo", "PMS 375", "(142, 211, 0)", "#8ED300"
+    elif val <= 5:
+        return "Moderado", "PMS 102", "(255, 242, 0)", "#FFF200"
+    elif val <= 7:
+        return "Alto", "PMS 151", "(255, 127, 0)", "#FF7F00"
+    elif val <= 10:
+        return "Muy Alto", "PMS 032", "(238, 28, 37)", "#EE1C25"
+    else:
+        return "Extremadamente Alto", "PMS 265", "(146, 75, 159)", "#924B9F"
+
+def get_noaa_scales(xray_flux, proton_flux, kp):
+    """Determina los niveles de las escalas R, S y G de la NOAA."""
+    r_scale = "R0 (Normal)"
+    if xray_flux >= 2e-4: r_scale = "R5 (Extremo)"
+    elif xray_flux >= 1e-4: r_scale = "R4 (Grave)"
+    elif xray_flux >= 1e-5: r_scale = "R3 (Fuerte)"
+    elif xray_flux >= 5e-6: r_scale = "R2 (Moderado)"
+    elif xray_flux >= 1e-6: r_scale = "R1 (Menor)"
+
+    s_scale = "S0 (Normal)"
+    if proton_flux >= 100000: s_scale = "S5 (Extremo)"
+    elif proton_flux >= 10000: s_scale = "S4 (Grave)"
+    elif proton_flux >= 1000: s_scale = "S3 (Fuerte)"
+    elif proton_flux >= 100: s_scale = "S2 (Moderado)"
+    elif proton_flux >= 10: s_scale = "S1 (Menor)"
+
+    g_scale = "G0 (Normal)"
+    if kp >= 9: g_scale = "G5 (Extremo)"
+    elif kp == 8: g_scale = "G4 (Severo)"
+    elif kp == 7: g_scale = "G3 (Fuerte)"
+    elif kp == 6: g_scale = "G2 (Moderado)"
+    elif kp == 5: g_scale = "G1 (Menor)"
+
+    return r_scale, s_scale, g_scale
+
+def estimate_solar_noise(sfi):
+    """Calcula el Solar Noise adicional inducido en las bandas de HF."""
+    try:
+        sfi_val = float(sfi)
+        if sfi_val <= 70: return "Mínimo (Fondo térmico normal)"
+        elif sfi_val <= 120: return "Bajo (+0.5 dB)"
+        elif sfi_val <= 200: return "Moderado (+1.5 dB en 10m/12m)"
+        else: return "Elevado (Ruido constante en bandas altas)"
+    except Exception:
+        return "Indeterminado"
+
+def get_detailed_forecast():
+    """Extrae las tendencias de Kp y alertas para las próximas horas desde el pronóstico oficial de NOAA."""
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request("https://services.swpc.noaa.gov/text/3-day-forecast.txt", headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+        with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
+            texto = response.read().decode('utf-8', errors='ignore')
+        lines = texto.split("\n")
+        forecast_lines = []
+        start_capture = False
+        
+        for line in lines:
+            if "rationale" in line.lower() or "noaa kp index breakdown" in line.lower():
+                start_capture = True
+                continue
+            if start_capture and len(forecast_lines) < 4 and any(block in line for block in ["UT", "00-03", "06-09", "12-15"]):
+                clean_line = line.strip()
+                if clean_line:
+                    forecast_lines.append(clean_line)
+                    
+        return forecast_lines if forecast_lines else ["No hay tendencias estructuradas."]
+    except Exception:
+        return ["Error al conectar con el servidor de predicción."]
+
+def calculate_solar_elevation(lat, lon):
+    """Calcula la elevación angular del sol en radianes."""
+    try:
+        now = datetime.utcnow()
+        day_of_year = now.timetuple().tm_yday
+        declination = 23.45 * math.sin(math.radians((360 / 365) * (284 + day_of_year)))
+        hour_angle = (now.hour + now.minute/60 + lon/15 - 12) * 15
+        sin_elevation = (math.sin(math.radians(lat)) * math.sin(math.radians(declination)) + 
+                         math.cos(math.radians(lat)) * math.cos(math.radians(declination)) * math.cos(math.radians(hour_angle)))
+        return math.asin(max(-1.0, min(1.0, sin_elevation)))
+    except Exception:
+        return 0.0
+
+def calculate_muf_and_bands(sfi, lat, lon):
+    """Estima la MUF (Máxima Frecuencia Usable) en MHz y el estado de apertura de bandas."""
+    try:
+        sfi_val = float(sfi)
+        elevation_rad = calculate_solar_elevation(lat, lon)
+        elevation_deg = math.degrees(elevation_rad)
+        
+        muf_base = 7.0 + (sfi_val - 65) * 0.06
+        
+        if elevation_deg > 0:
+            diurnal_factor = math.sin(elevation_rad) * (12.0 + (sfi_val - 70) * 0.12)
+            muf_total = muf_base + diurnal_factor
+        else:
+            muf_total = max(4.5, muf_base * 0.85)
+            
+        muf_total = round(muf_total, 2)
+        
+        status_20m = "Abierta" if muf_total >= 14.0 else "Cerrada"
+        status_15m = "Abierta" if muf_total >= 21.0 else "Cerrada"
+        status_10m = "Abierta" if muf_total >= 28.0 else ("Propagación Crítica" if muf_total >= 26.0 else "Cerrada")
+        
+        return muf_total, status_20m, status_15m, status_10m
+    except Exception:
+        return 14.0, "Indeterminado", "Indeterminado", "Indeterminado"
+
+def calculate_luf(sfi, xray_flux, lat, lon):
+    """Estima la LUF (Lowest Usable Frequency) en MHz basada en absorción e inclinación solar."""
+    try:
+        sfi_val = float(sfi)
+        elevation_rad = calculate_solar_elevation(lat, lon)
+        elevation_deg = math.degrees(elevation_rad)
+        
+        # LUF nocturna base
+        luf_base = 1.5 + (sfi_val - 65) * 0.005
+        
+        if elevation_deg > 0:
+            # Absorción diurna por inclinación solar y fotoionización
+            diurnal_abs = math.sin(elevation_rad) * (2.0 + (sfi_val - 70) * 0.015)
+            luf_total = luf_base + diurnal_abs
+        else:
+            luf_total = max(1.0, luf_base * 0.7)
+            
+        # Impacto de Rayos X (Solar Flares elevan absorción en capa D)
+        if xray_flux is not None:
+            if xray_flux > 1e-4:    # Clase X
+                luf_total += 8.0
+            elif xray_flux > 1e-5:  # Clase M
+                luf_total += 4.0
+            elif xray_flux > 1e-6:  # Clase C
+                luf_total += 1.5
+            elif xray_flux > 1e-7:  # Clase B
+                luf_total += 0.5
+                
+        return round(max(0.5, luf_total), 2)
+    except Exception:
+        return 2.0
+
+def get_xray_class(flux_value):
+    """Convierte el flujo de rayos X a nomenclatura estándar."""
+    if flux_value is None or flux_value == 0: return "A0.0"
+    if flux_value < 1e-8: return "A0.0"
+    elif flux_value < 1e-7: return f"A{flux_value / 1e-9:.1f}"
+    elif flux_value < 1e-6: return f"B{flux_value / 1e-8:.1f}"
+    elif flux_value < 1e-5: return f"C{flux_value / 1e-7:.1f}"
+    elif flux_value < 1e-4: return f"M{flux_value / 1e-6:.1f}"
+    else: return f"X{flux_value / 1e-5:.1f}"
+
+def estimate_s_units_noise(kp, sfi):
+    """Estima el piso de ruido en el S-Meter del receptor."""
+    try:
+        if kp <= 1: geomag_noise = 0.5
+        elif kp <= 2: geomag_noise = 1.0
+        elif kp <= 3: geomag_noise = 2.0
+        elif kp <= 4: geomag_noise = 3.5
+        elif kp == 5: geomag_noise = 5.0
+        elif kp == 6: geomag_noise = 6.5
+        else: geomag_noise = 8.0
+        sfi_extra = 0.5 if float(sfi) > 150 else (1.0 if float(sfi) > 220 else 0.0)
+        return f"S{geomag_noise + sfi_extra:.1f}"
+    except Exception:
+        return "S2.0"
+
 def obtener_clima_espacial_avanzado():
     """
     Descarga telemetría de satélite y geomagnética en tiempo real (NOAA y GFZ),
     aplica compensación de desfase físico y alinea todos los índices en la Tierra.
+    Incorpora la lógica avanzada del monitor espacial con cálculo dinámico del IUV,
+    ruido solar en HF, escalas oficiales R, S y G, y pronóstico de tendencias.
     """
-    print("[CLIMA ESPACIAL] Iniciando procesamiento de telemetría unificada (NOAA/GFZ Potsdam)...")
+    print("[CLIMA ESPACIAL] Iniciando procesamiento de telemetría unificada avanzada (NOAA/GFZ Potsdam)...")
     try:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
@@ -839,6 +1041,12 @@ def obtener_clima_espacial_avanzado():
         mag_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"
         kp_url = "https://services.swpc.noaa.gov/json/estimated_kp_1d.json"
         solar_url = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
+        xray_url = "https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json"
+        protons_url = "https://services.swpc.noaa.gov/json/goes/primary/protons-1-day.json"
+
+        # 1. Obtener ubicación GNSS actual de gpsd o fallback
+        lat, lon, alt, is_fallback = get_gpsd_coordinates()
+        gps_status = "Estática (Fallback / Config)" if is_fallback else "GPS Real (GNSS Fijado)"
 
         # Plasma
         plasma_data = []
@@ -891,14 +1099,37 @@ def obtener_clima_espacial_avanzado():
         except Exception as e:
             print(f"  [NOAA WARNING] Error al descargar índices solares: {e}")
 
-        # 2. Descargar Hp30 y Hp60 desde GFZ Potsdam
+        # Rayos X (GOES)
+        xray_flux = 0.0
+        try:
+            req = urllib.request.Request(xray_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                xray_data = json.loads(r.read().decode('utf-8'))
+                xray_long = [d for d in xray_data if d.get("energy_band") == "0.1-0.8nm" or d.get("energy") == "0.1-0.8nm"]
+                if xray_long:
+                    xray_flux = float(xray_long[-1].get("flux", 0.0))
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar Rayos X: {e}")
+
+        # Protones (GOES)
+        proton_flux = 0.0
+        try:
+            req = urllib.request.Request(protons_url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+                proton_data = json.loads(r.read().decode('utf-8'))
+                if proton_data:
+                    proton_flux = float(proton_data[-1].get("flux", 0.0))
+        except Exception as e:
+            print(f"  [NOAA WARNING] Error al descargar Protones: {e}")
+
+        # Hp30 y Hp60 desde GFZ Potsdam
         hp30_data = obtener_indice_gfz("Hp30")
         hp60_data = obtener_indice_gfz("Hp60")
 
-        # 3. Pronóstico de tendencias futuras (Cálculo dinámico extraído)
+        # Pronóstico de tendencias futuras (Cálculo dinámico extraído)
         kp_predicho = obtener_pronostico_3h()
 
-        # 4. Fusionar Plasma + Mag sobre time_tag de satélite
+        # Fusionar Plasma + Mag sobre time_tag de satélite
         if not plasma_data or not mag_data:
             print("  [CLIMA ESPACIAL ERROR] Datos insuficientes en satélite para realizar fusión.")
             return
@@ -911,6 +1142,17 @@ def obtener_clima_espacial_avanzado():
         for m_str in all_minutes:
             p_item = plasma_map[m_str]
             m_item = mag_map[m_str]
+            
+            # Cálculo de retardo físico dinámico L1-Tierra basado en la velocidad del viento solar
+            speed_val = p_item.get("speed")
+            try:
+                v = float(speed_val) if speed_val is not None else 400.0
+                if v <= 0:
+                    v = 400.0
+                delay_minutes = (1500000.0 / v) / 60.0
+            except Exception:
+                delay_minutes = 45.0
+                
             merged_sat.append({
                 "time_tag": p_item["time_tag"],
                 "speed": p_item.get("speed"),
@@ -919,7 +1161,8 @@ def obtener_clima_espacial_avanzado():
                 "bx_gsm": m_item.get("bx_gsm") or m_item.get("bx") or 0.0,
                 "by_gsm": m_item.get("by_gsm") or m_item.get("by") or 0.0,
                 "bz_gsm": m_item.get("bz_gsm") or m_item.get("bz") or 0.0,
-                "tiempo_tierra": p_item["time_tag"] + timedelta(minutes=45)
+                "dinamic_delay": delay_minutes,
+                "tiempo_tierra": p_item["time_tag"] + timedelta(minutes=delay_minutes)
             })
 
         if not merged_sat:
@@ -928,6 +1171,7 @@ def obtener_clima_espacial_avanzado():
 
         actual_sat = merged_sat[-1]
         tiempo_tierra = actual_sat["tiempo_tierra"]
+        delay_actual = actual_sat["dinamic_delay"]
 
         def find_nearest_val(sorted_list, target_time, key_name):
             if not sorted_list:
@@ -937,16 +1181,16 @@ def obtener_clima_espacial_avanzado():
                 return None
             return closest.get(key_name)
 
-        # 5. Alinear Kp de NOAA, Hp30 de GFZ y Hp60 de GFZ con tiempo de tierra
+        # Alinear Kp de NOAA, Hp30 de GFZ y Hp60 de GFZ con tiempo de tierra
         kp_val = find_nearest_val(kp_data, tiempo_tierra, "kp")
         hp30_val = find_nearest_val(hp30_data, tiempo_tierra, "Hp30")
         hp60_val = find_nearest_val(hp60_data, tiempo_tierra, "Hp60")
 
         ultimo_solar = solar_indices[-1] if solar_indices else {}
-        ultimo_sfi = {'flux': 'N/D', 'f10.7': 'N/D', 'ssn': 'N/D', 'time_tag': 'N/D'}
+        ultimo_sfi = {'flux': 150, 'f10.7': 150, 'ssn': '110', 'time_tag': 'N/D'}
         if ultimo_solar:
-            sfi_val = ultimo_solar.get('f10.7') or ultimo_solar.get('f10_7') or ultimo_solar.get('flux') or 'N/D'
-            ssn_val = ultimo_solar.get('ssn') or 'N/D'
+            sfi_val = float(ultimo_solar.get('f10.7') or ultimo_solar.get('f10_7') or ultimo_solar.get('flux') or 150)
+            ssn_val = ultimo_solar.get('ssn') or '110'
             time_tag_val = ultimo_solar.get('time_tag') or 'N/D'
             ultimo_sfi = {
                 'flux': sfi_val,
@@ -955,35 +1199,79 @@ def obtener_clima_espacial_avanzado():
                 'time_tag': time_tag_val
             }
 
+        # Cómputos dinámicos del script de usuario
+        sfi_computado = float(ultimo_sfi['flux'])
+        iuv = calculate_uv_index(sfi_computado, lat, lon)
+        solar_noise = estimate_solar_noise(sfi_computado)
+
+        # Usar Kp efectivo para escalas NOAA (si no hay kp_val, usar estimación por viento solar)
+        kp_efectivo = kp_val
+        if kp_efectivo is None:
+            kp_efectivo = 1
+            viento_spd = actual_sat.get('speed') or 350.0
+            magn_bz = actual_sat.get('bz_gsm') or 0.0
+            if viento_spd > 600 or magn_bz < -8: kp_efectivo = 5
+            elif viento_spd > 500 or magn_bz < -4: kp_efectivo = 3
+            elif viento_spd > 400: kp_efectivo = 2
+
+        # Conversión del flujo de Rayos X a nomenclatura estándar
+        xray_class = get_xray_class(xray_flux)
+
+        # Piso de ruido estimado en unidades S (S-Meter)
+        noise_s = estimate_s_units_noise(kp_efectivo, sfi_computado)
+
+        # Escalas NOAA oficiales
+        r_scale, s_scale, g_scale = get_noaa_scales(xray_flux, proton_flux, kp_efectivo)
+
+        # Cálculo dinámico de la MUF y apertura de bandas HF (20m, 15m, 10m)
+        muf, b20, b15, b10 = calculate_muf_and_bands(sfi_computado, lat, lon)
+        luf = calculate_luf(sfi_computado, xray_flux, lat, lon)
+
+        forecast_lines = get_detailed_forecast()
+
         print("==================================================")
-        print("    MONITOR INTEGRADO: NOAA / GFZ POTSDAM API    ")
+        print(" LIVE MONITOR: NOAA /json/ & GFZ POTSDAM API")
         print("==================================================")
-        print(f"Última lectura Satélite (L1 UTC): {actual_sat['time_tag']}")
-        print(f"Impacto estimado en Tierra (UTC): {tiempo_tierra}")
+        print(f"Última actualización local : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Telemetría por satélite (L1 UTC) : {actual_sat['time_tag']}")
+        print(f"Impacto estimado en la Tierra (UTC) : {tiempo_tierra}")
+        print(f"Retardo de viaje dinámico L1-Tierra: {delay_actual:.1f} minutos")
+        print(f"Ubicación GPS (IUV Dinámico) : LAT: {lat:.3f} | LON: {lon:.3f} ({gps_status})")
         print("-" * 50)
-        print(" [VIENTO SOLAR Y PLASMA - NOAA]")
-        print(f"  • Velocidad del Viento      : {actual_sat['speed']} km/s")
-        print(f"  • Densidad del Plasma       : {actual_sat['density']} p/cm³")
+        print(" [PLASMA RTSW Y VIENTO SOLAR]")
+        print(f" • Velocidad del viento solar : {actual_sat['speed']:.1f} km/s" if actual_sat['speed'] is not None else " • Velocidad del viento solar : N/A km/s")
+        print(f" • Densidad de plasma : {actual_sat['density']:.1f} p/cm³" if actual_sat['density'] is not None else " • Densidad de plasma : N/A p/cm³")
         print("-" * 50)
-        print(" [CAMPO MAGNÉTICO INTERPLANETARIO - IMF GSM]")
-        print(f"  • Magnitud Total (Bt)       : {actual_sat['bt']} nT")
-        print(
-            f"  • Vector GSM (Bx, By, Bz)   : ({actual_sat['bx_gsm']:.2f}, {actual_sat['by_gsm']:.2f}, {actual_sat['bz_gsm']:.2f}) nT"
-        )
+        print(" [CAMPO MAGNÉTICO INTERPLANETARIO - GSM DEL IMF]")
+        print(f" • Magnitud Total (Bt) : {actual_sat.get('bt', 'N/A')} nT")
+        print(f" • Vector GSM (Bx, By, Bz) : ({actual_sat.get('bx_gsm', 0.0):.2f}, {actual_sat.get('by_gsm', 0.0):.2f}, {actual_sat.get('bz_gsm', 0.0):.2f}) nT")
         print("-" * 50)
-        print(" [ÍNDICES GEOMAGNÉTICOS COMBINADOS (TIERRA)]")
-        print(f"  • Índice Kp (NOAA - 3 horas): {kp_val}")
-        print(f"  • Índice Hp60 (GFZ - 1 hora): {hp60_val}")
-        print(f"  • Índice Hp30 (GFZ - 30 min): {hp30_val}")
+        print(" [ÍNDICES GEOMAGNÉTICOS EN LA TIERRA]")
+        print(f" • Kp Index (NOAA /json/) : {kp_val if kp_val is not None else 'N/A'}")
+        print(f" • Índice Hp60 (GFZ Potsdam) : {hp60_val if hp60_val is not None else 'N/A'}")
+        print(f" • Índice Hp30 (GFZ Potsdam) : {hp30_val if hp30_val is not None else 'N/A'}")
         print("-" * 50)
-        print(" [PRONÓSTICO GEOMAGNÉTICO PRÓXIMO BLOQUE]")
-        print(f"  • Tendencia Estimada Kp     : {kp_predicho}")
+        print(" [ESTIMACIÓN DE MUF/LUF Y APERTURA DE BANDAS HF]")
+        print(f" • MUF Calculada (Local) : {muf} MHz")
+        print(f" • LUF Calculada (Local) : {luf} MHz")
+        print(f" • Estado Banda 20m (14 MHz) : {b20}")
+        print(f" • Estado Banda 15m (21 MHz) : {b15}")
+        print(f" • Estado Banda 10m (28 MHz) : {b10}")
         print("-" * 50)
-        print(
-            f" [ACTIVIDAD SOLAR DIARIA - Actualizado al {ultimo_sfi.get('time_tag')}]"
-        )
-        print(f"  • Flujo de Radio (SFU/F10.7): {ultimo_sfi.get('flux')} sfu")
-        print(f"  • Manchas Solares (SSN)     : {ultimo_sfi.get('ssn')}")
+        print(" [PRÓXIMO BLOQUE DE PRONÓSTICO GEOMAGNÉTICO]")
+        print(f" • Tendencia estimada de Kp : {kp_predicho}")
+        print("-" * 50)
+        print(" [ACTIVIDAD SOLAR DIARIA INTERNACIONAL]")
+        print(f" • Radio Flux (SFI/F10.7) : {sfi_computado} sfu")
+        print(f" • Número de mancha solar (SSN): {ultimo_sfi['ssn']}")
+        print(f" • Flujo de Rayos X (Clase) : {xray_class} ({xray_flux:.2e} W/m²)")
+        print(f" • Fecha oficial de validación : {ultimo_sfi['time_tag']}")
+        print("-" * 50)
+        print(" [ALERTAS ADICIONALES DE PROPAGACIÓN HF / IUV]")
+        print(f" • Piso de Ruido en Dial (SNR) : {noise_s} (Unidades S)")
+        uv_cat, uv_pms, uv_rgb, uv_hex = get_uv_category_and_colors(iuv)
+        print(f" • Índice UV Solar Global (IUV): {iuv} - {uv_cat} (Pantone: {uv_pms} | RGB: {uv_rgb} | Hex: {uv_hex})")
+        print(f" • ESCALAS NOAA METEOROLOGÍA : R: {r_scale} | S: {s_scale} | G: {g_scale}")
         print("==================================================")
 
     except Exception as e:

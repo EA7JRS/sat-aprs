@@ -358,6 +358,22 @@ export interface PropagationData {
     ssn?: string;
     solar_updated?: string;
     kp_tendencia?: string;
+    xrayFlux?: number;
+    protonFlux?: number;
+    rScale?: string;
+    sScale?: string;
+    gScale?: string;
+    iuv?: number;
+    solarNoise?: string;
+    gps_status?: string;
+    xrayClass?: string;
+    noiseS?: string;
+    muf?: number;
+    luf?: number;
+    b20?: string;
+    b15?: string;
+    b10?: string;
+    delayL1?: number;
   };
   rtsw?: {
     speed: number | null;

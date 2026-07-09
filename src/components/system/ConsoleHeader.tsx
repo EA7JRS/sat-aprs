@@ -218,6 +218,14 @@ export default function ConsoleHeader({
   let isRealData = false;
   let activeRScale = 0;
   let activeSScale = 0;
+  let xrayClass = "A0.0";
+  let noiseS = "S1.5";
+  let muf = 14.5;
+  let luf = 2.0;
+  let b20 = "Cerrada";
+  let b15 = "Cerrada";
+  let b10 = "Cerrada";
+  let delayL1 = 45.0;
 
   if (propagation) {
     isRealData = propagation.gfz.real || propagation.noaa.real;
@@ -251,6 +259,14 @@ export default function ConsoleHeader({
       if (propagation.noaa.blackout && propagation.noaa.blackout[0]) {
         activeRScale = propagation.noaa.blackout[0].level || 0;
       }
+      if (propagation.noaa.xrayClass) xrayClass = propagation.noaa.xrayClass;
+      if (propagation.noaa.noiseS) noiseS = propagation.noaa.noiseS;
+      if (propagation.noaa.muf !== undefined) muf = propagation.noaa.muf;
+      if (propagation.noaa.luf !== undefined) luf = propagation.noaa.luf;
+      if (propagation.noaa.b20) b20 = propagation.noaa.b20;
+      if (propagation.noaa.b15) b15 = propagation.noaa.b15;
+      if (propagation.noaa.b10) b10 = propagation.noaa.b10;
+      if (propagation.noaa.delayL1 !== undefined) delayL1 = propagation.noaa.delayL1;
     }
   }
 
@@ -449,9 +465,15 @@ export default function ConsoleHeader({
                 Kp: {kIndex}
               </span>
             </div>
-            <div className={`flex items-center gap-1 font-bold text-[10.5px] ${kIndexTextColor}`}>
+            <div className={`flex flex-wrap items-center gap-1 font-bold text-[10.5px] ${kIndexTextColor}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${kIndexBulletColor} ${kIndex >= 5 ? 'animate-ping' : ''}`}></span>
               <span>{propagationStatus}</span>
+              <span className="text-slate-600 text-[9px] font-normal">|</span>
+              <span className="text-amber-500 text-[10px] font-mono">SFI: {sfi}</span>
+              <span className="text-slate-600 text-[9px] font-normal">|</span>
+              <span className="text-sky-400 text-[10px] font-mono">MUF: {muf.toFixed(1)}</span>
+              <span className="text-slate-600 text-[9px] font-normal">|</span>
+              <span className="text-rose-400 text-[10px] font-mono">LUF: {luf.toFixed(1)}</span>
             </div>
           </div>
 
@@ -507,6 +529,41 @@ export default function ConsoleHeader({
                   <div className="flex flex-col bg-slate-900/40 p-2 rounded border border-slate-900/60 text-center">
                     <span className="text-[9px] text-slate-500 font-mono font-sans">A-INDEX</span>
                     <span className="font-mono font-bold text-purple-400 text-[11px] mt-0.5">{aIndex}</span>
+                  </div>
+                </div>
+
+                {/* MUF & HF Propagation Details */}
+                <div className="bg-slate-900/40 p-2.5 rounded border border-slate-900/60 font-mono text-[10px] space-y-2">
+                  <div className="flex justify-between items-center text-slate-400 border-b border-slate-900/50 pb-1.5 gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-[8.5px] font-bold text-slate-500">MUF CALCULADA:</span>
+                      <span className="font-bold text-sky-400 text-xs">{muf.toFixed(2)} MHz</span>
+                    </div>
+                    <div className="text-right flex flex-col">
+                      <span className="text-[8.5px] font-bold text-slate-500">LUF ESTIMADA:</span>
+                      <span className="font-bold text-rose-400 text-xs">{luf.toFixed(2)} MHz</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 text-center text-[9px] font-bold">
+                    <div className="p-1 rounded bg-slate-950 border border-slate-900 flex flex-col justify-between">
+                      <span className="text-slate-500 text-[8px] uppercase">20m (14 MHz)</span>
+                      <span className={`mt-0.5 ${b20 === "Abierta" ? "text-emerald-400" : "text-rose-400"}`}>{b20}</span>
+                    </div>
+                    <div className="p-1 rounded bg-slate-950 border border-slate-900 flex flex-col justify-between">
+                      <span className="text-slate-500 text-[8px] uppercase">15m (21 MHz)</span>
+                      <span className={`mt-0.5 ${b15 === "Abierta" ? "text-emerald-400" : "text-rose-400"}`}>{b15}</span>
+                    </div>
+                    <div className="p-1 rounded bg-slate-950 border border-slate-900 flex flex-col justify-between">
+                      <span className="text-slate-500 text-[8px] uppercase">10m (28 MHz)</span>
+                      <span className={`mt-0.5 ${b10 === "Abierta" ? "text-emerald-400" : b10 === "Propagación Crítica" ? "text-amber-400" : "text-rose-400"}`}>{b10}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-900/40 text-[9px] text-slate-500">
+                    <div>Piso Ruido SNR: <span className="text-amber-400 font-bold">{noiseS}</span></div>
+                    <div className="text-right">Rayos X Clase: <span className="text-orange-400 font-bold">{xrayClass}</span></div>
+                  </div>
+                  <div className="text-[9px] text-slate-500">
+                    Retardo L1-Tierra: <span className="text-blue-400 font-bold">{delayL1.toFixed(1)} min</span>
                   </div>
                 </div>
 

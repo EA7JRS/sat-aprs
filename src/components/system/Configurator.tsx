@@ -702,6 +702,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
   const [thresholdRainMm, setThresholdRainMm] = useState(config.thresholdRainMm !== undefined ? config.thresholdRainMm : 20.0);
   const [forecastDays, setForecastDays] = useState(config.forecastDays !== undefined ? config.forecastDays : 3);
   const [pollIntervalIca, setPollIntervalIca] = useState(config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30);
+  const [enableAprsIca, setEnableAprsIca] = useState(config.enableAprsIca !== undefined ? config.enableAprsIca : true);
   
   // Local Weather PWS/API configs
   const [localWeatherSource, setLocalWeatherSource] = useState(config.localWeatherSource || 'simulated');
@@ -1124,6 +1125,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       aemetApiKey: aemetApiKey.trim(),
       iqAirApiKey: iqAirApiKey.trim(),
       pollIntervalIca: Number(pollIntervalIca),
+      enableAprsIca: Boolean(enableAprsIca),
       weatherApiKey: weatherApiKey.trim(),
       thresholdWindKts: Number(thresholdWindKts),
       thresholdTempMinC: Number(thresholdTempMinC),
@@ -3028,6 +3030,19 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                   <option value={60}>60 Minutos (Bajo tráfico)</option>
                 </select>
                 <p className="text-[8px] text-slate-500 font-mono mt-0.5">Define cada cuánto tiempo se transmite automáticamente la baliza APRS AIR-QUAL regular con las lecturas.</p>
+              </div>
+
+              <div className="space-y-1.5 flex flex-col justify-center pt-2">
+                <label className="flex items-center gap-2 text-slate-300 text-xs cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={enableAprsIca}
+                    onChange={(e) => setEnableAprsIca(e.target.checked)}
+                    className="rounded border-slate-800 bg-slate-950 accent-zinc-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Emitir Boletines y Balizas ICA (BLN2AQI)</span>
+                </label>
+                <p className="text-[8px] text-slate-500 font-mono mt-0.5 ml-6">Habilita o deshabilita la emisión automática regular en APRS-IS de calidad del aire.</p>
               </div>
             </div>
 

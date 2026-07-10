@@ -871,7 +871,7 @@ def obtener_pronostico_3h():
 def calculate_uv_index(sfi, lat, lon):
     """Calcula una aproximación del Índice UV Solar Global (IUV) basándose en coordenadas dinámicas."""
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         day_of_year = now.timetuple().tm_yday
         declination = 23.45 * math.sin(math.radians((360 / 365) * (284 + day_of_year)))
         
@@ -976,7 +976,7 @@ def get_detailed_forecast():
 def calculate_solar_elevation(lat, lon):
     """Calcula la elevación angular del sol en radianes."""
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         day_of_year = now.timetuple().tm_yday
         declination = 23.45 * math.sin(math.radians((360 / 365) * (284 + day_of_year)))
         hour_angle = (now.hour + now.minute/60 + lon/15 - 12) * 15
@@ -1585,7 +1585,7 @@ def monitorear_clima_local():
         
     # Procesar y transmitir las alertas disparadas
     import datetime
-    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     
     for alerta in alertas_disparadas:
         # Generar clave unica para evitar saturacion/spam del boletin en el mismo dia

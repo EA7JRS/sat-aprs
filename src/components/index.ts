@@ -49,3 +49,4 @@ export { default as DgtTrafficDatabase } from './system/DgtTrafficDatabase';
 export { default as PrivateLoginGate } from './system/PrivateLoginGate';
 export { default as TwoFactorConfigurator } from './system/TwoFactorConfigurator';
 export { default as TwoFactorVerificationGate } from './system/TwoFactorVerificationGate';
+export { default as UserProfileManager } from './system/UserProfileManager';

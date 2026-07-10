@@ -42,7 +42,8 @@ import {
   PropagacionMonitor,
   RepeaterDatabaseView,
   PrivateLoginGate,
-  TwoFactorVerificationGate
+  TwoFactorVerificationGate,
+  UserProfileManager
 } from './components';
 
 import AprsScheduler from './components/radio/AprsScheduler';
@@ -2869,6 +2870,10 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            {currentUser && (
+              <UserProfileManager currentUser={currentUser} userProfile={userProfile} />
+            )}
+
             {/* Low-Level ntpsec / gpsd Channels */}
             <TelemetryStatus 
               gpsd={data.gpsd} 

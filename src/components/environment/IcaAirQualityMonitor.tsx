@@ -40,6 +40,8 @@ interface IcaAirQualityMonitorProps {
     lon: number;
     isFallback: boolean;
   };
+  config?: any;
+  onInjectRaw?: (payload: string) => Promise<boolean>;
 }
 
 const DEFAULT_STATIONS: AirQualityStation[] = [
@@ -353,12 +355,61 @@ interface IcaToast {
   timestamp: Date;
 }
 
-export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps) {
+export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaAirQualityMonitorProps) {
   const [viewMode, setViewMode] = useState<'lista' | 'mapa'>('lista');
   const [searchQuery, setSearchQuery] = useState('');
   const [pastedIcaLevel, setPastedIcaLevel] = useState<string>('todos');
   const [selectedStation, setSelectedStation] = useState<AirQualityStation | null>(DEFAULT_STATIONS[0]);
   const [simulatedOffset, setSimulatedOffset] = useState<number>(0);
+
+  // Custom thresholds state for pollutant alerts (PM2.5, CO, O3, NO2)
+  const [thresholdPm25, setThresholdPm25] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_threshold_pm25');
+      return stored ? parseFloat(stored) : 25;
+    } catch {
+      return 25;
+    }
+  });
+  const [thresholdCo, setThresholdCo] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_threshold_co');
+      return stored ? parseFloat(stored) : 10;
+    } catch {
+      return 10;
+    }
+  });
+  const [thresholdO3, setThresholdO3] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_threshold_o3');
+      return stored ? parseFloat(stored) : 130;
+    } catch {
+      return 130;
+    }
+  });
+  const [thresholdNo2, setThresholdNo2] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_threshold_no2');
+      return stored ? parseFloat(stored) : 120;
+    } catch {
+      return 120;
+    }
+  });
+  const [showThresholdConfig, setShowThresholdConfig] = useState<boolean>(false);
+
+  // Save thresholds to localStorage
+  useEffect(() => {
+    localStorage.setItem('ica_threshold_pm25', thresholdPm25.toString());
+  }, [thresholdPm25]);
+  useEffect(() => {
+    localStorage.setItem('ica_threshold_co', thresholdCo.toString());
+  }, [thresholdCo]);
+  useEffect(() => {
+    localStorage.setItem('ica_threshold_o3', thresholdO3.toString());
+  }, [thresholdO3]);
+  useEffect(() => {
+    localStorage.setItem('ica_threshold_no2', thresholdNo2.toString());
+  }, [thresholdNo2]);
 
   // Push notification simulator & favorites state
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -381,6 +432,7 @@ export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps
   const [toasts, setToasts] = useState<IcaToast[]>([]);
   const [tick, setTick] = useState<number>(0);
   const alertedKeys = useRef<Set<string>>(new Set());
+  const customAlertedKeys = useRef<Set<string>>(new Set());
 
   // Save favorites & notification state to localStorage
   useEffect(() => {
@@ -536,6 +588,83 @@ export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps
         soundStyle = ica.level === 6 ? 'warble' : ica.level === 5 ? 'siren' : ica.level === 4 ? 'beep' : 'chime';
       }
 
+      // Evaluaciones de umbrales personalizados por contaminante (PM2.5, CO, O3, NO2)
+      if (notificationsEnabled) {
+        const exceededCustom: { name: string; val: number; threshold: number; unit: string }[] = [];
+        if (st.pm25 !== null && st.pm25 !== undefined && st.pm25 > thresholdPm25) {
+          exceededCustom.push({ name: 'PM2.5', val: st.pm25, threshold: thresholdPm25, unit: 'µg/m³' });
+        }
+        if (st.co !== null && st.co !== undefined && st.co > thresholdCo) {
+          exceededCustom.push({ name: 'CO', val: st.co, threshold: thresholdCo, unit: 'mg/m³' });
+        }
+        if (st.o3 !== null && st.o3 !== undefined && st.o3 > thresholdO3) {
+          exceededCustom.push({ name: 'O₃', val: st.o3, threshold: thresholdO3, unit: 'µg/m³' });
+        }
+        if (st.no2 !== null && st.no2 !== undefined && st.no2 > thresholdNo2) {
+          exceededCustom.push({ name: 'NO₂', val: st.no2, threshold: thresholdNo2, unit: 'µg/m³' });
+        }
+
+        if (exceededCustom.length > 0) {
+          exceededCustom.forEach(item => {
+            const alertedKey = `${st.id}-custom-${item.name}-${Math.round(item.val)}`;
+            if (!customAlertedKeys.current.has(alertedKey)) {
+              customAlertedKeys.current.add(alertedKey);
+
+              const title = `⚠️ Alerta de Umbral S.A.T.: ${st.name.split(' - ')[0]}`;
+              const message = `Sensor ${item.name} ha registrado ${item.val} ${item.unit}, superando el límite de alerta personalizado (${item.threshold} ${item.unit})`;
+
+              // Visual Notification in Console
+              const newToast: IcaToast = {
+                id: `${st.id}-custom-${item.name}-${Date.now()}`,
+                title,
+                message,
+                type: 'alert',
+                stationId: st.id,
+                timestamp: new Date()
+              };
+              setToasts(prev => [newToast, ...prev].slice(0, 5));
+
+              // Auditory alarm (Play alarm sound)
+              if (isSoundGloballyEnabled) {
+                playAlertSound('siren');
+              }
+
+              // Native Browser Notification
+              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                try {
+                  new Notification(title, { body: message, icon: '/icon.png' });
+                } catch (e) {
+                  console.warn('Native notification failed', e);
+                }
+              }
+
+              // S.A.T. Messages and APRS bulletins injection
+              const callsign = config?.callsign || 'EA1URG-10';
+              const cleanName = st.name.toUpperCase().split(' - ')[0];
+
+              // Bulletin APRS
+              const bulletinPacket = `${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1ICA  :⚠️ UMBRAL EXCEDIDO - ESTACION ${cleanName} REGISTRA ${item.name}: ${item.val} > ${item.threshold} ${item.unit}`;
+              
+              // APRS Message
+              const messagePacket = `${callsign}>APRS,TCPIP*,qAC,GATEWAY::SNECA    :⚠️ ALERTA CALIDAD AIRE: ${st.name.split(' - ')[0]} excede umbral de ${item.name}. Valor: ${item.val} (Limite: ${item.threshold})`;
+
+              // Inject packets
+              customFetch('/api/aprs/inject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'RAW_PACKET', payload: bulletinPacket })
+              }).catch(err => console.error("Error injecting APRS bulletin:", err));
+
+              customFetch('/api/aprs/inject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'RAW_PACKET', payload: messagePacket })
+              }).catch(err => console.error("Error injecting APRS message:", err));
+            }
+          });
+        }
+      }
+
       // If disabled for this level, skip entirely
       if (levelBehavior === 'disabled') return;
 
@@ -587,7 +716,7 @@ export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps
         }
       }
     });
-  }, [stationsWithDistance, favorites, notificationsEnabled]);
+  }, [stationsWithDistance, favorites, notificationsEnabled, thresholdPm25, thresholdCo, thresholdO3, thresholdNo2, config]);
 
   const filteredStations = useMemo(() => {
     return stationsWithDistance.filter(st => {
@@ -696,6 +825,20 @@ export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps
               </button>
             )}
 
+            {/* Toggle threshold config panel */}
+            <button
+              onClick={() => setShowThresholdConfig(!showThresholdConfig)}
+              className={`text-[8.5px] px-2 py-0.5 rounded font-extrabold border flex items-center gap-1 transition-colors ${
+                showThresholdConfig 
+                  ? 'bg-amber-950 text-amber-400 border-amber-900' 
+                  : 'bg-slate-900 hover:bg-slate-850 text-slate-350 border-slate-800'
+              }`}
+              title="Configurar umbrales de alerta personalizados por contaminante"
+            >
+              <Sliders size={10} />
+              <span>UMBRALES</span>
+            </button>
+
             {/* Toggle notifications enabled */}
             <button
               onClick={() => setNotificationsEnabled(!notificationsEnabled)}
@@ -709,6 +852,129 @@ export default function IcaAirQualityMonitor({ gpsd }: IcaAirQualityMonitorProps
             </button>
           </div>
         </div>
+
+        {/* Collapsible Thresholds Config Panel */}
+        <AnimatePresence>
+          {showThresholdConfig && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="border-t border-slate-950 pt-2.5 pb-1 overflow-hidden"
+            >
+              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-900 flex flex-col gap-3">
+                <div className="flex justify-between items-center pb-1 border-b border-slate-900">
+                  <span className="text-[8.5px] text-amber-400 font-extrabold uppercase font-mono tracking-wider flex items-center gap-1">
+                    <Sliders size={11} className="text-amber-500 animate-pulse" />
+                    Ajuste de Umbrales de Alerta Personalizados
+                  </span>
+                  <button 
+                    onClick={() => {
+                      setThresholdPm25(25);
+                      setThresholdCo(10);
+                      setThresholdO3(130);
+                      setThresholdNo2(120);
+                    }}
+                    className="text-[7.5px] text-slate-500 hover:text-slate-300 underline uppercase cursor-pointer"
+                    title="Restablecer valores predeterminados"
+                  >
+                    Valores por Defecto
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* PM2.5 Threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+                      <span className="text-slate-300">Material Particulado Fino (PM2.5)</span>
+                      <span className="text-amber-400 font-mono">{thresholdPm25} µg/m³</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="100" 
+                        value={thresholdPm25} 
+                        onChange={(e) => setThresholdPm25(parseInt(e.target.value))}
+                        className="w-full accent-amber-500 h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[7.5px] text-slate-500 font-mono w-4 text-right">100</span>
+                    </div>
+                    <p className="text-[7.5px] text-slate-500 leading-normal font-sans">
+                      Límite de alerta estándar S.A.T.: 25 µg/m³ (MITECO Desfavorable).
+                    </p>
+                  </div>
+
+                  {/* CO Threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+                      <span className="text-slate-300">Monóxido de Carbono (CO)</span>
+                      <span className="text-amber-400 font-mono">{thresholdCo} mg/m³</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="30" 
+                        value={thresholdCo} 
+                        onChange={(e) => setThresholdCo(parseInt(e.target.value))}
+                        className="w-full accent-amber-500 h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[7.5px] text-slate-500 font-mono w-4 text-right">30</span>
+                    </div>
+                    <p className="text-[7.5px] text-slate-500 leading-normal font-sans">
+                      Límite de alerta estándar S.A.T.: 10 mg/m³ (MITECO Desfavorable).
+                    </p>
+                  </div>
+
+                  {/* O3 Threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+                      <span className="text-slate-300">Ozono Troposférico (O₃)</span>
+                      <span className="text-amber-400 font-mono">{thresholdO3} µg/m³</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="range" 
+                        min="20" 
+                        max="240" 
+                        value={thresholdO3} 
+                        onChange={(e) => setThresholdO3(parseInt(e.target.value))}
+                        className="w-full accent-amber-500 h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[7.5px] text-slate-500 font-mono w-4 text-right">240</span>
+                    </div>
+                    <p className="text-[7.5px] text-slate-500 leading-normal font-sans">
+                      Umbral de información: 180 µg/m³, Alerta: 240 µg/m³.
+                    </p>
+                  </div>
+
+                  {/* NO2 Threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+                      <span className="text-slate-300">Dióxido de Nitrógeno (NO₂)</span>
+                      <span className="text-amber-400 font-mono">{thresholdNo2} µg/m³</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="range" 
+                        min="10" 
+                        max="200" 
+                        value={thresholdNo2} 
+                        onChange={(e) => setThresholdNo2(parseInt(e.target.value))}
+                        className="w-full accent-amber-500 h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[7.5px] text-slate-500 font-mono w-4 text-right">200</span>
+                    </div>
+                    <p className="text-[7.5px] text-slate-500 leading-normal font-sans">
+                      Valor límite anual: 40 µg/m³, Alerta de umbral: 200 µg/m³.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Favorites list */}
         <div className="border-t border-slate-950 pt-2">

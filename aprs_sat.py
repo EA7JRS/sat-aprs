@@ -71,6 +71,19 @@ last_known_weather = (20.4, 52, 5.0, 230, 1015.4, 8.0, 0.0, 0.0) # Datos inicial
 transmitidas_alertas_meteo = set()
 ultima_consulta_pronostico = 0
 
+# Configuración de Clima Local y Alertas para Estación Meteorológica Personal / API Local
+LOCAL_WEATHER_SOURCE = "simulated"   # Puede ser 'simulated', una URL http://..., o una ruta de archivo .json
+LOCAL_THRESHOLD_WIND_KTS = 20.0     # Umbral de ráfaga/viento local
+LOCAL_THRESHOLD_TEMP_MAX_C = 35.0   # Umbral de temperatura máxima local
+LOCAL_THRESHOLD_TEMP_MIN_C = 5.0    # Umbral de temperatura mínima local
+LOCAL_THRESHOLD_RAIN_MM = 10.0      # Umbral de lluvia local (mm)
+LOCAL_WEATHER_INTERVAL = 300        # Intervalo de monitoreo local en segundos
+
+# Historial para alertas meteorológicas locales (evita spam de boletines idénticos seguidos)
+transmitidas_alertas_locales = set()
+ultima_consulta_clima_local = 0
+last_local_weather = (20.0, 50, 5.0, 180, 1013.2, 0.0) # temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm
+
 # ==============================================================================
 # FORMULAS DE INGENIERÍA Y TRADUCTORES APRS
 # ==============================================================================
@@ -152,6 +165,7 @@ def sync_local_config():
     global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON, ALTITUDE_DEFAULT_M
     global GPSD_HOST, GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT
     global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
+    global LOCAL_WEATHER_SOURCE, LOCAL_THRESHOLD_WIND_KTS, LOCAL_THRESHOLD_TEMP_MAX_C, LOCAL_THRESHOLD_TEMP_MIN_C, LOCAL_THRESHOLD_RAIN_MM, LOCAL_WEATHER_INTERVAL
     
     ini_path = "config.ini"
     json_path = "sat_config.json"
@@ -188,6 +202,14 @@ def sync_local_config():
                 "thresholdTempMinC": str(ui_cfg.get("thresholdTempMinC", WEATHER_ALERT_TEMP_MIN_C)),
                 "thresholdRainMm": str(ui_cfg.get("thresholdRainMm", WEATHER_ALERT_RAIN_MM)),
                 "forecastDays": str(ui_cfg.get("forecastDays", WEATHER_FORECAST_DAYS))
+            }
+            config["LocalWeather"] = {
+                "source": str(ui_cfg.get("localWeatherSource", LOCAL_WEATHER_SOURCE)),
+                "thresholdWindKts": str(ui_cfg.get("localThresholdWindKts", LOCAL_THRESHOLD_WIND_KTS)),
+                "thresholdTempMaxC": str(ui_cfg.get("localThresholdTempMaxC", LOCAL_THRESHOLD_TEMP_MAX_C)),
+                "thresholdTempMinC": str(ui_cfg.get("localThresholdTempMinC", LOCAL_THRESHOLD_TEMP_MIN_C)),
+                "thresholdRainMm": str(ui_cfg.get("localThresholdRainMm", LOCAL_THRESHOLD_RAIN_MM)),
+                "interval": str(ui_cfg.get("localWeatherInterval", LOCAL_WEATHER_INTERVAL))
             }
             config["Fallback"] = {
                 "latitude": str(ui_cfg.get("fallbackLat", FALLBACK_LAT)),
@@ -235,6 +257,15 @@ def sync_local_config():
                 WEATHER_ALERT_RAIN_MM = config["WeatherAPI"].getfloat("thresholdRainMm", WEATHER_ALERT_RAIN_MM)
                 WEATHER_FORECAST_DAYS = config["WeatherAPI"].getint("forecastDays", WEATHER_FORECAST_DAYS)
                 
+            # Cargar seccion LocalWeather
+            if "LocalWeather" in config:
+                LOCAL_WEATHER_SOURCE = config["LocalWeather"].get("source", LOCAL_WEATHER_SOURCE)
+                LOCAL_THRESHOLD_WIND_KTS = config["LocalWeather"].getfloat("thresholdWindKts", LOCAL_THRESHOLD_WIND_KTS)
+                LOCAL_THRESHOLD_TEMP_MAX_C = config["LocalWeather"].getfloat("thresholdTempMaxC", LOCAL_THRESHOLD_TEMP_MAX_C)
+                LOCAL_THRESHOLD_TEMP_MIN_C = config["LocalWeather"].getfloat("thresholdTempMinC", LOCAL_THRESHOLD_TEMP_MIN_C)
+                LOCAL_THRESHOLD_RAIN_MM = config["LocalWeather"].getfloat("thresholdRainMm", LOCAL_THRESHOLD_RAIN_MM)
+                LOCAL_WEATHER_INTERVAL = config["LocalWeather"].getint("interval", LOCAL_WEATHER_INTERVAL)
+                
             # Cargar seccion Fallback
             if "Fallback" in config:
                 FALLBACK_LAT = config["Fallback"].getfloat("latitude", FALLBACK_LAT)
@@ -263,6 +294,7 @@ def _apply_ui_config(cfg):
     global CALLSIGN, APRS_PASSCODE, FILTER_RADIUS_KM, OWM_API_KEY, FALLBACK_LAT, FALLBACK_LON
     global GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_PORT
     global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
+    global LOCAL_WEATHER_SOURCE, LOCAL_THRESHOLD_WIND_KTS, LOCAL_THRESHOLD_TEMP_MAX_C, LOCAL_THRESHOLD_TEMP_MIN_C, LOCAL_THRESHOLD_RAIN_MM, LOCAL_WEATHER_INTERVAL
     
     if "callsign" in cfg and cfg["callsign"]:
         CALLSIGN = str(cfg["callsign"])
@@ -282,6 +314,18 @@ def _apply_ui_config(cfg):
         WEATHER_ALERT_RAIN_MM = float(cfg["thresholdRainMm"])
     if "forecastDays" in cfg and cfg["forecastDays"] is not None:
         WEATHER_FORECAST_DAYS = int(cfg["forecastDays"])
+    if "localWeatherSource" in cfg and cfg["localWeatherSource"]:
+        LOCAL_WEATHER_SOURCE = str(cfg["localWeatherSource"])
+    if "localThresholdWindKts" in cfg and cfg["localThresholdWindKts"] is not None:
+        LOCAL_THRESHOLD_WIND_KTS = float(cfg["localThresholdWindKts"])
+    if "localThresholdTempMaxC" in cfg and cfg["localThresholdTempMaxC"] is not None:
+        LOCAL_THRESHOLD_TEMP_MAX_C = float(cfg["localThresholdTempMaxC"])
+    if "localThresholdTempMinC" in cfg and cfg["localThresholdTempMinC"] is not None:
+        LOCAL_THRESHOLD_TEMP_MIN_C = float(cfg["localThresholdTempMinC"])
+    if "localThresholdRainMm" in cfg and cfg["localThresholdRainMm"] is not None:
+        LOCAL_THRESHOLD_RAIN_MM = float(cfg["localThresholdRainMm"])
+    if "localWeatherInterval" in cfg and cfg["localWeatherInterval"] is not None:
+        LOCAL_WEATHER_INTERVAL = int(cfg["localWeatherInterval"])
     if "fallbackLat" in cfg and cfg["fallbackLat"] is not None:
         FALLBACK_LAT = float(cfg["fallbackLat"])
     if "fallbackLon" in cfg and cfg["fallbackLon"] is not None:
@@ -1362,10 +1406,201 @@ def transmit_aprs_packet(packet_string):
                 pass
 
 # ==============================================================================
+# MONITOREO METEOROLÓGICO LOCAL Y ALERTAS DE UMBRAL PERSONALIZADAS
+# ==============================================================================
+def fetch_local_weather_data():
+    """
+    Obtiene los datos meteorológicos locales según la fuente configurada.
+    Soporta:
+      - 'simulated': Simula lecturas realistas con posibilidad de variaciones dinámicas.
+      - HTTP/HTTPS URLs (e.g. 'http://...'): Realiza un request GET y parsea un JSON con campos climáticos estándar.
+      - Archivo local (e.g. 'local_weather.json'): Carga y parsea el archivo JSON.
+    Retorna un diccionario con: {temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm} o None si falla.
+    """
+    global last_local_weather
+    
+    # 1. Simulación
+    if LOCAL_WEATHER_SOURCE.lower() == "simulated":
+        import random
+        # Drifting from last readings to maintain realism
+        last_temp, last_hum, last_wind, last_dir, last_press, last_rain = last_local_weather
+        
+        # We can occasionally inject a spike above thresholds to test alerts (15% chance)
+        trigger_extreme = (random.random() < 0.15)
+        
+        if trigger_extreme:
+            # Let's decide which threshold to exceed
+            choice = random.choice(["wind", "temp_max", "temp_min", "rain"])
+            if choice == "wind":
+                temp_c = last_temp + random.uniform(-1, 1)
+                humidity = max(10, min(100, last_hum + random.randint(-5, 5)))
+                wind_kts = LOCAL_THRESHOLD_WIND_KTS + random.uniform(1.0, 5.0)
+                wind_dir = (last_dir + random.randint(-15, 15)) % 360
+                pressure = last_press + random.uniform(-0.5, 0.5)
+                rain_mm = last_rain + random.uniform(0.0, 0.5)
+            elif choice == "temp_max":
+                temp_c = LOCAL_THRESHOLD_TEMP_MAX_C + random.uniform(0.5, 3.0)
+                humidity = max(10, min(100, last_hum + random.randint(-10, 5)))
+                wind_kts = last_wind + random.uniform(-1, 1)
+                wind_dir = (last_dir + random.randint(-15, 15)) % 360
+                pressure = last_press + random.uniform(-1.0, 0.5)
+                rain_mm = 0.0
+            elif choice == "temp_min":
+                temp_c = LOCAL_THRESHOLD_TEMP_MIN_C - random.uniform(0.5, 3.0)
+                humidity = max(10, min(100, last_hum + random.randint(-5, 10)))
+                wind_kts = last_wind + random.uniform(-1, 1)
+                wind_dir = (last_dir + random.randint(-15, 15)) % 360
+                pressure = last_press + random.uniform(0.5, 1.5)
+                rain_mm = last_rain
+            else: # rain
+                temp_c = last_temp - random.uniform(1.0, 3.0)
+                humidity = max(80, min(100, last_hum + random.randint(10, 20)))
+                wind_kts = last_wind + random.uniform(2.0, 6.0)
+                wind_dir = (last_dir + random.randint(-20, 20)) % 360
+                pressure = last_press - random.uniform(1.5, 3.0)
+                rain_mm = LOCAL_THRESHOLD_RAIN_MM + random.uniform(0.5, 5.0)
+        else:
+            # Normal drift
+            temp_c = last_temp + random.uniform(-0.5, 0.5)
+            humidity = max(10, min(100, last_hum + random.randint(-3, 3)))
+            wind_kts = max(0.0, last_wind + random.uniform(-1.0, 1.0))
+            wind_dir = (last_dir + random.randint(-10, 10)) % 360
+            pressure = max(950.0, min(1050.0, last_press + random.uniform(-0.2, 0.2)))
+            rain_mm = max(0.0, last_rain + (random.uniform(-0.1, 0.2) if humidity > 75 else random.uniform(-0.1, 0.0)))
+            
+        last_local_weather = (temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm)
+        return {
+            "temp_c": round(temp_c, 1),
+            "humidity": int(humidity),
+            "wind_kts": round(wind_kts, 1),
+            "wind_dir": int(wind_dir),
+            "pressure": round(pressure, 1),
+            "rain_mm": round(rain_mm, 1)
+        }
+        
+    # 2. HTTP/HTTPS URL
+    elif LOCAL_WEATHER_SOURCE.startswith("http://") or LOCAL_WEATHER_SOURCE.startswith("https://"):
+        import urllib.request
+        import json
+        try:
+            req = urllib.request.Request(LOCAL_WEATHER_SOURCE, headers={'User-Agent': 'S.A.T. Local Weather Daemon'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                # Parsea campos habituales de clima en JSON
+                return {
+                    "temp_c": float(data.get("temp_c", data.get("temp", data.get("temperature", 20.0)))),
+                    "humidity": int(data.get("humidity", data.get("hum", 50))),
+                    "wind_kts": float(data.get("wind_kts", data.get("wind_speed", data.get("wind", 5.0)))),
+                    "wind_dir": int(data.get("wind_dir", data.get("wind_degree", data.get("direction", 180)))),
+                    "pressure": float(data.get("pressure", data.get("press", 1013.2))),
+                    "rain_mm": float(data.get("rain_mm", data.get("rain", data.get("precip", 0.0))))
+                }
+        except Exception as e:
+            print(f"[LOCAL WEATHER] Error fetching local weather URL ({LOCAL_WEATHER_SOURCE}): {e}")
+            return None
+            
+    # 3. Archivo Local
+    else:
+        import json
+        try:
+            file_path = LOCAL_WEATHER_SOURCE
+            if not os.path.exists(file_path):
+                file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOCAL_WEATHER_SOURCE)
+            
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return {
+                        "temp_c": float(data.get("temp_c", data.get("temp", data.get("temperature", 20.0)))),
+                        "humidity": int(data.get("humidity", data.get("hum", 50))),
+                        "wind_kts": float(data.get("wind_kts", data.get("wind_speed", data.get("wind", 5.0)))),
+                        "wind_dir": int(data.get("wind_dir", data.get("wind_degree", data.get("direction", 180)))),
+                        "pressure": float(data.get("pressure", data.get("press", 1013.2))),
+                        "rain_mm": float(data.get("rain_mm", data.get("rain", data.get("precip", 0.0))))
+                    }
+            else:
+                print(f"[LOCAL WEATHER] Archivo meteorologico local no encontrado en {LOCAL_WEATHER_SOURCE}")
+                return None
+        except Exception as e:
+            print(f"[LOCAL WEATHER] Error leyendo archivo de clima local: {e}")
+            return None
+
+def monitorear_clima_local():
+    """
+    Consulta los datos climaticos locales de la fuente configurada por el usuario,
+    compara los datos contra los umbrales personalizados de viento, calor/helada y lluvia,
+    y transmite boletines APRS estandarizados y marcados adecuadamente cuando se superan dichos umbrales.
+    """
+    global transmitidas_alertas_locales
+    
+    clima = fetch_local_weather_data()
+    if not clima:
+        return
+        
+    temp = clima["temp_c"]
+    hum = clima["humidity"]
+    wind = clima["wind_kts"]
+    wdir = clima["wind_dir"]
+    press = clima["pressure"]
+    rain = clima["rain_mm"]
+    
+    print(f"[LOCAL WEATHER CHECK] Temp: {temp}°C, Hum: {hum}%, Viento: {wind} kts, Dir: {wdir}°, Pres: {press} hPa, Lluvia: {rain} mm")
+    
+    # Comprobar umbrales
+    alertas_disparadas = []
+    
+    # 1. Viento Fuerte
+    if wind >= LOCAL_THRESHOLD_WIND_KTS:
+        alertas_disparadas.append({
+            "tipo": "VIENTO_LOCAL",
+            "msg": f"Viento fuerte detectado de {wind} kts (Umbral: {LOCAL_THRESHOLD_WIND_KTS} kts)"
+        })
+        
+    # 2. Temperatura Maxima (Ola de calor)
+    if temp >= LOCAL_THRESHOLD_TEMP_MAX_C:
+        alertas_disparadas.append({
+            "tipo": "TEMPERATURA_MAX_LOCAL",
+            "msg": f"Ola de calor detectada de {temp}°C (Umbral: {LOCAL_THRESHOLD_TEMP_MAX_C}°C)"
+        })
+        
+    # 3. Temperatura Minima (Helada / Frio extremo)
+    if temp <= LOCAL_THRESHOLD_TEMP_MIN_C:
+        alertas_disparadas.append({
+            "tipo": "TEMPERATURA_MIN_LOCAL",
+            "msg": f"Helada extrema detectada de {temp}°C (Umbral: {LOCAL_THRESHOLD_TEMP_MIN_C}°C)"
+        })
+        
+    # 4. Lluvia Intensa/Torrencial
+    if rain >= LOCAL_THRESHOLD_RAIN_MM:
+        alertas_disparadas.append({
+            "tipo": "LLUVIA_LOCAL",
+            "msg": f"Lluvia torrencial detectada de {rain} mm (Umbral: {LOCAL_THRESHOLD_RAIN_MM} mm)"
+        })
+        
+    # Procesar y transmitir las alertas disparadas
+    import datetime
+    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    
+    for alerta in alertas_disparadas:
+        # Generar clave unica para evitar saturacion/spam del boletin en el mismo dia
+        alert_key = f"{alerta['tipo']}_{today_str}"
+        
+        if alert_key not in transmitidas_alertas_locales:
+            msg = alerta["msg"]
+            
+            # Boletin APRS (BLN) estandar marcado para distribucion del S.A.T.
+            # Identificador de boletin especial 'BLN3METEO' de 9 caracteres
+            bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN3METEO: [ALERTA SAT LOCAL] {msg}"
+            
+            print(f"\n[ALERTA METEOROLOGICA LOCAL DISPARADA] Emitiendo Boletin APRS: {msg}")
+            transmit_aprs_packet(bulletin_packet)
+            transmitidas_alertas_locales.add(alert_key)
+
+# ==============================================================================
 # HILO PRINCIPAL DE OPERACIÓN (Loop de control permanente)
 # ==============================================================================
 def main():
-    global transmitido_sw_id, ultima_baliza_wx, transmitidas_alertas_meteo, ultima_consulta_pronostico
+    global transmitido_sw_id, ultima_baliza_wx, transmitidas_alertas_meteo, ultima_consulta_pronostico, ultima_consulta_clima_local
     
     print("======================================================================")
     print("     APRS S.A.T. INICIADO - CONSOLA DE EMERGENCIAS REMER")
@@ -1478,6 +1713,12 @@ def main():
                         transmitidas_alertas_meteo.add(alert_key)
                         
                 ultima_consulta_pronostico = curr_time
+                
+            # 7. Monitoreo de Estación Meteorológica Local y Alertas de Umbral Personalizadas
+            if curr_time - ultima_consulta_clima_local >= LOCAL_WEATHER_INTERVAL or ultima_consulta_clima_local == 0:
+                print("\n[MONITOREO CLIMA LOCAL] Evaluando condiciones de la estación local...")
+                monitorear_clima_local()
+                ultima_consulta_clima_local = curr_time
                     
         except KeyboardInterrupt:
             print("\n[INFO] Sistema APRS S.A.T. detenido de forma controlada por el operador.")

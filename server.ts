@@ -106,6 +106,7 @@ let config: TelemetryConfig = {
   pollIntervalAemet: 1,
   pollIntervalJrc: 5,
   pollIntervalIgn: 2,
+  pollIntervalIca: 30,
   criticalEmail: 'emergencias.cenem@proteccioncivil.es',
   aemetAlertsSubscriptionEnabled: true,
   agpsEnabled: true,
@@ -118,7 +119,18 @@ let config: TelemetryConfig = {
   suplVersion: '2.0',
   ignSeismoEnabled: true,
   tsunamiMonitorEnabled: true,
-  systemPower: true
+  systemPower: true,
+  weatherApiKey: '',
+  thresholdWindKts: 25.0,
+  thresholdTempMinC: 0.0,
+  thresholdRainMm: 20.0,
+  forecastDays: 3,
+  localWeatherSource: 'simulated',
+  localThresholdWindKts: 20.0,
+  localThresholdTempMaxC: 35.0,
+  localThresholdTempMinC: 5.0,
+  localThresholdRainMm: 10.0,
+  localWeatherInterval: 300
 };
 
 // Global timestamp tracking when the entire system was turned ON
@@ -152,6 +164,7 @@ try {
       if (iniData.APRS.serverIp) config.serverIp = iniData.APRS.serverIp.trim();
       if (iniData.APRS.serverPort) config.aprscPort = parseInt(iniData.APRS.serverPort) || config.aprscPort;
       if (iniData.APRS.kissTcpPort) config.kissTcpPort = parseInt(iniData.APRS.kissTcpPort) || config.kissTcpPort;
+      if (iniData.APRS.pollIntervalIca) config.pollIntervalIca = parseInt(iniData.APRS.pollIntervalIca) || config.pollIntervalIca;
     }
     if (iniData.OpenWeatherMap && iniData.OpenWeatherMap.apiKey) {
       config.owmApiKey = iniData.OpenWeatherMap.apiKey.trim();
@@ -162,6 +175,14 @@ try {
       if (iniData.WeatherAPI.thresholdTempMinC) config.thresholdTempMinC = parseFloat(iniData.WeatherAPI.thresholdTempMinC) || config.thresholdTempMinC;
       if (iniData.WeatherAPI.thresholdRainMm) config.thresholdRainMm = parseFloat(iniData.WeatherAPI.thresholdRainMm) || config.thresholdRainMm;
       if (iniData.WeatherAPI.forecastDays) config.forecastDays = parseInt(iniData.WeatherAPI.forecastDays) || config.forecastDays;
+    }
+    if (iniData.LocalWeather) {
+      if (iniData.LocalWeather.source) config.localWeatherSource = iniData.LocalWeather.source.trim();
+      if (iniData.LocalWeather.thresholdWindKts) config.localThresholdWindKts = parseFloat(iniData.LocalWeather.thresholdWindKts) || config.localThresholdWindKts;
+      if (iniData.LocalWeather.thresholdTempMaxC) config.localThresholdTempMaxC = parseFloat(iniData.LocalWeather.thresholdTempMaxC) || config.localThresholdTempMaxC;
+      if (iniData.LocalWeather.thresholdTempMinC) config.localThresholdTempMinC = parseFloat(iniData.LocalWeather.thresholdTempMinC) || config.localThresholdTempMinC;
+      if (iniData.LocalWeather.thresholdRainMm) config.localThresholdRainMm = parseFloat(iniData.LocalWeather.thresholdRainMm) || config.localThresholdRainMm;
+      if (iniData.LocalWeather.interval) config.localWeatherInterval = parseInt(iniData.LocalWeather.interval) || config.localWeatherInterval;
     }
     if (iniData.Fallback) {
       if (iniData.Fallback.latitude) config.fallbackLat = parseFloat(iniData.Fallback.latitude) || config.fallbackLat;
@@ -1922,32 +1943,164 @@ function calculateAqiFromPm25(val: number): number {
   return Math.round(201 + ((99 / 99.9) * (val - 150.5)));
 }
 
-function getAirQualityBeaconPacket(): string {
+// Variables para rastrear el último envío de balizas de calidad del aire y su estado
+let lastIcaBeaconTime = 0;
+let lastIcaStatusLabel = '';
+
+function getNearestIcaStation() {
+  const originLat = gpsdState.lat || 40.416775;
+  const originLon = gpsdState.lon || -3.703790;
+  
+  let nearestStation = ICA_STATIONS[0];
+  let minDistance = Infinity;
+  
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+  
+  for (const station of ICA_STATIONS) {
+    const dist = getDistance(originLat, originLon, station.lat, station.lon);
+    if (dist < minDistance) {
+      minDistance = dist;
+      nearestStation = station;
+    }
+  }
+  
+  return nearestStation;
+}
+
+function getIcaLabel(aqi: number): string {
+  if (aqi <= 50) return 'Buena';
+  if (aqi <= 100) return 'Regular';
+  if (aqi <= 150) return 'Desfavorable';
+  if (aqi <= 200) return 'Muy Desfavorable';
+  return 'Extremadamente Desfavorable';
+}
+
+function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: number; pm25: number; pm10: number; co: number; o3: number; no2: number; stationName: string } {
+  const station = getNearestIcaStation();
+  
+  // Real-time live fluctuations
+  const minOfHour = new Date().getMinutes();
+  const secSeed = new Date().getSeconds() * 0.05;
+  const seedFactor = 1 + Math.sin(station.name.charCodeAt(1) + minOfHour * 0.12 + secSeed) * 0.14;
+  
+  const pm25 = station.pm25 !== null && station.pm25 !== undefined ? parseFloat(Math.max(1, station.pm25 * seedFactor).toFixed(1)) : 8.0;
+  const pm10 = station.pm10 !== null && station.pm10 !== undefined ? parseFloat(Math.max(2, station.pm10 * seedFactor).toFixed(1)) : 12.0;
+  const no2 = station.no2 !== null && station.no2 !== undefined ? parseFloat(Math.max(2, station.no2 * seedFactor).toFixed(1)) : 15.0;
+  const o3 = station.o3 !== null && station.o3 !== undefined ? parseFloat(Math.max(5, station.o3 * seedFactor).toFixed(1)) : 45.0;
+  const so2 = station.so2 !== null && station.so2 !== undefined ? parseFloat(Math.max(1, station.so2 * seedFactor).toFixed(1)) : 2.0;
+  const co = station.co !== null && station.co !== undefined ? parseFloat(Math.max(0.1, station.co * seedFactor).toFixed(2)) : 0.3;
+  
+  const aqi = calculateAqiFromPm25(pm25);
+  const label = getIcaLabel(aqi);
+
   const name = "AIR-QUAL "; // exactly 9 chars
   const timestamp = getAprsTimestamp(new Date());
-  const aprsLat = latToAprs(gpsdState.lat);
-  const aprsLon = lonToAprs(gpsdState.lon);
-  // Símbolo específico para Calidad del Aire: usaremos la tabla alternativa '\' con el símbolo 'Q' (Science / Research / Environment)
-  const comment = `AQI-ICA: ${iqairState.aqi} (PM2.5: ${(iqairState.pm2_5 || 0).toFixed(1)}ug, CO: ${(iqairState.co || 0).toFixed(0)}ug, O3: ${(iqairState.o3 || 0).toFixed(1)}ug, NO2: ${(iqairState.no2 || 0).toFixed(1)}ug) [Estacion S.A.T.]`;
-  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
-}
-
-function transmitAirQualityBeacon() {
-  const beacon = getAirQualityBeaconPacket();
-  iqairState.rawAprsAqi = beacon;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, beacon, true, 'Baliza de Posición APRS para Calidad de Aire (AIR-QUAL) transmitida con símbolo específico Q.');
-}
-
-function broadcastAirQualityBulletin() {
-  const aqi = iqairState.aqi;
-  const pm25 = iqairState.pm2_5 || 0;
-  const pm10 = iqairState.pm10 || 0;
-  const co = iqairState.co || 0;
-  const no2 = iqairState.no2 || 0;
-  const o3 = iqairState.o3 || 0;
   
-  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${aqi} (PM2.5: ${pm25.toFixed(1)}ug, PM10: ${pm10.toFixed(1)}ug, CO: ${co.toFixed(0)}ug, NO2: ${no2.toFixed(1)}ug, O3: ${o3.toFixed(1)}ug)`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de Calidad del Aire (ICA) difundido para la estación.');
+  const aprsLat = latToAprs(station.lat);
+  const aprsLon = lonToAprs(station.lon);
+  
+  const coVal = co * 1000; // microgramos (ug)
+
+  const pollutants = [
+    { name: 'PM2.5', value: pm25, score: pm25 / 10.0 },
+    { name: 'CO', value: coVal, score: coVal / 5000.0 },
+    { name: 'O3', value: o3, score: o3 / 50.0 },
+    { name: 'NO2', value: no2, score: no2 / 40.0 }
+  ];
+  pollutants.sort((a, b) => b.score - a.score);
+  const dominant = pollutants[0];
+  const formattedValue = dominant.name === 'CO' ? dominant.value.toFixed(0) : dominant.value.toFixed(1);
+
+  // Símbolo específico para Calidad del Aire: usaremos la tabla alternativa '\' con el símbolo 'Q'
+  // El comentario tiene el formato: AQI-ICA: [valor] ([etiqueta]) ([contaminante_principal]: [valor]ug)
+  // Con el símbolo Q delante, formará: QQAQI-ICA: 40... idéntico a la petición del usuario, sin [Estacion S.A.T.]
+  const comment = `AQI-ICA: ${aqi} (${label}) (${dominant.name}: ${formattedValue}ug)`;
+  
+  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
+  
+  return { 
+    packet, 
+    label, 
+    aqi, 
+    pm25, 
+    pm10, 
+    co: coVal, 
+    o3, 
+    no2,
+    stationName: station.name 
+  };
+}
+
+function transmitAirQualityBeacon(force: boolean = false) {
+  const { packet, label, aqi, pm25, pm10, co, o3, no2, stationName } = getAirQualityBeaconPacket();
+  
+  const now = Date.now();
+  const timeSinceLast = now - lastIcaBeaconTime;
+  const stateChanged = lastIcaStatusLabel && (label !== lastIcaStatusLabel);
+  const intervalMin = config.pollIntervalIca || 30;
+  const intervalMs = intervalMin * 60 * 1000;
+  
+  if (force || lastIcaBeaconTime === 0 || timeSinceLast >= intervalMs || stateChanged) {
+    const isStateChange = lastIcaStatusLabel && stateChanged;
+    lastIcaBeaconTime = now;
+    lastIcaStatusLabel = label;
+    
+    iqairState.rawAprsAqi = packet;
+    
+    // Sincronizar el estado de iqairState con los valores de la estación más cercana
+    iqairState.aqi = aqi;
+    iqairState.pm2_5 = pm25;
+    iqairState.pm10 = pm10;
+    iqairState.co = co / 1000; // volver a guardar en mg para consistencia del iqairState
+    iqairState.o3 = o3;
+    iqairState.no2 = no2;
+    iqairState.city = stationName;
+    iqairState.lastUpdated = new Date().toISOString();
+
+    const remarks = isStateChange 
+      ? `Cambio de estado ICA detectado en estación cercana '${stationName}' (${label}). Baliza APRS AIR-QUAL transmitida inmediatamente.`
+      : `Baliza de Posición APRS para Calidad de Aire (AIR-QUAL) transmitida con éxito (Estación cercana: ${stationName}).`;
+
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+    
+    // Difundir el boletín APRS para que todo coincida perfectamente
+    broadcastAirQualityBulletin(aqi, label, pm25, pm10, co, no2, o3, stationName);
+  } else {
+    console.log(`[APRS ICA] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${label})`);
+  }
+}
+
+function broadcastAirQualityBulletin(
+  aqi?: number, 
+  label?: string, 
+  pm25Val?: number, 
+  pm10Val?: number, 
+  coVal?: number, 
+  no2Val?: number, 
+  o3Val?: number,
+  stationName?: string
+) {
+  const finalAqi = aqi !== undefined ? aqi : iqairState.aqi;
+  const finalLabel = label !== undefined ? label : getIcaLabel(finalAqi);
+  const pm25 = pm25Val !== undefined ? pm25Val : (iqairState.pm2_5 || 0);
+  const pm10 = pm10Val !== undefined ? pm10Val : (iqairState.pm10 || 0);
+  const co = coVal !== undefined ? coVal : ((iqairState.co || 0) * 1000);
+  const no2 = no2Val !== undefined ? no2Val : (iqairState.no2 || 0);
+  const o3 = o3Val !== undefined ? o3Val : (iqairState.o3 || 0);
+  const name = stationName !== undefined ? stationName : iqairState.city;
+  
+  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${finalAqi} (${finalLabel}) (PM2.5: ${pm25.toFixed(1)}ug, PM10: ${pm10.toFixed(1)}ug, CO: ${co.toFixed(0)}ug, NO2: ${no2.toFixed(1)}ug, O3: ${o3.toFixed(1)}ug)`;
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Calidad del Aire (ICA) difundido para la estación ${name}.`);
 }
 
 // IQAir Air Quality Index Fetcher & Refresher
@@ -6168,12 +6321,28 @@ app.post('/api/config', (req, res) => {
     if (updated.pollIntervalAemet !== undefined) config.pollIntervalAemet = parseInt(updated.pollIntervalAemet.toString());
     if (updated.pollIntervalJrc !== undefined) config.pollIntervalJrc = parseInt(updated.pollIntervalJrc.toString());
     if (updated.pollIntervalIgn !== undefined) config.pollIntervalIgn = parseInt(updated.pollIntervalIgn.toString());
+    if (updated.pollIntervalIca !== undefined) config.pollIntervalIca = parseInt(updated.pollIntervalIca.toString());
     if (updated.criticalEmail !== undefined) config.criticalEmail = updated.criticalEmail.trim();
     if (updated.aemetAlertsSubscriptionEnabled !== undefined) {
       config.aemetAlertsSubscriptionEnabled = !!updated.aemetAlertsSubscriptionEnabled;
       // Trigger instant update of warnings
       setTimeout(() => refreshAemetWarnings(), 50);
     }
+
+    // WeatherAPI settings
+    if (updated.weatherApiKey !== undefined) config.weatherApiKey = updated.weatherApiKey.trim();
+    if (updated.thresholdWindKts !== undefined) config.thresholdWindKts = parseFloat(updated.thresholdWindKts.toString());
+    if (updated.thresholdTempMinC !== undefined) config.thresholdTempMinC = parseFloat(updated.thresholdTempMinC.toString());
+    if (updated.thresholdRainMm !== undefined) config.thresholdRainMm = parseFloat(updated.thresholdRainMm.toString());
+    if (updated.forecastDays !== undefined) config.forecastDays = parseInt(updated.forecastDays.toString());
+
+    // Local Weather settings
+    if (updated.localWeatherSource !== undefined) config.localWeatherSource = updated.localWeatherSource.trim();
+    if (updated.localThresholdWindKts !== undefined) config.localThresholdWindKts = parseFloat(updated.localThresholdWindKts.toString());
+    if (updated.localThresholdTempMaxC !== undefined) config.localThresholdTempMaxC = parseFloat(updated.localThresholdTempMaxC.toString());
+    if (updated.localThresholdTempMinC !== undefined) config.localThresholdTempMinC = parseFloat(updated.localThresholdTempMinC.toString());
+    if (updated.localThresholdRainMm !== undefined) config.localThresholdRainMm = parseFloat(updated.localThresholdRainMm.toString());
+    if (updated.localWeatherInterval !== undefined) config.localWeatherInterval = parseInt(updated.localWeatherInterval.toString());
 
     // A-GPS configurations
     if (updated.agpsEnabled !== undefined) config.agpsEnabled = !!updated.agpsEnabled;
@@ -6248,6 +6417,16 @@ thresholdRainMm = ${config.thresholdRainMm !== undefined ? config.thresholdRainM
 # Período de proyección de pronóstico en días (1 a 3 días, 24-72h)
 forecastDays = ${config.forecastDays !== undefined ? config.forecastDays : 3}
 
+[LocalWeather]
+# Fuente de datos del clima local (simulated, http://... o local_weather.json)
+source = ${config.localWeatherSource || 'simulated'}
+# Umbrales personalizados para alertas locales
+thresholdWindKts = ${config.localThresholdWindKts !== undefined ? config.localThresholdWindKts : 20.0}
+thresholdTempMaxC = ${config.localThresholdTempMaxC !== undefined ? config.localThresholdTempMaxC : 35.0}
+thresholdTempMinC = ${config.localThresholdTempMinC !== undefined ? config.localThresholdTempMinC : 5.0}
+thresholdRainMm = ${config.localThresholdRainMm !== undefined ? config.localThresholdRainMm : 10.0}
+interval = ${config.localWeatherInterval !== undefined ? config.localWeatherInterval : 300}
+
 [Fallback]
 # Coordenadas geográficas por defecto si el receptor GPS local pierde fijación
 latitude = ${config.fallbackLat}
@@ -6271,6 +6450,8 @@ serverPort = ${config.aprscPort}
 kissTcpHost = localhost
 # Puerto KISS TCP del Direwolf
 kissTcpPort = ${config.kissTcpPort}
+# Intervalo de transmisión de telemetría de calidad del aire en minutos
+pollIntervalIca = ${config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30}
 `;
         fs.writeFileSync(iniPath, iniContent, 'utf8');
         console.log(`[SYS CONFIG] Sincronizado config.ini con éxito tras actualizar en la UI.`);

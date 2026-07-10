@@ -80,6 +80,40 @@ export default function WeewxConsole({ weather, iqair, callsign }: WeewxConsoleP
   // Trends
   const [chartData, setChartData] = useState(() => generateInitialTrends(weather.tempC, weather.pressureHpa));
 
+  // Keep references to prevent clearing intervals on every update of weather, iqair, or stats
+  const weatherRef = useRef(weather);
+  const iqairRef = useRef(iqair);
+  const recordsCountRef = useRef(stats.recordsCount);
+
+  useEffect(() => {
+    weatherRef.current = weather;
+  }, [weather]);
+
+  useEffect(() => {
+    iqairRef.current = iqair;
+  }, [iqair]);
+
+  useEffect(() => {
+    recordsCountRef.current = stats.recordsCount;
+  }, [stats.recordsCount]);
+
+  // Synchronize latest chart element with actual real-time weather/aqi whenever they update
+  useEffect(() => {
+    setChartData(prev => {
+      if (prev.length === 0) return prev;
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      updated[updated.length - 1] = {
+        ...last,
+        temp: parseFloat(weather.tempC.toFixed(1)),
+        pressure: parseFloat(weather.pressureHpa.toFixed(1)),
+        windSpeed: parseFloat(weather.windSpeedKts.toFixed(1)),
+        aqi: iqair ? iqair.aqi : last.aqi,
+      };
+      return updated;
+    });
+  }, [weather.tempC, weather.pressureHpa, weather.windSpeedKts, iqair?.aqi]);
+
   // Auto-logs stream simulator
   useEffect(() => {
     // Initial setup logs
@@ -102,18 +136,21 @@ export default function WeewxConsole({ weather, iqair, callsign }: WeewxConsoleP
     setWeewxLogs(initialLogs);
   }, []);
 
-  // Periodic LOOP simulator tick
+  // Periodic LOOP simulator tick (Continuous background loop/bucle)
   useEffect(() => {
     if (!isRunning) return;
 
     const interval = setInterval(() => {
+      const current_weather = weatherRef.current;
+      const current_iqair = iqairRef.current;
+
       // Create new live measurements offsets
       const randomOffset = (Math.random() * 0.4 - 0.2);
-      const currentTemp = (weather.tempC + randomOffset).toFixed(1);
-      const currentHum = Math.round(weather.humidityPct + (Math.random() * 2 - 1));
-      const currentPress = (weather.pressureHpa + (Math.random() * 0.2 - 0.1)).toFixed(1);
-      const currentWind = (weather.windSpeedKts + (Math.random() * 1.5 - 0.75)).toFixed(1);
-      const currentAqi = iqair ? iqair.aqi : 45;
+      const currentTemp = (current_weather.tempC + randomOffset).toFixed(1);
+      const currentHum = Math.round(current_weather.humidityPct + (Math.random() * 2 - 1));
+      const currentPress = (current_weather.pressureHpa + (Math.random() * 0.2 - 0.1)).toFixed(1);
+      const currentWind = (current_weather.windSpeedKts + (Math.random() * 1.5 - 0.75)).toFixed(1);
+      const currentAqi = current_iqair ? current_iqair.aqi : 45;
 
       const timestamp = new Date().toLocaleTimeString('es-ES');
       const aprsPacket = `_12061412c272s002g004t072r000p000h45b10168 (${timestamp})`;
@@ -132,7 +169,8 @@ export default function WeewxConsole({ weather, iqair, callsign }: WeewxConsoleP
       // Add a periodic archive commit
       if (Math.random() > 0.7) {
         const timeNow = new Date();
-        const archLog = `[ARCHIVE] weewx.manager: COMMITTED record to SQLite archive table. Datetime=${Math.floor(timeNow.getTime() / 1000)} (timestamp), rowid=${stats.recordsCount + 1}`;
+        const nextCount = recordsCountRef.current + 1;
+        const archLog = `[ARCHIVE] weewx.manager: COMMITTED record to SQLite archive table. Datetime=${Math.floor(timeNow.getTime() / 1000)} (timestamp), rowid=${nextCount}`;
         setWeewxLogs(prev => [...prev.slice(-35), archLog]);
         
         // Boost data count
@@ -161,7 +199,7 @@ export default function WeewxConsole({ weather, iqair, callsign }: WeewxConsoleP
     }, 7000);
 
     return () => clearInterval(interval);
-  }, [isRunning, weather, iqair, driverMode, stats.recordsCount]);
+  }, [isRunning, driverMode]);
 
   // Execute interactive SQL queries
   const handleExecuteQuery = () => {

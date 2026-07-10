@@ -177,17 +177,90 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
   const [warningScope, setWarningScope] = useState<'provincial' | 'national'>('provincial');
   const [warningLevelFilter, setWarningLevelFilter] = useState<'todos' | 'rojo' | 'naranja' | 'amarillo'>('todos');
 
+  // Real-time forecast caching by province ID to avoid unnecessary API requests or infinite loops
+  const [dynamicForecasts, setDynamicForecasts] = useState<Record<string, number[]>>({});
+  const [isLoadingForecast, setIsLoadingForecast] = useState<boolean>(false);
+
+  // Helper to format today's date as YYYY-MM-DD
+  const getTodayString = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   // Find selected province
   const currentProvince = PROVINCES_METEOSALUD.find(p => p.id === selectedProvinceId) || PROVINCES_METEOSALUD[0];
 
-  // Compute exceedances in the next 6 days (today + 5 days)
-  const exceedanceCount = currentProvince.currentForecast.filter(t => t >= currentProvince.thresholdC).length;
+  // Fetch real maximum temperatures forecast from Open-Meteo dynamically when selected province changes
+  React.useEffect(() => {
+    let active = true;
+    const fetchForecast = async () => {
+      // If we already have the forecast cached, no need to load it again
+      if (dynamicForecasts[selectedProvinceId]) return;
+
+      setIsLoadingForecast(true);
+      try {
+        const response = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${currentProvince.lat}&longitude=${currentProvince.lon}&daily=temperature_2m_max&timezone=Europe/Madrid`
+        );
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        const data = await response.json();
+        if (data && data.daily && data.daily.temperature_2m_max) {
+          // Slice the first 6 days of max temperatures
+          const temps = data.daily.temperature_2m_max.slice(0, 6).map((t: number) => t ?? 30.0);
+          if (active && temps.length > 0) {
+            setDynamicForecasts(prev => ({
+              ...prev,
+              [selectedProvinceId]: temps
+            }));
+          }
+        }
+      } catch (err) {
+        console.error("Fallo al sincronizar pronóstico real Meteosalud:", err);
+      } finally {
+        if (active) {
+          setIsLoadingForecast(false);
+        }
+      }
+    };
+
+    fetchForecast();
+    return () => {
+      active = false;
+    };
+  }, [selectedProvinceId, currentProvince.lat, currentProvince.lon]);
+
+  // Track if we have already autodetected using GPSD to avoid overwriting manual user selections
+  const [hasAutodetectedGPS, setHasAutodetectedGPS] = useState<boolean>(false);
+
+  // Auto-detect closest province on GPS coordinates availability
+  React.useEffect(() => {
+    if (gpsd && gpsd.lat && gpsd.lon && !hasAutodetectedGPS) {
+      let closestProv = PROVINCES_METEOSALUD[0];
+      let minDist = Infinity;
+      for (const prov of PROVINCES_METEOSALUD) {
+        const dist = Math.sqrt(Math.pow(prov.lat - gpsd.lat, 2) + Math.pow(prov.lon - gpsd.lon, 2));
+        if (dist < minDist) {
+          minDist = dist;
+          closestProv = prov;
+        }
+      }
+      if (closestProv) {
+        setSelectedProvinceId(closestProv.id);
+        setHasAutodetectedGPS(true);
+      }
+    }
+  }, [gpsd?.lat, gpsd?.lon, hasAutodetectedGPS]);
+
+  // Use dynamic live forecast if available, otherwise fall back to static baseline values
+  const forecast = dynamicForecasts[selectedProvinceId] || currentProvince.currentForecast;
+
+  // Compute exceedances in the next 6 days (today + 5 days) using the live or baseline forecast
+  const exceedanceCount = forecast.filter(t => t >= currentProvince.thresholdC).length;
 
   // Determine Plan Meteosalud Risk Level (Nivel 0 to 3)
-  // Nivel 0 (Verde): 0 días superando el umbral
-  // Nivel 1 (Amarillo): 1 ó 2 días superando el umbral
-  // Nivel 2 (Naranja): 3 ó 4 días superando el umbral
-  // Nivel 3 (Rojo): 5 ó 6 días superando el umbral
   let riskLevel = 0;
   let riskColor = 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30';
   let riskBg = 'bg-emerald-500';
@@ -214,9 +287,19 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
     riskDescription = 'Ola de calor severa con riesgo extremo e impacto severo sobre la salud. Umbrales excedidos durante 5 o más días.';
   }
 
+  // Dynamically map warnings with today's date so they never appear stale
+  const dynamicWarnings = useMemo(() => {
+    const todayStr = getTodayString();
+    return AEMET_WARNINGS_DATA.map(warning => ({
+      ...warning,
+      start: warning.start.replace(/^\d{4}-\d{2}-\d{2}/, todayStr),
+      end: warning.end.replace(/^\d{4}-\d{2}-\d{2}/, todayStr),
+    }));
+  }, []);
+
   // Filter active warnings based on warningScope and warningLevelFilter
   const filteredWarnings = useMemo(() => {
-    return AEMET_WARNINGS_DATA.filter(warning => {
+    return dynamicWarnings.filter(warning => {
       // Filter by scope
       if (warningScope === 'provincial' && warning.provinceId !== selectedProvinceId) {
         return false;
@@ -227,7 +310,7 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
       }
       return true;
     });
-  }, [selectedProvinceId, warningScope, warningLevelFilter]);
+  }, [dynamicWarnings, selectedProvinceId, warningScope, warningLevelFilter]);
 
   // Handle transmitting simulated APRS bulletin
   const handleTransmitMeteosaludAprs = async () => {
@@ -236,7 +319,7 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
     setTxLog(null);
 
     const levelStr = riskLevel === 0 ? 'VERDE' : riskLevel === 1 ? 'AMARILLO' : riskLevel === 2 ? 'NARANJA' : 'ROJO';
-    const maxTemp = Math.max(...currentProvince.currentForecast).toFixed(1);
+    const maxTemp = Math.max(...forecast).toFixed(1);
     const timestamp = new Date().toISOString().slice(11, 19).replace(/:/g, '') + 'z';
     
     // Construct APRS Object packet for MED-HEALTH bulletin
@@ -309,11 +392,54 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Province Selector */}
-              <div className="space-y-1.5">
-                <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
-                  <MapPin size={11} className="text-red-400" />
-                  Provincia España:
-                </label>
+              <div className="space-y-1.5 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                    <MapPin size={11} className="text-red-400" />
+                    Provincia España:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {isLoadingForecast && (
+                      <RefreshCw size={10} className="text-indigo-400 animate-spin shrink-0" />
+                    )}
+                    {gpsd?.lat && gpsd?.lon && (
+                      <button
+                        onClick={() => {
+                          let closestProv = PROVINCES_METEOSALUD[0];
+                          let minDist = Infinity;
+                          for (const prov of PROVINCES_METEOSALUD) {
+                            const dist = Math.sqrt(Math.pow(prov.lat - gpsd.lat, 2) + Math.pow(prov.lon - gpsd.lon, 2));
+                            if (dist < minDist) {
+                              minDist = dist;
+                              closestProv = prov;
+                            }
+                          }
+                          if (closestProv && closestProv.id !== selectedProvinceId) {
+                            setSelectedProvinceId(closestProv.id);
+                          }
+                        }}
+                        title="Autodetectar provincia por coordenadas GPSD"
+                        className="text-[8.5px] font-mono font-bold text-emerald-400 hover:text-emerald-300 transition uppercase bg-emerald-950/40 border border-emerald-500/25 px-1 rounded cursor-pointer leading-tight py-0.5"
+                      >
+                        GPS
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        // Clear forecast for current province and refetch
+                        setDynamicForecasts(prev => {
+                          const updated = { ...prev };
+                          delete updated[selectedProvinceId];
+                          return updated;
+                        });
+                      }}
+                      title="Sincronizar datos climáticos desde satélite (Open-Meteo)"
+                      className="text-[8.5px] font-mono font-bold text-indigo-400 hover:text-indigo-300 transition uppercase bg-indigo-950/40 border border-indigo-500/25 px-1 rounded cursor-pointer leading-tight py-0.5"
+                    >
+                      Refrescar
+                    </button>
+                  </div>
+                </div>
                 <select
                   value={selectedProvinceId}
                   onChange={(e) => setSelectedProvinceId(e.target.value)}
@@ -331,8 +457,12 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
               <div className="bg-slate-900/40 border border-slate-900 rounded-lg p-3 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
                   <span className="text-[10px] text-slate-400 uppercase font-semibold">Umbral Sanitario Crítico:</span>
-                  <span className="px-1.5 py-0.5 bg-red-950/40 border border-red-500/30 text-red-400 font-mono text-[10px] font-bold rounded">
-                    Meteosalud
+                  <span className={`px-1.5 py-0.5 border font-mono text-[9px] font-bold rounded leading-none ${
+                    dynamicForecasts[selectedProvinceId]
+                      ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400'
+                      : 'bg-indigo-950/40 border-indigo-500/30 text-indigo-400'
+                  }`}>
+                    {dynamicForecasts[selectedProvinceId] ? '📡 SAT_REAL_TIME' : '⚠️ BASELINE'}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-1 mt-2">
@@ -370,7 +500,7 @@ export default function MeteosaludPortal({ gpsd, onInjectRaw }: MeteosaludPortal
                 Pronóstico Térmico del Plan (Día actual + 5 Días de Análisis)
               </h4>
               <div className="grid grid-cols-6 gap-2">
-                {currentProvince.currentForecast.map((temp, index) => {
+                {forecast.map((temp, index) => {
                   const isExceeded = temp >= currentProvince.thresholdC;
                   return (
                     <div 

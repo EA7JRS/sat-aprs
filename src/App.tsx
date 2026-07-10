@@ -2638,6 +2638,7 @@ export default function App() {
               setAprsPackets={setAprsPackets} 
               playBuzzerSound={playBuzzerSound}
               showToast={showToast}
+              weather={data.weather}
             />
           </motion.div>
         ) : activeTab === 'pat-pillar' ? (

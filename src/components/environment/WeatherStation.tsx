@@ -24,7 +24,6 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
 
   // Translate fields for easier understanding
   const tempF = Math.round((weather.tempC * 9/5) + 32);
-  const [activeExplainToken, setActiveExplainToken] = useState<string | null>(null);
 
   // Dynamic comparison data matching live station adjustments
   const comparisonData = [
@@ -33,30 +32,6 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
     { hour: '14:00', aemetTemp: Math.max(0, weather.tempC + 2.1), localTemp: Math.max(0, weather.tempC + 1.8), aemetHum: Math.max(0, weather.humidityPct - 10), localHum: Math.max(0, weather.humidityPct - 12) },
     { hour: '18:00', aemetTemp: Math.max(0, weather.tempC + 0.8), localTemp: Math.max(0, weather.tempC + 0.5), aemetHum: Math.max(0, weather.humidityPct - 5), localHum: Math.max(0, weather.humidityPct - 3) },
     { hour: 'Actual', aemetTemp: Math.max(0, weather.tempC - 0.4), localTemp: weather.tempC, aemetHum: Math.min(100, weather.humidityPct + 2), localHum: weather.humidityPct }
-  ];
-
-  // Parse WX tokens for interactive translation
-  const dirToken = weather.windDirDeg.toString().padStart(3, '0');
-  const speedToken = Math.round(weather.windSpeedKts).toString().padStart(3, '0');
-  const gustToken = `g${Math.round(weather.gustKts || 0).toString().padStart(3, '0')}`;
-  const tempToken = `t${tempF >= 0 ? tempF.toString().padStart(3, '0') : '-' + Math.abs(tempF).toString().padStart(2, '0')}`;
-  const rain1hToken = `r${Math.round(weather.rain1hIn * 100).toString().padStart(3, '0')}`;
-  const rain24hToken = `p${Math.round(weather.rain24hIn * 100).toString().padStart(3, '0')}`;
-  let humVal = weather.humidityPct;
-  if (humVal === 100) humVal = 0;
-  const humToken = `h${humVal.toString().padStart(2, '0')}`;
-  const pressToken = `b${Math.round(weather.pressureHpa * 10).toString().padStart(5, '0')}`;
-
-  const tokens = [
-    { code: '_', label: 'Estructura WX', desc: 'Define que el paquete es un informe de estación meteorológica sin posición dedicada.', color: 'text-pink-400' },
-    { code: `${dirToken}/`, label: 'Viento (Dirección/Div)', desc: `Dirección de donde sopla el viento: ${weather.windDirDeg}° (${getWindDirectionName(weather.windDirDeg)}).`, color: 'text-red-400' },
-    { code: speedToken, label: 'Viento (Velocidad)', desc: `Velocidad sostenida del viento: ${Math.round(weather.windSpeedKts)} nudos (${(weather.windSpeedKts * 1.852).toFixed(1)} km/h).`, color: 'text-amber-400' },
-    { code: gustToken, label: 'Racha Máxima', desc: `Velocidad racha de viento máxima en los últimos 5 minutos: ${Math.round(weather.gustKts)} nudos (${(weather.gustKts * 1.852).toFixed(1)} km/h).`, color: 'text-yellow-400' },
-    { code: tempToken, label: 'Temperatura', desc: `Temperatura ambiente en Fahrenheit: ${tempF}°F (Equivale a ${weather.tempC.toFixed(1)}°C).`, color: 'text-orange-400' },
-    { code: rain1hToken, label: 'Lluvia Crítica (1h)', desc: `Precipitaciones caídas en la última hora: ${weather.rain1hIn.toFixed(2)} pulgadas (Equivale a ${(weather.rain1hIn * 25.4).toFixed(1)} mm).`, color: 'text-blue-400' },
-    { code: rain24hToken, label: 'Lluvia Semanal (24h)', desc: `Acumulado de lluvias en las últimas 24 horas: ${weather.rain24hIn.toFixed(2)} pulgadas (Equivale a ${(weather.rain24hIn * 25.4).toFixed(1)} mm).`, color: 'text-cyan-400' },
-    { code: humToken, label: 'Humedad Relativa', desc: `Humedad atmosférica en porcentaje: ${weather.humidityPct === 100 ? '100% (APRS codificado como h00)' : weather.humidityPct + '%'}.`, color: 'text-indigo-400' },
-    { code: pressToken, label: 'Presión Barométrica', desc: `Presión barométrica en décimas de hPa/mb: ${weather.pressureHpa.toFixed(1)} hPa.`, color: 'text-violet-400' }
   ];
 
   function getWindDirectionName(deg: number): string {
@@ -107,130 +82,72 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
       </div>
 
       {weatherTab === 'actual' ? (
-        /* Main Grid: Metrics vs Explainer */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Physical Weather Metrics Panel */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-            {/* Card TEMP */}
-            <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
-              <Thermometer className="text-orange-400" size={20} />
-              <div className="font-mono text-xs">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Temperatura</span>
-                <span className="text-slate-100 font-bold text-sm">{weather.tempC.toFixed(1)}°C</span>
-                <span className="text-[10px] text-slate-400 block">{tempF}°F</span>
-              </div>
-            </div>
-
-            {/* Card WIND */}
-            {(() => {
-              const bft = getBeaufortInfoByKts(weather.windSpeedKts);
-              return (
-                <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5 transition-all" style={{ borderColor: `${bft.hex}30` }}>
-                  <Wind style={{ color: bft.hex }} size={20} />
-                  <div className="font-mono text-xs">
-                    <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Velocidad Viento</span>
-                    <span className="font-bold text-sm" style={{ color: bft.hex }}>
-                      {Math.round(weather.windSpeedKts)} Kts <span className="text-[8.5px] uppercase font-black px-1 rounded bg-black/40 border border-slate-800" style={{ borderColor: `${bft.hex}40` }}>F{bft.force}</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">{(weather.windSpeedKts * 1.852).toFixed(0)} km/h • {bft.name}</span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Card WIND DIR */}
-            <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
-              <Compass className="text-yellow-400" size={20} />
-              <div className="font-mono text-xs">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Dirección</span>
-                <span className="text-slate-100 font-bold text-sm">{weather.windDirDeg}°</span>
-                <span className="text-[10px] text-slate-400 block truncate">{getWindDirectionName(weather.windDirDeg)}</span>
-              </div>
-            </div>
-
-            {/* Card HUMIDITY */}
-            <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
-              <Droplets className="text-blue-400" size={20} />
-              <div className="font-mono text-xs">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Humedad</span>
-                <span className="text-slate-100 font-bold text-sm">{weather.humidityPct}%</span>
-                <span className="text-[10px] text-slate-400 block">Relativa</span>
-              </div>
-            </div>
-
-            {/* Card PRESSURE */}
-            <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
-              <Gauge className="text-indigo-400" size={20} />
-              <div className="font-mono text-xs">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Presión</span>
-                <span className="text-slate-100 font-bold text-sm">{weather.pressureHpa.toFixed(1)} hPa</span>
-                <span className="text-[10px] text-slate-400 block">Barométrica</span>
-              </div>
-            </div>
-
-            {/* Card RAIN */}
-            <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
-              <CloudSun className="text-cyan-400" size={20} />
-              <div className="font-mono text-xs">
-                <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Lluvia (1h/24h)</span>
-                <span className="text-slate-100 font-bold text-sm">{(weather.rain1hIn * 25.4).toFixed(1)} mm</span>
-                <span className="text-[10px] text-slate-400 block">En 24h: {(weather.rain24hIn * 25.4).toFixed(0)} mm</span>
-              </div>
+        /* Physical Weather Metrics Panel (Full width row) */
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          {/* Card TEMP */}
+          <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
+            <Thermometer className="text-orange-400" size={20} />
+            <div className="font-mono text-xs">
+              <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Temperatura</span>
+              <span className="text-slate-100 font-bold text-sm">{weather.tempC.toFixed(1)}°C</span>
+              <span className="text-[10px] text-slate-400 block">{tempF}°F</span>
             </div>
           </div>
 
-          {/* APRS WX frame Parser Explainer (Interactive) */}
-          <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 flex flex-col gap-3 justify-between">
-            <div className="flex flex-col gap-1.5">
-              <span className="font-mono text-[10px] text-slate-500 uppercase font-black tracking-widest block">APRS WX Frame Parser Explainer</span>
-              <span className="text-[10px] text-slate-400 font-sans leading-tight">
-                Pasa el cursor o presiona los tokens de la baliza ambiental generada para descifrar la norma técnica del protocolo de radioaficionados:
-              </span>
-            </div>
-
-            {/* Raw string block splitter */}
-            <div className="p-3 bg-slate-950 rounded-lg border border-slate-900 font-mono text-xs flex flex-wrap gap-0.5 items-center font-black select-none tracking-wider justify-center">
-              {tokens.map((tok) => {
-                const matches = activeExplainToken === tok.code;
-                return (
-                  <span
-                    key={tok.code}
-                    onMouseEnter={() => setActiveExplainToken(tok.code)}
-                    onMouseLeave={() => setActiveExplainToken(null)}
-                    onClick={() => setActiveExplainToken(matches ? null : tok.code)}
-                    className={`px-1 rounded transition-colors cursor-help py-1 ${
-                      matches 
-                        ? 'bg-emerald-950 border border-emerald-500 ' + tok.color 
-                        : 'hover:bg-slate-900 border border-transparent ' + tok.color
-                    }`}
-                  >
-                    {tok.code}
+          {/* Card WIND */}
+          {(() => {
+            const bft = getBeaufortInfoByKts(weather.windSpeedKts);
+            return (
+              <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5 transition-all" style={{ borderColor: `${bft.hex}30` }}>
+                <Wind style={{ color: bft.hex }} size={20} />
+                <div className="font-mono text-xs">
+                  <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Velocidad Viento</span>
+                  <span className="font-bold text-sm" style={{ color: bft.hex }}>
+                    {Math.round(weather.windSpeedKts)} Kts <span className="text-[8.5px] uppercase font-black px-1 rounded bg-black/40 border border-slate-800" style={{ borderColor: `${bft.hex}40` }}>F{bft.force}</span>
                   </span>
-                );
-              })}
-            </div>
-
-            {/* active explain tooltip display */}
-            <div className="min-h-[55px] font-mono text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-900">
-              {activeExplainToken ? (
-                (() => {
-                  const tok = tokens.find(t => t.code === activeExplainToken);
-                  if (!tok) return null;
-                  return (
-                    <div>
-                      <div className="font-extrabold text-[#10b981] flex items-center gap-1.5">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                        {tok.label} (Token: `{tok.code.trim()}`)
-                      </div>
-                      <p className="text-[11px] text-slate-300 mt-1 leading-normal">{tok.desc}</p>
-                    </div>
-                  );
-                })()
-              ) : (
-                <div className="text-[10px] text-slate-500 font-sans italic text-center py-2">
-                  Pasa el ratón sobre los caracteres de la fila superior para traducción instantánea de RF.
+                  <span className="text-[10px] text-slate-400 block">{(weather.windSpeedKts * 1.852).toFixed(0)} km/h • {bft.name}</span>
                 </div>
-              )}
+              </div>
+            );
+          })()}
+
+          {/* Card WIND DIR */}
+          <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
+            <Compass className="text-yellow-400" size={20} />
+            <div className="font-mono text-xs">
+              <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Dirección</span>
+              <span className="text-slate-100 font-bold text-sm">{weather.windDirDeg}°</span>
+              <span className="text-[10px] text-slate-400 block truncate">{getWindDirectionName(weather.windDirDeg)}</span>
+            </div>
+          </div>
+
+          {/* Card HUMIDITY */}
+          <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
+            <Droplets className="text-blue-400" size={20} />
+            <div className="font-mono text-xs">
+              <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Humedad</span>
+              <span className="text-slate-100 font-bold text-sm">{weather.humidityPct}%</span>
+              <span className="text-[10px] text-slate-400 block">Relativa</span>
+            </div>
+          </div>
+
+          {/* Card PRESSURE */}
+          <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
+            <Gauge className="text-indigo-400" size={20} />
+            <div className="font-mono text-xs">
+              <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Presión</span>
+              <span className="text-slate-100 font-bold text-sm">{weather.pressureHpa.toFixed(1)} hPa</span>
+              <span className="text-[10px] text-slate-400 block">Barométrica</span>
+            </div>
+          </div>
+
+          {/* Card RAIN */}
+          <div className="bg-slate-900 border border-slate-900 rounded-xl p-3 flex items-center gap-2.5">
+            <CloudSun className="text-cyan-400" size={20} />
+            <div className="font-mono text-xs">
+              <span className="text-[9px] text-slate-500 uppercase block tracking-wider">Lluvia (1h/24h)</span>
+              <span className="text-slate-100 font-bold text-sm">{(weather.rain1hIn * 25.4).toFixed(1)} mm</span>
+              <span className="text-[10px] text-slate-400 block">En 24h: {(weather.rain24hIn * 25.4).toFixed(0)} mm</span>
             </div>
           </div>
         </div>
@@ -572,113 +489,115 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
         </div>
       </div>
 
-      {/* WeeWX WEATHER SOFTWARE ENGINE MONITORING PANEL */}
-      <div className="border-t border-slate-900/60 pt-4 flex flex-col gap-3 font-mono text-xs animate-fade-in" id="weewx-unified-monitor">
-        <div className="flex items-center justify-between flex-wrap gap-1.5">
-          <div className="flex items-center gap-1.5 text-amber-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse animate-ping mr-1"></span>
-            <span className="uppercase text-[10px] tracking-widest font-black">Motor Climatológico WeeWX V5 (Python 3)</span>
+      {/* WeeWX WEATHER SOFTWARE ENGINE MONITORING PANEL (Ocultado en interfaz web) */}
+      {false && (
+        <div className="border-t border-slate-900/60 pt-4 flex flex-col gap-3 font-mono text-xs animate-fade-in" id="weewx-unified-monitor">
+          <div className="flex items-center justify-between flex-wrap gap-1.5">
+            <div className="flex items-center gap-1.5 text-amber-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse animate-ping mr-1"></span>
+              <span className="uppercase text-[10px] tracking-widest font-black">Motor Climatológico WeeWX V5 (Python 3)</span>
+            </div>
+            <span className="text-[9px] bg-slate-900 border border-slate-800 text-amber-500 px-2 py-0.5 rounded-md font-bold">
+              INTEGRADOR UNIFICADO API
+            </span>
           </div>
-          <span className="text-[9px] bg-slate-900 border border-slate-800 text-amber-500 px-2 py-0.5 rounded-md font-bold">
-            INTEGRADOR UNIFICADO API
-          </span>
+
+          {/* Integration pipeline graphic */}
+          <div className="bg-slate-900/25 border border-slate-900 rounded-xl p-3 space-y-2">
+            <span className="text-[8.5px] text-slate-500 uppercase font-bold tracking-wider block">Fluido de Datos en Tiempo Real e Ingesta de WeeWX:</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-center text-[10px]">
+              <div className="bg-slate-950/80 border border-amber-900/40 p-2 rounded-lg flex flex-col justify-center">
+                <span className="text-amber-500 font-extrabold text-[9px] uppercase">1. Entrada OWM & IQAir</span>
+                <p className="text-slate-400 text-[9px] mt-0.5 mt-1 leading-snug">
+                  JSON Feeds de OpenWeatherMap (Clima) y IQAir (Calidad de Aire) capturados por los controladores virtuales de WeeWX.
+                </p>
+              </div>
+              <div className="bg-slate-950/80 border border-blue-900/40 p-2 rounded-lg flex flex-col justify-center relative">
+                <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 text-slate-700 hidden md:block">➔</div>
+                <span className="text-blue-400 font-extrabold text-[9px] uppercase">2. Motor WeeWX Core</span>
+                <p className="text-slate-400 text-[9px] mt-1 leading-snug">
+                  El despachador consolida las variables físicas, calcula índices, persiste en SQLite y actualiza el loop histórico.
+                </p>
+              </div>
+              <div className="bg-slate-950/80 border border-emerald-900/40 p-2 rounded-lg flex flex-col justify-center relative">
+                <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 text-slate-700 hidden md:block">➔</div>
+                <span className="text-emerald-400 font-extrabold text-[9px] uppercase">3. Difusión APRS CWOP</span>
+                <p className="text-slate-400 text-[9px] mt-1 leading-snug">
+                  Genera las tramas estructuradas de baliza climatológica enviándolas sobre KISS por el puerto 8001 hacia Direwolf.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+            {/* Diagnostic info (cols: 5) */}
+            <div className="lg:col-span-5 bg-slate-900/40 border border-slate-900 rounded-xl p-3.5 flex flex-col justify-between gap-3">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 uppercase font-black">Estado del Servicio</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>ACTIVO (weewx.service)</span>
+                </div>
+                
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 uppercase font-black">Driver de Ingesta Activo</span>
+                  <span className="text-amber-500 font-bold text-right">weewx-driver-api-json</span>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 uppercase font-black">Última Escritura SQLite</span>
+                  <span className="text-slate-300">/var/lib/weewx/weewx.sdb</span>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-500 uppercase font-black">Intervalo de Guardado</span>
+                  <span className="text-slate-300">300 seg (5 Minutos)</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-slate-400 leading-normal">
+                <span className="text-amber-500 font-bold block mb-0.5 font-sans">Origen API unificado:</span>
+                <span>WeeWX unifica los datos de <strong>OpenWeatherMap</strong> y <strong>IQAir</strong> para simular una estación física local robusta en el nodo Debian 13 del S.A.T.</span>
+              </div>
+            </div>
+
+            {/* Recently committed database logs (cols: 7) */}
+            <div className="lg:col-span-7 bg-slate-100/5 bg-slate-950 p-3 rounded-xl border border-slate-900 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-900 pb-1.5 mb-2 shrink-0">
+                <span className="text-[9px] text-slate-500 uppercase font-bold">Historial de Transacciones (Log de Archivo)</span>
+                <span className="text-[8.5px] text-amber-500 font-bold">Base de Datos: SQLite ↗</span>
+              </div>
+
+              <div className="space-y-1.5 text-[9.5px] leading-relaxed max-h-[120px] overflow-y-auto font-mono scrollbar-thin">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-slate-550">[09:55:00]</span>
+                  <span className="text-slate-300 text-left">LOOP: temp={weather.tempC.toFixed(1)}C hum={weather.humidityPct}% bar={weather.pressureHpa.toFixed(1)} AQI={iqair ? iqair.aqi : 42}</span>
+                  <span className="text-emerald-500 font-bold">[Commit]</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-slate-550">[09:50:00]</span>
+                  <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.2).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 1)}% bar={(weather.pressureHpa + 0.1).toFixed(1)} AQI={iqair ? iqair.aqi : 42}</span>
+                  <span className="text-emerald-500 font-bold">[Commit]</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-slate-550">[09:45:00]</span>
+                  <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.5).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 2)}% bar={(weather.pressureHpa + 0.2).toFixed(1)} AQI={iqair ? iqair.aqi : 44}</span>
+                  <span className="text-emerald-500 font-bold">[Commit]</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-slate-550">[09:40:00]</span>
+                  <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.8).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 3)}% bar={(weather.pressureHpa + 0.3).toFixed(1)} AQI={iqair ? iqair.aqi : 45}</span>
+                  <span className="text-emerald-500 font-bold">[Commit]</span>
+                </div>
+              </div>
+
+              <div className="text-[8.5px] text-slate-550 italic leading-snug mt-1 pt-1.5 border-t border-slate-900/60 flex items-center justify-between flex-wrap gap-1">
+                <span>* weewxd daemon corre bajo Python 3 en el núcleo Intel NUC Debian</span>
+                <span className="text-amber-500 font-bold font-sans">V5.0.3 Stable</span>
+              </div>
+            </div>
+          </div>
         </div>
-
-        {/* Integration pipeline graphic */}
-        <div className="bg-slate-900/25 border border-slate-900 rounded-xl p-3 space-y-2">
-          <span className="text-[8.5px] text-slate-500 uppercase font-bold tracking-wider block">Fluido de Datos en Tiempo Real e Ingesta de WeeWX:</span>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-center text-[10px]">
-            <div className="bg-slate-950/80 border border-amber-900/40 p-2 rounded-lg flex flex-col justify-center">
-              <span className="text-amber-500 font-extrabold text-[9px] uppercase">1. Entrada OWM & IQAir</span>
-              <p className="text-slate-400 text-[9px] mt-0.5 mt-1 leading-snug">
-                JSON Feeds de OpenWeatherMap (Clima) y IQAir (Calidad de Aire) capturados por los controladores virtuales de WeeWX.
-              </p>
-            </div>
-            <div className="bg-slate-950/80 border border-blue-900/40 p-2 rounded-lg flex flex-col justify-center relative">
-              <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 text-slate-700 hidden md:block">➔</div>
-              <span className="text-blue-400 font-extrabold text-[9px] uppercase">2. Motor WeeWX Core</span>
-              <p className="text-slate-400 text-[9px] mt-1 leading-snug">
-                El despachador consolida las variables físicas, calcula índices, persiste en SQLite y actualiza el loop histórico.
-              </p>
-            </div>
-            <div className="bg-slate-950/80 border border-emerald-900/40 p-2 rounded-lg flex flex-col justify-center relative">
-              <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 text-slate-700 hidden md:block">➔</div>
-              <span className="text-emerald-400 font-extrabold text-[9px] uppercase">3. Difusión APRS CWOP</span>
-              <p className="text-slate-400 text-[9px] mt-1 leading-snug">
-                Genera las tramas estructuradas de baliza climatológica enviándolas sobre KISS por el puerto 8001 hacia Direwolf.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-          {/* Diagnostic info (cols: 5) */}
-          <div className="lg:col-span-5 bg-slate-900/40 border border-slate-900 rounded-xl p-3.5 flex flex-col justify-between gap-3">
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 uppercase font-black">Estado del Servicio</span>
-                <span className="text-emerald-400 font-bold flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>ACTIVO (weewx.service)</span>
-              </div>
-              
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 uppercase font-black">Driver de Ingesta Activo</span>
-                <span className="text-amber-500 font-bold text-right">weewx-driver-api-json</span>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 uppercase font-black">Última Escritura SQLite</span>
-                <span className="text-slate-300">/var/lib/weewx/weewx.sdb</span>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 uppercase font-black">Intervalo de Guardado</span>
-                <span className="text-slate-300">300 seg (5 Minutos)</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-slate-400 leading-normal">
-              <span className="text-amber-500 font-bold block mb-0.5 font-sans">Origen API unificado:</span>
-              <span>WeeWX unifica los datos de <strong>OpenWeatherMap</strong> y <strong>IQAir</strong> para simular una estación física local robusta en el nodo Debian 13 del S.A.T.</span>
-            </div>
-          </div>
-
-          {/* Recently committed database logs (cols: 7) */}
-          <div className="lg:col-span-7 bg-slate-100/5 bg-slate-950 p-3 rounded-xl border border-slate-900 flex flex-col justify-between">
-            <div className="flex items-center justify-between border-b border-slate-900 pb-1.5 mb-2 shrink-0">
-              <span className="text-[9px] text-slate-500 uppercase font-bold">Historial de Transacciones (Log de Archivo)</span>
-              <span className="text-[8.5px] text-amber-500 font-bold">Base de Datos: SQLite ↗</span>
-            </div>
-
-            <div className="space-y-1.5 text-[9.5px] leading-relaxed max-h-[120px] overflow-y-auto font-mono scrollbar-thin">
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="text-slate-550">[09:55:00]</span>
-                <span className="text-slate-300 text-left">LOOP: temp={weather.tempC.toFixed(1)}C hum={weather.humidityPct}% bar={weather.pressureHpa.toFixed(1)} AQI={iqair ? iqair.aqi : 42}</span>
-                <span className="text-emerald-500 font-bold">[Commit]</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="text-slate-550">[09:50:00]</span>
-                <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.2).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 1)}% bar={(weather.pressureHpa + 0.1).toFixed(1)} AQI={iqair ? iqair.aqi : 42}</span>
-                <span className="text-emerald-500 font-bold">[Commit]</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="text-slate-550">[09:45:00]</span>
-                <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.5).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 2)}% bar={(weather.pressureHpa + 0.2).toFixed(1)} AQI={iqair ? iqair.aqi : 44}</span>
-                <span className="text-emerald-500 font-bold">[Commit]</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="text-slate-550">[09:40:00]</span>
-                <span className="text-slate-300 text-left">LOOP: temp={(weather.tempC - 0.8).toFixed(1)}C hum={Math.min(100, weather.humidityPct + 3)}% bar={(weather.pressureHpa + 0.3).toFixed(1)} AQI={iqair ? iqair.aqi : 45}</span>
-                <span className="text-emerald-500 font-bold">[Commit]</span>
-              </div>
-            </div>
-
-            <div className="text-[8.5px] text-slate-550 italic leading-snug mt-1 pt-1.5 border-t border-slate-900/60 flex items-center justify-between flex-wrap gap-1">
-              <span>* weewxd daemon corre bajo Python 3 en el núcleo Intel NUC Debian</span>
-              <span className="text-amber-500 font-bold font-sans">V5.0.3 Stable</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

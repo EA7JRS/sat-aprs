@@ -150,6 +150,7 @@ export interface TelemetryConfig {
   pollIntervalAemet?: number;
   pollIntervalJrc?: number;
   pollIntervalIgn?: number;
+  pollIntervalIca?: number;
   criticalEmail?: string;
   aemetAlertsSubscriptionEnabled?: boolean;
   agpsEnabled?: boolean;
@@ -168,6 +169,12 @@ export interface TelemetryConfig {
   thresholdTempMinC?: number;
   thresholdRainMm?: number;
   forecastDays?: number;
+  localWeatherSource?: string;
+  localThresholdWindKts?: number;
+  localThresholdTempMaxC?: number;
+  localThresholdTempMinC?: number;
+  localThresholdRainMm?: number;
+  localWeatherInterval?: number;
 }
 
 export interface IQAirStatus {

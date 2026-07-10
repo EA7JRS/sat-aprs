@@ -4,7 +4,7 @@ import {
   Radio, Database, Key, FileCode, Sliders, 
   Download, Copy, Check, Info, Server, Navigation, Target,
   Bell, Volume2, VolumeX, Upload, Play, Trash2, Music, FileAudio, Leaf,
-  Activity, CloudLightning, ShieldAlert, Lock, Unlock, UserCheck, LogOut, Mail, User, ShieldCheck
+  Activity, CloudLightning, CloudSun, ShieldAlert, Lock, Unlock, UserCheck, LogOut, Mail, User, ShieldCheck
 } from 'lucide-react';
 import { TelemetryConfig, GPSDStatus } from '../../types';
 import { 
@@ -701,6 +701,15 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
   const [thresholdTempMinC, setThresholdTempMinC] = useState(config.thresholdTempMinC !== undefined ? config.thresholdTempMinC : 0.0);
   const [thresholdRainMm, setThresholdRainMm] = useState(config.thresholdRainMm !== undefined ? config.thresholdRainMm : 20.0);
   const [forecastDays, setForecastDays] = useState(config.forecastDays !== undefined ? config.forecastDays : 3);
+  const [pollIntervalIca, setPollIntervalIca] = useState(config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30);
+  
+  // Local Weather PWS/API configs
+  const [localWeatherSource, setLocalWeatherSource] = useState(config.localWeatherSource || 'simulated');
+  const [localThresholdWindKts, setLocalThresholdWindKts] = useState(config.localThresholdWindKts !== undefined ? config.localThresholdWindKts : 20.0);
+  const [localThresholdTempMaxC, setLocalThresholdTempMaxC] = useState(config.localThresholdTempMaxC !== undefined ? config.localThresholdTempMaxC : 35.0);
+  const [localThresholdTempMinC, setLocalThresholdTempMinC] = useState(config.localThresholdTempMinC !== undefined ? config.localThresholdTempMinC : 5.0);
+  const [localThresholdRainMm, setLocalThresholdRainMm] = useState(config.localThresholdRainMm !== undefined ? config.localThresholdRainMm : 10.0);
+  const [localWeatherInterval, setLocalWeatherInterval] = useState(config.localWeatherInterval !== undefined ? config.localWeatherInterval : 300);
   
   // Tab 4: Extras
   const [aisCatcherPort, setAisCatcherPort] = useState(config.aisCatcherPort || 5015);
@@ -1114,11 +1123,18 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       winlinkSsid: winlinkSsid.trim().toUpperCase(),
       aemetApiKey: aemetApiKey.trim(),
       iqAirApiKey: iqAirApiKey.trim(),
+      pollIntervalIca: Number(pollIntervalIca),
       weatherApiKey: weatherApiKey.trim(),
       thresholdWindKts: Number(thresholdWindKts),
       thresholdTempMinC: Number(thresholdTempMinC),
       thresholdRainMm: Number(thresholdRainMm),
       forecastDays: Number(forecastDays),
+      localWeatherSource: localWeatherSource.trim(),
+      localThresholdWindKts: Number(localThresholdWindKts),
+      localThresholdTempMaxC: Number(localThresholdTempMaxC),
+      localThresholdTempMinC: Number(localThresholdTempMinC),
+      localThresholdRainMm: Number(localThresholdRainMm),
+      localWeatherInterval: Number(localWeatherInterval),
       agpsEnabled: Boolean(isAgpsEnabled),
       agpsServer: agpsServer.trim(),
       agpsInterval: agpsInterval,
@@ -2995,6 +3011,24 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                   className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-slate-100 text-xs focus:outline-none focus:border-zinc-500/40"
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="poll-interval-ica" className="text-slate-400 text-[10px]">Intervalo de Telemetría ICA (minutos):</label>
+                <select
+                  id="poll-interval-ica"
+                  value={pollIntervalIca}
+                  onChange={(e) => setPollIntervalIca(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-slate-100 text-xs focus:outline-none focus:border-zinc-500/40"
+                >
+                  <option value={5}>5 Minutos (Prueba/Frecuente)</option>
+                  <option value={10}>10 Minutos</option>
+                  <option value={15}>15 Minutos</option>
+                  <option value={30}>30 Minutos (Recomendado estándar)</option>
+                  <option value={45}>45 Minutos</option>
+                  <option value={60}>60 Minutos (Bajo tráfico)</option>
+                </select>
+                <p className="text-[8px] text-slate-500 font-mono mt-0.5">Define cada cuánto tiempo se transmite automáticamente la baliza APRS AIR-QUAL regular con las lecturas.</p>
+              </div>
             </div>
 
             {/* WeatherAPI Pronóstico Avanzado y Umbrales de Alerta */}
@@ -3072,6 +3106,94 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                       className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
                     />
                     <p className="text-[8px] text-slate-500 font-mono mt-0.5">Activar alerta si la precipitación acumulada supera.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-950 pt-3">
+                <span className="text-[8.5px] text-amber-500 uppercase font-bold tracking-wider block mb-2 font-sans flex items-center gap-1">
+                  <CloudSun size={11} className="text-amber-500 animate-pulse" />
+                  Estación Meteorológica Local y Alertas de Umbral Personalizadas
+                </span>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-weather-source" className="text-slate-400 text-[10px]">Fuente de Datos Clima Local:</label>
+                    <input
+                      type="text"
+                      id="input-local-weather-source"
+                      placeholder="Ej: simulated, http://localhost:3000/api/weather o local_weather.json"
+                      value={localWeatherSource}
+                      onChange={(e) => setLocalWeatherSource(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Define si usar simulación ('simulated'), API local ('http://...') o archivo JSON.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-weather-interval" className="text-slate-400 text-[10px]">Intervalo de Muestreo (Segundos):</label>
+                    <input
+                      type="number"
+                      id="input-local-weather-interval"
+                      value={localWeatherInterval}
+                      onChange={(e) => setLocalWeatherInterval(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Tiempo entre consultas y evaluaciones de alertas de la estación local.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-3">
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-threshold-wind" className="text-slate-400 text-[10px]">Viento Local Máx (Nudos):</label>
+                    <input
+                      type="number"
+                      id="input-local-threshold-wind"
+                      step="0.1"
+                      value={localThresholdWindKts}
+                      onChange={(e) => setLocalThresholdWindKts(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Alerta de viento local superior.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-threshold-temp-max" className="text-slate-400 text-[10px]">Temperatura Máx (°C):</label>
+                    <input
+                      type="number"
+                      id="input-local-threshold-temp-max"
+                      step="0.1"
+                      value={localThresholdTempMaxC}
+                      onChange={(e) => setLocalThresholdTempMaxC(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Alerta de ola de calor local.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-threshold-temp-min" className="text-slate-400 text-[10px]">Temperatura Mín (°C):</label>
+                    <input
+                      type="number"
+                      id="input-local-threshold-temp-min"
+                      step="0.1"
+                      value={localThresholdTempMinC}
+                      onChange={(e) => setLocalThresholdTempMinC(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Alerta de helada/frío extremo.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="input-local-threshold-rain" className="text-slate-400 text-[10px]">Lluvia Local Máx (mm):</label>
+                    <input
+                      type="number"
+                      id="input-local-threshold-rain"
+                      step="0.1"
+                      value={localThresholdRainMm}
+                      onChange={(e) => setLocalThresholdRainMm(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
+                    />
+                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Alerta de lluvia torrencial acumulada.</p>
                   </div>
                 </div>
               </div>

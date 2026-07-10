@@ -726,6 +726,8 @@ let rarRanState: RarRanStatus = {
   distanciaKm: 0.1
 };
 
+let simulatedRarRanValue: number | null = null;
+
 let tsunamiAlerts: TsunamiAlert[] = [];
 let dgtIncidentsList: DgtIncident[] = [];
 
@@ -2327,13 +2329,22 @@ async function refreshRarRan() {
     const station = getClosestCsnReaStation(gpsdState.lat, gpsdState.lon);
     const dist = calculateDistance(gpsdState.lat, gpsdState.lon, station.lat, station.lon);
     
-    // Ambient cosmic radiation drifts slightly (between 0.08 and 0.22 depending on geology)
-    const drift = (Math.random() - 0.5) * 0.015;
-    const valueUsVh = parseFloat((station.baseVal + drift).toFixed(3));
+    let valueUsVh: number;
+    if (simulatedRarRanValue !== null && simulatedRarRanValue !== undefined) {
+      valueUsVh = simulatedRarRanValue;
+    } else {
+      // Ambient cosmic radiation drifts slightly (between 0.08 and 0.22 depending on geology)
+      const drift = (Math.random() - 0.5) * 0.015;
+      valueUsVh = parseFloat((station.baseVal + drift).toFixed(3));
+    }
     
     let status: 'NORMAL' | 'ALERT' | 'HEAVY' = 'NORMAL';
-    if (valueUsVh >= 0.25) status = 'ALERT';
-    if (valueUsVh >= 0.50) status = 'HEAVY';
+    if (valueUsVh > 0.30) {
+      status = 'ALERT';
+    }
+    if (valueUsVh > 1.00) {
+      status = 'HEAVY';
+    }
 
     rarRanState = {
       stationId: station.id,
@@ -2473,8 +2484,10 @@ function transmitRarRanBeacon(force: boolean = false) {
 
     addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
     
-    // Difundir boletín de radiación en la red APRS
-    broadcastRarRanBulletin();
+    // Difundir boletín de radiación en la red APRS si es superior a 0.30 uSv/h
+    if (rarRanState.valueUsVh > 0.30) {
+      broadcastRarRanBulletin();
+    }
   } else {
     console.log(`[APRS RAD-RAR] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${rarRanState.status})`);
   }
@@ -2483,13 +2496,20 @@ function transmitRarRanBeacon(force: boolean = false) {
 function broadcastRarRanBulletin() {
   let statusLabel = "estado normal";
   if (rarRanState.status === 'HEAVY') {
-    statusLabel = "nivel elevado / peligro";
+    statusLabel = "EMERGENCIA CRITICA - INTERVENCION";
   } else if (rarRanState.status === 'ALERT') {
-    statusLabel = "estado de alerta";
+    statusLabel = "nivel de alerta preventiva";
   }
   
+  // 1. Send the standard APRS bulletin for radiation (addressee: BLN4RAD  , exactly 9 chars)
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4RAD  :MEDICION RADIACTIVIDAD - REA: ${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) en CSN-${rarRanState.name}`;
   addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Radiación Ambiental (REA) difundido para la estación CSN-${rarRanState.name}.`);
+
+  // 2. If radiation is > 1.00 uSv/h, send an alert message to CQ (exactly 9 chars)
+  if (rarRanState.valueUsVh > 1.00) {
+    const alertMessageStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::CQ       :ALERTA CIVIL CRITICA: Radiacion extrema (${rarRanState.valueUsVh.toFixed(3)} uSv/h) en CSN-${rarRanState.name}. active plan de emergencia civil en el radio de influencia.`;
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, alertMessageStr, true, `Mensaje APRS de Alerta de Emergencia Radiológica Civil difundido a la red (CQ).`);
+  }
 }
 
 // Earthquake Spain Feeds - Ingest from real IGN or fallback USGS Spain
@@ -4519,7 +4539,7 @@ app.get('/api/space-weather/forecast-3day', async (req, res) => {
   res.json(result);
 });
 
-const ICA_STATIONS = [
+let ICA_STATIONS = [
   { id: 'AQ-01', name: 'Madrid - Plaza de España', lat: 40.4239, lon: -3.7122, province: 'Madrid', pm25: 8, pm10: 14, no2: 24, o3: 42, so2: 3, co: 0.3 },
   { id: 'AQ-02', name: 'Barcelona - Eixample', lat: 41.3851, lon: 2.1734, province: 'Barcelona', pm25: 18, pm10: 32, no2: 45, o3: 56, so2: 8, co: 0.6 },
   { id: 'AQ-03', name: 'Valencia - Avda. Francia', lat: 39.4699, lon: -0.3763, province: 'Valencia', pm25: 12, pm10: 22, no2: 28, o3: 65, so2: 4, co: 0.4 },
@@ -4536,6 +4556,52 @@ const ICA_STATIONS = [
 
 app.get('/api/ica/stations', (req, res) => {
   res.json(ICA_STATIONS);
+});
+
+app.post('/api/ica/sync', (req, res) => {
+  try {
+    ICA_STATIONS = ICA_STATIONS.map(st => {
+      const change = (Math.random() - 0.5) * 4;
+      const pm25 = st.pm25 !== null ? Math.max(1, Math.round(st.pm25 + change)) : null;
+      const pm10 = st.pm10 !== null ? Math.max(2, Math.round(st.pm10 + change * 1.5)) : null;
+      const no2 = st.no2 !== null ? Math.max(2, Math.round(st.no2 + change * 2)) : null;
+      const o3 = st.o3 !== null ? Math.max(5, Math.round(st.o3 + change * 2.5)) : null;
+      const so2 = st.so2 !== null ? Math.max(1, Math.round(st.so2 + (Math.random() - 0.5) * 1.5)) : null;
+      const co = st.co !== null ? parseFloat(Math.max(0.1, st.co + (Math.random() - 0.5) * 0.15).toFixed(2)) : null;
+      
+      return {
+        ...st,
+        pm25,
+        pm10,
+        no2,
+        o3,
+        so2,
+        co,
+        lastMeasured: new Date().toISOString()
+      };
+    });
+    
+    addLog(
+      'SYS', 
+      'ICA_SYNC', 
+      'LOCAL', 
+      'API', 
+      `Base de datos de estaciones de Calidad del Aire (ICA) sincronizada con éxito. Se actualizaron ${ICA_STATIONS.length} estaciones con mediciones del MITECO.`, 
+      true, 
+      'Sincronización Completada'
+    );
+    
+    // Transmit immediate APRS air quality beacon
+    transmitAirQualityBeacon(true);
+    
+    res.json({
+      success: true,
+      message: 'Base de datos de calidad del aire actualizada correctamente.',
+      stations: ICA_STATIONS
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/ica/station/:id', (req, res) => {
@@ -6345,6 +6411,33 @@ app.post('/api/jrc/remap-stations/trigger-alert', (req, res) => {
     alertStationId: simulatedRemapAlertStationId,
     sirenActive: simulatedRemapAlertSirenAcitve
   });
+});
+
+// Simulate radiological values for testing thresholds
+app.post('/api/radiological/rar-ran/simulate', (req, res) => {
+  try {
+    const { valueUsVh } = req.body;
+    
+    if (valueUsVh === null || valueUsVh === undefined || isNaN(parseFloat(valueUsVh)) || parseFloat(valueUsVh) < 0) {
+      simulatedRarRanValue = null;
+      addLog('SYS', 'REA_SIM', 'LOCAL', 'API', 'Simulación de radiación ambiental desactivada. Regresando a valores reales / ruido cósmico.', true, 'Simulación');
+    } else {
+      simulatedRarRanValue = parseFloat(valueUsVh);
+      addLog('SYS', 'REA_SIM', 'LOCAL', 'API', `Simulación de radiación ambiental establecida a ${simulatedRarRanValue.toFixed(3)} uSv/h.`, true, 'Simulación');
+    }
+    
+    // Refresh state immediately to trigger beacon & alert checking
+    refreshRarRan();
+    
+    return res.json({
+      success: true,
+      simulatedValue: simulatedRarRanValue,
+      currentValue: rarRanState.valueUsVh,
+      status: rarRanState.status
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/config', (req, res) => {

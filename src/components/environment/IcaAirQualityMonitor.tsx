@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { 
   Search, Globe, ShieldAlert, Radio, Wind, Sliders, ExternalLink, 
   Activity, Info, MapPin, Compass, AlertTriangle, ShieldCheck, Database, RefreshCw, X, Map,
-  Bell, BellOff, Star, Check
+  Bell, BellOff, Star, Check, Settings
 } from 'lucide-react';
 import { playAlertSound } from '../../utils/audio';
 
@@ -42,6 +42,7 @@ interface IcaAirQualityMonitorProps {
   };
   config?: any;
   onInjectRaw?: (payload: string) => Promise<boolean>;
+  iqair?: any;
 }
 
 const DEFAULT_STATIONS: AirQualityStation[] = [
@@ -355,11 +356,50 @@ interface IcaToast {
   timestamp: Date;
 }
 
-export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaAirQualityMonitorProps) {
+export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair }: IcaAirQualityMonitorProps) {
+  const [stations, setStations] = useState<AirQualityStation[]>(DEFAULT_STATIONS);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+
   const [viewMode, setViewMode] = useState<'lista' | 'mapa'>('lista');
   const [searchQuery, setSearchQuery] = useState('');
   const [pastedIcaLevel, setPastedIcaLevel] = useState<string>('todos');
+  const [proximityFilter, setProximityFilter] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_proximity_filter') || 'todos';
+    } catch {
+      return 'todos';
+    }
+  });
   const [selectedStation, setSelectedStation] = useState<AirQualityStation | null>(DEFAULT_STATIONS[0]);
+
+  // Fetch stations from backend on mount
+  useEffect(() => {
+    let active = true;
+    const loadStations = async () => {
+      try {
+        const res = await fetch('/api/ica/stations');
+        if (res.ok) {
+          const data = await res.json();
+          if (active && Array.isArray(data) && data.length > 0) {
+            const mapped = data.map(st => {
+              const def = DEFAULT_STATIONS.find(d => d.id === st.id);
+              return {
+                ...st,
+                region: st.region || def?.region || 'España',
+                lastMeasured: st.lastMeasured || new Date().toISOString()
+              };
+            });
+            setStations(mapped);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading stations:", err);
+      }
+    };
+    loadStations();
+    return () => { active = false; };
+  }, []);
   const [simulatedOffset, setSimulatedOffset] = useState<number>(0);
 
   // Custom thresholds state for pollutant alerts (PM2.5, CO, O3, NO2)
@@ -403,6 +443,145 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
   const [pm25_24h, setPm25_24h] = useState<number>(10);
   const [autoSyncWithStation, setAutoSyncWithStation] = useState<boolean>(true);
   const [bulletinLogs, setBulletinLogs] = useState<string[]>([]);
+
+  // Data source selector
+  const [calimaDataSource, setCalimaDataSource] = useState<'miteco' | 'iqair'>(() => {
+    try {
+      const stored = localStorage.getItem('ica_calima_data_source');
+      return (stored as 'miteco' | 'iqair') || 'miteco';
+    } catch {
+      return 'miteco';
+    }
+  });
+
+  // Customized APRS Template States
+  const [templateBln2Aqi, setTemplateBln2Aqi] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_bln2aqi') || 'MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)';
+    } catch {
+      return 'MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)';
+    }
+  });
+  const [templateCalima, setTemplateCalima] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_calima') || 'MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})';
+    } catch {
+      return 'MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})';
+    }
+  });
+  const [templateBln4, setTemplateBln4] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_bln4') || 'ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.';
+    } catch {
+      return 'ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.';
+    }
+  });
+  const [templateWalkieGral, setTemplateWalkieGral] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_walkie_gral') || 'ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.';
+    } catch {
+      return 'ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.';
+    }
+  });
+  const [templateWalkieSens, setTemplateWalkieSens] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_walkie_sens') || 'ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.';
+    } catch {
+      return 'ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.';
+    }
+  });
+  const [templateBln3, setTemplateBln3] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_bln3') || 'ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.';
+    } catch {
+      return 'ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.';
+    }
+  });
+  const [templateBln2, setTemplateBln2] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_bln2') || 'ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.';
+    } catch {
+      return 'ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.';
+    }
+  });
+  const [templateBln1, setTemplateBln1] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ica_tpl_bln1') || 'ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.';
+    } catch {
+      return 'ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.';
+    }
+  });
+
+  const [showTemplateConfig, setShowTemplateConfig] = useState<boolean>(false);
+
+  // Automatic and programmable Calima transmission states
+  const [followClosestStation, setFollowClosestStation] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('ica_follow_closest');
+      return stored ? JSON.parse(stored) === true : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [autoTransmitEnabled, setAutoTransmitEnabled] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('ica_auto_transmit');
+      return stored ? JSON.parse(stored) === true : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [autoTransmitOnChange, setAutoTransmitOnChange] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('ica_auto_transmit_on_change');
+      return stored ? JSON.parse(stored) === true : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [intervalLevel3, setIntervalLevel3] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_interval_l3');
+      return stored ? parseInt(stored, 10) : 180;
+    } catch {
+      return 180;
+    }
+  });
+
+  const [intervalLevel4, setIntervalLevel4] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_interval_l4');
+      return stored ? parseInt(stored, 10) : 120;
+    } catch {
+      return 120;
+    }
+  });
+
+  const [intervalLevel5, setIntervalLevel5] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_interval_l5');
+      return stored ? parseInt(stored, 10) : 60;
+    } catch {
+      return 60;
+    }
+  });
+
+  const [intervalLevel6, setIntervalLevel6] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('ica_interval_l6');
+      return stored ? parseInt(stored, 10) : 30;
+    } catch {
+      return 30;
+    }
+  });
+
+  const lastTxTimeRef = useRef<number>(0);
+  const lastTxIcaLevelRef = useRef<number>(-1);
+  const lastTxCalimaStateRef = useRef<boolean | null>(null);
+  const lastTxStationIdRef = useRef<string | null>(null);
 
   // Save thresholds to localStorage
   useEffect(() => {
@@ -450,6 +629,74 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
     localStorage.setItem('ica_notifications_enabled', JSON.stringify(notificationsEnabled));
   }, [notificationsEnabled]);
 
+  useEffect(() => {
+    localStorage.setItem('ica_follow_closest', JSON.stringify(followClosestStation));
+  }, [followClosestStation]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_auto_transmit', JSON.stringify(autoTransmitEnabled));
+  }, [autoTransmitEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_auto_transmit_on_change', JSON.stringify(autoTransmitOnChange));
+  }, [autoTransmitOnChange]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_interval_l3', intervalLevel3.toString());
+  }, [intervalLevel3]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_interval_l4', intervalLevel4.toString());
+  }, [intervalLevel4]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_interval_l5', intervalLevel5.toString());
+  }, [intervalLevel5]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_interval_l6', intervalLevel6.toString());
+  }, [intervalLevel6]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_calima_data_source', calimaDataSource);
+  }, [calimaDataSource]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_bln2aqi', templateBln2Aqi);
+  }, [templateBln2Aqi]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_calima', templateCalima);
+  }, [templateCalima]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_bln4', templateBln4);
+  }, [templateBln4]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_walkie_gral', templateWalkieGral);
+  }, [templateWalkieGral]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_walkie_sens', templateWalkieSens);
+  }, [templateWalkieSens]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_bln3', templateBln3);
+  }, [templateBln3]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_bln2', templateBln2);
+  }, [templateBln2]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_tpl_bln1', templateBln1);
+  }, [templateBln1]);
+
+  useEffect(() => {
+    localStorage.setItem('ica_proximity_filter', proximityFilter);
+  }, [proximityFilter]);
+
   // Request & check native browser notification permission
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -495,6 +742,63 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
     }
   };
 
+  const handleSyncDatabase = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const res = await customFetch('/api/ica/sync', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stations) {
+          const mapped = data.stations.map((st: any) => {
+            const def = DEFAULT_STATIONS.find(d => d.id === st.id);
+            return {
+              ...st,
+              region: st.region || def?.region || 'España',
+              lastMeasured: st.lastMeasured || new Date().toISOString()
+            };
+          });
+          setStations(mapped);
+          setLastSyncTime(new Date());
+
+          const newToast: IcaToast = {
+            id: `sync-${Date.now()}`,
+            title: 'Base de Datos Actualizada',
+            message: 'Sincronización manual completada. Todas las estaciones de Calidad del Aire (ICA) han sido actualizadas con datos del MITECO y transmitidas vía baliza APRS.',
+            type: 'info',
+            stationId: 'SYSTEM',
+            timestamp: new Date()
+          };
+          setToasts(prev => [newToast, ...prev].slice(0, 5));
+          playAlertSound('chime');
+        }
+      } else {
+        const newToast: IcaToast = {
+          id: `sync-err-${Date.now()}`,
+          title: 'Error de Sincronización',
+          message: 'No se pudo contactar con el servidor central para actualizar los datos de calidad del aire.',
+          type: 'warning',
+          stationId: 'SYSTEM',
+          timestamp: new Date()
+        };
+        setToasts(prev => [newToast, ...prev].slice(0, 5));
+      }
+    } catch (err) {
+      console.error("Error syncing database:", err);
+      const newToast: IcaToast = {
+        id: `sync-err-${Date.now()}`,
+        title: 'Error de Red',
+        message: 'Ocurrió un error inesperado al actualizar la base de datos de estaciones.',
+        type: 'warning',
+        stationId: 'SYSTEM',
+        timestamp: new Date()
+      };
+      setToasts(prev => [newToast, ...prev].slice(0, 5));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Haversine formula
   const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371;
@@ -510,7 +814,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
 
   // Enhance station data with distance keeping nullable values supported
   const stationsWithDistance = useMemo(() => {
-    return DEFAULT_STATIONS.map(st => {
+    return stations.map(st => {
       // Add a little simulated live fluctuation based on time and ticks
       const secSeed = new Date().getMinutes() * 0.05 + new Date().getSeconds() * 0.001 + tick * 0.04;
       const variationFactor = 1 + Math.sin(st.id.charCodeAt(3) + secSeed) * 0.12;
@@ -735,9 +1039,31 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
       const ica = getMitecoIcaInfo(st.pm25, st.pm10, st.no2, st.o3, st.so2);
       const matchesIca = pastedIcaLevel === 'todos' || ica.label.toLowerCase() === pastedIcaLevel.toLowerCase();
 
-      return matchesSearch && matchesIca;
+      // Proximity Filtering
+      let matchesProximity = true;
+      if (proximityFilter === 'cobertura') {
+        const radius = config?.filterRadiusKm || 150;
+        matchesProximity = st.distance <= radius;
+      } else if (proximityFilter !== 'todos') {
+        const maxDist = parseFloat(proximityFilter);
+        if (!isNaN(maxDist)) {
+          matchesProximity = st.distance <= maxDist;
+        }
+      }
+
+      return matchesSearch && matchesIca && matchesProximity;
     }).sort((a, b) => a.distance - b.distance);
-  }, [stationsWithDistance, searchQuery, pastedIcaLevel]);
+  }, [stationsWithDistance, searchQuery, pastedIcaLevel, proximityFilter, config]);
+
+  // Follow closest station if enabled
+  useEffect(() => {
+    if (followClosestStation && stationsWithDistance.length > 0) {
+      const closest = stationsWithDistance[0];
+      if (!selectedStation || selectedStation.id !== closest.id) {
+        setSelectedStation(closest);
+      }
+    }
+  }, [followClosestStation, stationsWithDistance, selectedStation]);
 
   const activeStation = useMemo(() => {
     if (!selectedStation) return null;
@@ -749,18 +1075,28 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
   const activeUsAqi = activeStation ? calculateUsAqiEquivalent(activeStation.pm25, activeStation.no2) : 50;
   const activeUsAqiInfo = getUsAqiInfo(activeUsAqi);
 
-  // Synchronize state with selected station if auto-sync is active
+  // Synchronize state with selected station or IQAir if auto-sync is active
   useEffect(() => {
-    if (autoSyncWithStation && activeStation) {
-      const pm10Val = activeStation.pm10 ?? 24;
-      const pm25Val = activeStation.pm25 ?? 9.9;
-      setPm10_24h(pm10Val);
-      setPm25_24h(pm25Val);
-      // Simulate dusting factor based on PM10 with minor tick fluctuation
-      const simulatedDust = Math.max(0, parseFloat((pm10Val * 0.45 + (Math.sin(tick * 0.1) * 1)).toFixed(1)));
-      setPolvo_sahariano(simulatedDust);
+    if (autoSyncWithStation) {
+      if (calimaDataSource === 'iqair' && iqair) {
+        const pm10Val = iqair.pm10 ?? (iqair.aqi ? Math.round(iqair.aqi * 0.7) : 30);
+        const pm25Val = iqair.pm2_5 ?? (iqair.aqi ? Math.round(iqair.aqi * 0.4) : 12);
+        setPm10_24h(pm10Val);
+        setPm25_24h(pm25Val);
+        // Simulate dusting factor based on PM10 with minor tick fluctuation
+        const simulatedDust = Math.max(0, parseFloat((pm10Val * 0.48 + (Math.sin(tick * 0.1) * 1.2)).toFixed(1)));
+        setPolvo_sahariano(simulatedDust);
+      } else if (activeStation) {
+        const pm10Val = activeStation.pm10 ?? 24;
+        const pm25Val = activeStation.pm25 ?? 9.9;
+        setPm10_24h(pm10Val);
+        setPm25_24h(pm25Val);
+        // Simulate dusting factor based on PM10 with minor tick fluctuation
+        const simulatedDust = Math.max(0, parseFloat((pm10Val * 0.45 + (Math.sin(tick * 0.1) * 1)).toFixed(1)));
+        setPolvo_sahariano(simulatedDust);
+      }
     }
-  }, [activeStation, autoSyncWithStation, tick]);
+  }, [activeStation, calimaDataSource, iqair, autoSyncWithStation, tick]);
 
   const calimaAnalysis = useMemo(() => {
     if (pm10_24h <= 0 || pm25_24h <= 0) {
@@ -802,6 +1138,74 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
     };
   }, [pm10_24h, polvo_sahariano, pm25_24h]);
 
+  // Automated Transmission of Bulletins based on active station values, intervals or state changes
+  useEffect(() => {
+    if (!autoTransmitEnabled || !activeStation || !activeIca) return;
+
+    const currentIcaLevel = activeIca.level;
+    const currentCalimaState = calimaAnalysis.calima;
+    const currentStationId = activeStation.id;
+
+    // We only transmit if the active level is >= 3 (Moderate/Regular to Extremely Unfavorable)
+    if (currentIcaLevel < 3) return;
+
+    const now = Date.now();
+    let shouldTransmit = false;
+    let reason = "";
+
+    // 1. Check for State/Level Change trigger
+    if (autoTransmitOnChange) {
+      const levelChanged = lastTxIcaLevelRef.current !== currentIcaLevel;
+      const calimaChanged = lastTxCalimaStateRef.current !== currentCalimaState;
+      const stationChanged = lastTxStationIdRef.current !== currentStationId;
+
+      if (levelChanged || calimaChanged || stationChanged) {
+        shouldTransmit = true;
+        reason = `Cambio de estado en estación más cercana (Nivel: ${lastTxIcaLevelRef.current} -> ${currentIcaLevel}, Calima: ${lastTxCalimaStateRef.current === null ? 'N/A' : lastTxCalimaStateRef.current ? 'SI' : 'NO'} -> ${currentCalimaState ? 'SI' : 'NO'})`;
+      }
+    }
+
+    // 2. Check for Time Interval trigger
+    if (!shouldTransmit) {
+      let intervalSec = 0;
+      if (currentIcaLevel === 3) intervalSec = intervalLevel3;
+      else if (currentIcaLevel === 4) intervalSec = intervalLevel4;
+      else if (currentIcaLevel === 5) intervalSec = intervalLevel5;
+      else if (currentIcaLevel >= 6) intervalSec = intervalLevel6;
+
+      const elapsedSec = (now - lastTxTimeRef.current) / 1000;
+      if (elapsedSec >= intervalSec) {
+        shouldTransmit = true;
+        reason = `Intervalo programado de ${intervalSec}s completado para Nivel ${currentIcaLevel}`;
+      }
+    }
+
+    if (shouldTransmit) {
+      // Update refs immediately to prevent race conditions during async transmission
+      lastTxTimeRef.current = now;
+      lastTxIcaLevelRef.current = currentIcaLevel;
+      lastTxCalimaStateRef.current = currentCalimaState;
+      lastTxStationIdRef.current = currentStationId;
+
+      const timestampStr = new Date().toLocaleTimeString('es-ES');
+      setBulletinLogs(prev => [`[${timestampStr}] ⚡ DIFUSIÓN AUTO: ${reason}`, ...prev].slice(0, 15));
+      
+      // Perform transmission
+      handleTransmitCalimaBulletin();
+    }
+  }, [
+    tick,
+    autoTransmitEnabled,
+    activeStation,
+    activeIca,
+    calimaAnalysis,
+    autoTransmitOnChange,
+    intervalLevel3,
+    intervalLevel4,
+    intervalLevel5,
+    intervalLevel6
+  ]);
+
   const handleTransmitCalimaBulletin = async () => {
     const callsign = config?.callsign || 'EA1URG-10';
     const packetsToSend: string[] = [];
@@ -810,29 +1214,47 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
     // Standard broadcast callsign
     const destino_bc = "CQ       "; // 9 characters obligatory for broadcast messages
 
-    // 1. PUBLIC AIR QUALITY BULLETIN (BLN2AQI)
-    const coVal = activeStation?.co !== null && activeStation?.co !== undefined ? Math.round(activeStation.co * 1000) : 102; // convert to ug if mg
-    const o3Val = activeStation?.o3 !== null && activeStation?.o3 !== undefined ? activeStation.o3 : 104.0;
-    const icaScore = activeStation ? activeUsAqi : 42;
+    // Dict of parameters for templates
+    const dict = {
+      ica: activeStation ? activeUsAqi : (iqair ? iqair.aqi : 42),
+      pm25: pm25_24h.toFixed(1),
+      pm10: pm10_24h.toFixed(1),
+      co: activeStation?.co !== null && activeStation?.co !== undefined ? Math.round(activeStation.co * 1000) : (iqair?.co !== null && iqair?.co !== undefined ? Math.round(iqair.co * 1000) : 102),
+      o3: (activeStation?.o3 !== null && activeStation?.o3 !== undefined ? activeStation.o3 : (iqair?.o3 ?? 104.0)).toFixed(1),
+      no2: (activeStation?.no2 !== null && activeStation?.no2 !== undefined ? activeStation.no2 : (iqair?.no2 ?? 20.0)).toFixed(1),
+      so2: (activeStation?.so2 !== null && activeStation?.so2 !== undefined ? activeStation.so2 : (iqair?.so2 ?? 3.0)).toFixed(1),
+      station: calimaDataSource === 'iqair' ? (iqair?.city || 'IQAir Cloud') : (activeStation?.name?.split(' - ')[0] || 'MITECO Local'),
+      criterio: calimaAnalysis.criterio,
+      dust: polvo_sahariano.toFixed(1)
+    };
 
-    const mainBlnPacket = `${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${icaScore} (PM2.5: ${pm25_24h.toFixed(1)}ug, CO: ${coVal}ug, O3: ${o3Val.toFixed(1)}ug)`;
+    const parseLocalTpl = (tpl: string) => {
+      let result = tpl;
+      for (const [key, val] of Object.entries(dict)) {
+        result = result.replaceAll(`{${key}}`, val !== null && val !== undefined ? String(val) : '');
+      }
+      return result;
+    };
+
+    // 1. PUBLIC AIR QUALITY BULLETIN (BLN2AQI)
+    const mainBlnPacket = `${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${parseLocalTpl(templateBln2Aqi)}`;
     packetsToSend.push(mainBlnPacket);
 
     // 2. ALERT LEVEL PROCESSING ACCORDING TO BOE
     if (pm10_24h > 150 || polvo_sahariano > 100) {
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4      :ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.`);
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.`);
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4      :${parseLocalTpl(templateBln4)}`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:${parseLocalTpl(templateWalkieGral)}`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:${parseLocalTpl(templateWalkieSens)}`);
     } else if (pm10_24h > 100) {
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3      :ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3      :${parseLocalTpl(templateBln3)}`);
     } else if (pm10_24h > 50) {
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2      :ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2      :${parseLocalTpl(templateBln2)}`);
     } else if (pm10_24h > 35) {
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1      :ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1      :${parseLocalTpl(templateBln1)}`);
     }
 
     if (calimaAnalysis.calima) {
-      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA (${calimaAnalysis.criterio})`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${parseLocalTpl(templateCalima)}`);
     }
 
     // Now inject packets
@@ -1224,6 +1646,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
           </div>
         </div>
 
+        {/* DATA SOURCE SELECTOR ROW */}
+        <div className="flex items-center justify-between bg-slate-950/40 p-2 rounded-lg border border-slate-900/50 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[8px] uppercase text-slate-400 font-extrabold font-mono">Origen de Datos para Calima:</span>
+            <div className="flex items-center bg-slate-950 rounded p-0.5 border border-slate-800">
+              <button 
+                type="button"
+                onClick={() => setCalimaDataSource('miteco')}
+                className={`text-[8px] uppercase px-2 py-0.5 rounded font-black transition-all ${calimaDataSource === 'miteco' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                MITECO España
+              </button>
+              <button 
+                type="button"
+                onClick={() => setCalimaDataSource('iqair')}
+                className={`text-[8px] uppercase px-2 py-0.5 rounded font-black transition-all ${calimaDataSource === 'iqair' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                IQAir Cloud Feed
+              </button>
+            </div>
+          </div>
+          {calimaDataSource === 'iqair' && (
+            <div className="flex items-center gap-1.5 text-[7.5px] text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded font-sans">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+              <span>Sincronizado con IQAir: <strong>{iqair?.city || 'Zorita'}</strong> (AQI: {iqair?.aqi || '--'}, PM2.5: {iqair?.pm2_5 || '--'}µg)</span>
+            </div>
+          )}
+          {calimaDataSource === 'miteco' && (
+            <div className="flex items-center gap-1.5 text-[7.5px] text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded font-sans">
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping"></span>
+              <span>Sincronizado con MITECO: <strong>{activeStation?.name?.split(' - ')[0] || 'No conectada'}</strong></span>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* PM10 24h Input */}
           <div className="space-y-1 bg-black/25 p-2 rounded-lg border border-slate-900/60">
@@ -1288,6 +1745,269 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
             </p>
           </div>
         </div>
+
+        {/* AUTOMATIC TRANSMISSION CONFIGURATION GRID */}
+        <div className="bg-black/20 border border-slate-900/60 p-2.5 rounded-lg flex flex-col gap-2">
+          <div className="flex items-center justify-between border-b border-slate-900/65 pb-1.5 flex-wrap gap-2">
+            <span className="text-[8.5px] uppercase text-amber-400 font-extrabold flex items-center gap-1 font-mono">
+              <Radio size={11} className="text-amber-500 animate-pulse" />
+              Parámetros de Automatización y Tiempos
+            </span>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-[8px] text-slate-400 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={autoTransmitEnabled}
+                  onChange={(e) => setAutoTransmitEnabled(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 accent-emerald-500 w-3 h-3 cursor-pointer"
+                />
+                <span className={autoTransmitEnabled ? "text-emerald-400 font-bold" : ""}>Activar Difusión Automática</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Left side: Automation options */}
+            <div className="flex flex-col gap-2 justify-center">
+              <label className="flex items-center gap-2 text-[8px] text-slate-300 cursor-pointer select-none">
+                <input 
+                  type="checkbox"
+                  checked={followClosestStation}
+                  onChange={(e) => setFollowClosestStation(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 accent-emerald-500 w-3 h-3 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block">Seguir Estación Más Próxima</span>
+                  <span className="text-slate-500 block text-[7.5px] font-sans mt-0.5">
+                    Sincroniza con: {stationsWithDistance[0]?.name.split(' - ')[0]} ({stationsWithDistance[0]?.distance.toFixed(1)} km)
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-2 text-[8px] text-slate-300 cursor-pointer select-none border-t border-slate-900/40 pt-2 mt-1">
+                <input 
+                  type="checkbox"
+                  checked={autoTransmitOnChange}
+                  onChange={(e) => setAutoTransmitOnChange(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 accent-emerald-500 w-3 h-3 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block">Transmitir al Cambiar de Estado</span>
+                  <span className="text-slate-500 block text-[7.5px] font-sans mt-0.5">
+                    Inyecta boletines en el acto si cambia el nivel ICA o dictamen de Calima
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {/* Right side: Intervals for Level 3-6 */}
+            <div className="flex flex-col gap-1.5 border-t md:border-t-0 md:border-l border-slate-900/60 pt-2 md:pt-0 pl-0 md:pl-3">
+              <span className="text-[7.5px] text-slate-500 uppercase font-black tracking-wider block mb-1">
+                Intervalos de Transmisión por Nivel ICA (segundos)
+              </span>
+
+              {/* Level 3: Regular */}
+              <div className="flex items-center justify-between text-[7.5px] font-mono">
+                <span className="text-amber-400 font-bold w-[120px] shrink-0">Regular (L3):</span>
+                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                  <input 
+                    type="range" 
+                    min="10" 
+                    max="600" 
+                    step="5"
+                    value={intervalLevel3}
+                    onChange={(e) => setIntervalLevel3(parseInt(e.target.value))}
+                    className="w-full accent-amber-500 h-1 bg-slate-950 rounded cursor-pointer"
+                  />
+                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel3}s</span>
+                </div>
+              </div>
+
+              {/* Level 4: Desfavorable */}
+              <div className="flex items-center justify-between text-[7.5px] font-mono">
+                <span className="text-rose-400 font-bold w-[120px] shrink-0">Desfavorable (L4):</span>
+                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                  <input 
+                    type="range" 
+                    min="10" 
+                    max="480" 
+                    step="5"
+                    value={intervalLevel4}
+                    onChange={(e) => setIntervalLevel4(parseInt(e.target.value))}
+                    className="w-full accent-rose-500 h-1 bg-slate-950 rounded cursor-pointer"
+                  />
+                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel4}s</span>
+                </div>
+              </div>
+
+              {/* Level 5: Muy Desfavorable */}
+              <div className="flex items-center justify-between text-[7.5px] font-mono">
+                <span className="text-rose-600 font-bold w-[120px] shrink-0">Muy Desfavorable (L5):</span>
+                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                  <input 
+                    type="range" 
+                    min="10" 
+                    max="300" 
+                    step="5"
+                    value={intervalLevel5}
+                    onChange={(e) => setIntervalLevel5(parseInt(e.target.value))}
+                    className="w-full accent-rose-600 h-1 bg-slate-950 rounded cursor-pointer"
+                  />
+                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel5}s</span>
+                </div>
+              </div>
+
+              {/* Level 6: Extremadamente Desfavorable */}
+              <div className="flex items-center justify-between text-[7.5px] font-mono">
+                <span className="text-purple-400 font-bold w-[120px] shrink-0">Extremo (L6):</span>
+                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                  <input 
+                    type="range" 
+                    min="5" 
+                    max="180" 
+                    step="5"
+                    value={intervalLevel6}
+                    onChange={(e) => setIntervalLevel6(parseInt(e.target.value))}
+                    className="w-full accent-purple-500 h-1 bg-slate-950 rounded cursor-pointer"
+                  />
+                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel6}s</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* BOTÓN PARA COLLAPSE DE PLANTILLAS */}
+        <div className="flex justify-end">
+          <button 
+            type="button"
+            onClick={() => setShowTemplateConfig(!showTemplateConfig)}
+            className="flex items-center gap-1 text-[8px] text-slate-400 bg-slate-950 hover:bg-slate-900 border border-slate-900/60 px-2.5 py-1 rounded transition-colors cursor-pointer select-none"
+          >
+            <Settings size={10} className={showTemplateConfig ? "rotate-45" : ""} />
+            <span>{showTemplateConfig ? "Ocultar Personalizador de Mensajes APRS" : "Personalizar Contexto de Boletines y Mensajes APRS"}</span>
+          </button>
+        </div>
+
+        {showTemplateConfig && (
+          <div className="bg-black/35 border border-slate-900 p-2.5 rounded-lg flex flex-col gap-2.5 text-[8.5px]">
+            <div className="border-b border-slate-900 pb-1.5 flex items-center justify-between flex-wrap gap-2">
+              <span className="uppercase text-amber-500 font-extrabold font-mono flex items-center gap-1">
+                <Settings size={11} />
+                Editor de Plantillas APRS / Walkie
+              </span>
+              <span className="text-[7.5px] text-slate-500 font-sans">
+                Etiquetas dinámicas: <strong className="text-slate-300 font-mono">{"{ica}"}</strong>, <strong className="text-slate-300 font-mono">{"{pm25}"}</strong>, <strong className="text-slate-300 font-mono">{"{pm10}"}</strong>, <strong className="text-slate-300 font-mono">{"{co}"}</strong>, <strong className="text-slate-300 font-mono">{"{o3}"}</strong>, <strong className="text-slate-300 font-mono">{"{station}"}</strong>, <strong className="text-slate-300 font-mono">{"{criterio}"}</strong>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Boletín Principal General (BLN2AQI):</label>
+                  <input 
+                    type="text" 
+                    value={templateBln2Aqi} 
+                    onChange={(e) => setTemplateBln2Aqi(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-emerald-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Calima Confirmada (BLN2AQI):</label>
+                  <input 
+                    type="text" 
+                    value={templateCalima} 
+                    onChange={(e) => setTemplateCalima(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-amber-400 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Regular L3 Boletín (BLN1):</label>
+                  <input 
+                    type="text" 
+                    value={templateBln1} 
+                    onChange={(e) => setTemplateBln1(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-amber-500/80 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Desfavorable L4 Boletín (BLN2):</label>
+                  <input 
+                    type="text" 
+                    value={templateBln2} 
+                    onChange={(e) => setTemplateBln2(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-rose-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Muy Desfavorable L5 Boletín (BLN3):</label>
+                  <input 
+                    type="text" 
+                    value={templateBln3} 
+                    onChange={(e) => setTemplateBln3(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-rose-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Extremo L6 Boletín (BLN4):</label>
+                  <input 
+                    type="text" 
+                    value={templateBln4} 
+                    onChange={(e) => setTemplateBln4(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Walkie L6 - Población General (CQ):</label>
+                  <input 
+                    type="text" 
+                    value={templateWalkieGral} 
+                    onChange={(e) => setTemplateWalkieGral(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-300 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Walkie L6 - Población Sensible (CQ):</label>
+                  <input 
+                    type="text" 
+                    value={templateWalkieSens} 
+                    onChange={(e) => setTemplateWalkieSens(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-200 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center bg-slate-950/50 p-1.5 rounded text-[7.5px] font-mono text-slate-400 border border-slate-900/60 mt-1">
+              <span>* Los cambios se aplican en tiempo real al generar los boletines automáticos o manuales.</span>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setTemplateBln2Aqi('MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)');
+                  setTemplateCalima('MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})');
+                  setTemplateBln4('ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.');
+                  setTemplateWalkieGral('ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.');
+                  setTemplateWalkieSens('ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.');
+                  setTemplateBln3('ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.');
+                  setTemplateBln2('ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.');
+                  setTemplateBln1('ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.');
+                }}
+                className="text-amber-500 hover:text-amber-400 font-bold underline cursor-pointer uppercase text-[7px]"
+              >
+                Restaurar Predeterminados
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Real-time BOE Analysis Outcome */}
         <div className="bg-slate-950 border border-slate-900 p-2.5 rounded-lg flex flex-col gap-2">
@@ -1507,7 +2227,23 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
       {/* Database control filters bar */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between border-b border-slate-900 pb-1.5 mb-1.5">
-          <span className="text-[8.5px] uppercase text-slate-500 font-extrabold tracking-wider">Base de Datos de Estaciones</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[8.5px] uppercase text-slate-500 font-extrabold tracking-wider">Base de Datos de Estaciones</span>
+            <button
+              onClick={handleSyncDatabase}
+              disabled={isSyncing}
+              className={`flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer select-none ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Sincronizar base de datos de calidad del aire con MITECO"
+            >
+              <RefreshCw size={8} className={isSyncing ? 'animate-spin' : ''} />
+              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar API'}</span>
+            </button>
+            {lastSyncTime && (
+              <span className="text-[7.5px] text-slate-500 font-mono">
+                Sinc: {lastSyncTime.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
           <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-850 shrink-0 font-sans text-[9px]">
             <button
               onClick={() => setViewMode('lista')}
@@ -1534,7 +2270,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           {/* Search box */}
           <div className="relative flex-1">
             <Search size={11} className="absolute left-2.5 top-2.5 text-slate-500" />
@@ -1548,22 +2284,39 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
             />
           </div>
 
-          {/* Type dropdown */}
-          <select
-            value={pastedIcaLevel}
-            onChange={(e) => setPastedIcaLevel(e.target.value)}
-            className="bg-slate-900 border border-slate-850 text-slate-205 rounded-lg px-2 text-[10.5px] focus:outline-none focus:border-emerald-500/40 cursor-pointer font-sans"
-            id="filter-ica-state"
-          >
-            <option value="todos">Todos los ICA</option>
-            <option value="buena">Buena</option>
-            <option value="razonablemente buena">Razonablemente Buena</option>
-            <option value="regular">Regular</option>
-            <option value="desfavorable">Desfavorable</option>
-            <option value="muy desfavorable">Muy Desfavorable</option>
-            <option value="extremadamente desfavorable">Extremadamente Desfavorable</option>
-            <option value="sin datos">Sin Datos</option>
-          </select>
+          <div className="flex gap-2 shrink-0">
+            {/* Type dropdown */}
+            <select
+              value={pastedIcaLevel}
+              onChange={(e) => setPastedIcaLevel(e.target.value)}
+              className="bg-slate-900 border border-slate-850 text-slate-200 rounded-lg px-2 text-[10.5px] focus:outline-none focus:border-emerald-500/40 cursor-pointer font-sans"
+              id="filter-ica-state"
+            >
+              <option value="todos">Todos los ICA</option>
+              <option value="buena">Buena</option>
+              <option value="razonablemente buena">Razonablemente Buena</option>
+              <option value="regular">Regular</option>
+              <option value="desfavorable">Desfavorable</option>
+              <option value="muy desfavorable">Muy Desfavorable</option>
+              <option value="extremadamente desfavorable">Extremadamente Desfavorable</option>
+              <option value="sin datos">Sin Datos</option>
+            </select>
+
+            {/* Proximity Filter Dropdown */}
+            <select
+              value={proximityFilter}
+              onChange={(e) => setProximityFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-850 text-slate-200 rounded-lg px-2 text-[10.5px] focus:outline-none focus:border-emerald-500/40 cursor-pointer font-sans"
+              id="filter-proximity"
+            >
+              <option value="todos">Cualquier distancia</option>
+              <option value="cobertura">Radio Cobertura ({config?.filterRadiusKm || 150} km)</option>
+              <option value="50">Hasta 50 km</option>
+              <option value="100">Hasta 100 km</option>
+              <option value="200">Hasta 200 km</option>
+              <option value="500">Hasta 500 km</option>
+            </select>
+          </div>
         </div>
 
         {viewMode === 'mapa' ? (

@@ -437,6 +437,193 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
   });
   const [showThresholdConfig, setShowThresholdConfig] = useState<boolean>(false);
 
+  // Local state for APRS ICA Bulletin transmission
+  const [aprsIcaEnabled, setAprsIcaEnabled] = useState<boolean>(() => {
+    return config?.enableAprsIca !== undefined ? config.enableAprsIca : true;
+  });
+  const [aprsIcaInterval, setAprsIcaInterval] = useState<number>(() => {
+    return config?.pollIntervalIca !== undefined ? config.pollIntervalIca : 30;
+  });
+  const [enableAprsIcaFilterRegular, setEnableAprsIcaFilterRegular] = useState<boolean>(() => {
+    return config?.enableAprsIcaFilterRegular !== undefined ? config.enableAprsIcaFilterRegular : true;
+  });
+  const [icaTemplateBuena, setIcaTemplateBuena] = useState<string>(() => {
+    return config?.icaTemplateBuena || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  });
+  const [icaTemplateRegular, setIcaTemplateRegular] = useState<string>(() => {
+    return config?.icaTemplateRegular || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  });
+  const [icaTemplateDesfavorable, setIcaTemplateDesfavorable] = useState<string>(() => {
+    return config?.icaTemplateDesfavorable || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  });
+  const [icaTemplateMuyDesfavorable, setIcaTemplateMuyDesfavorable] = useState<string>(() => {
+    return config?.icaTemplateMuyDesfavorable || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  });
+  const [icaTemplateExtremadamente, setIcaTemplateExtremadamente] = useState<string>(() => {
+    return config?.icaTemplateExtremadamente || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  });
+
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState<boolean>(false);
+  const [transmitStatus, setTransmitStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [transmitMessage, setTransmitMessage] = useState<string>('');
+
+  // Keep state in sync with config changes
+  useEffect(() => {
+    if (config) {
+      if (config.enableAprsIca !== undefined) setAprsIcaEnabled(config.enableAprsIca);
+      if (config.pollIntervalIca !== undefined) setAprsIcaInterval(config.pollIntervalIca);
+      if (config.enableAprsIcaFilterRegular !== undefined) setEnableAprsIcaFilterRegular(config.enableAprsIcaFilterRegular);
+      if (config.icaTemplateBuena !== undefined) setIcaTemplateBuena(config.icaTemplateBuena);
+      if (config.icaTemplateRegular !== undefined) setIcaTemplateRegular(config.icaTemplateRegular);
+      if (config.icaTemplateDesfavorable !== undefined) setIcaTemplateDesfavorable(config.icaTemplateDesfavorable);
+      if (config.icaTemplateMuyDesfavorable !== undefined) setIcaTemplateMuyDesfavorable(config.icaTemplateMuyDesfavorable);
+      if (config.icaTemplateExtremadamente !== undefined) setIcaTemplateExtremadamente(config.icaTemplateExtremadamente);
+    }
+  }, [config]);
+
+  const handleUpdateIcaConfig = async (enabled: boolean, interval: number) => {
+    setIsUpdatingConfig(true);
+    try {
+      const response = await customFetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...config,
+          enableAprsIca: enabled,
+          pollIntervalIca: interval
+        })
+      });
+      if (response.ok) {
+        setAprsIcaEnabled(enabled);
+        setAprsIcaInterval(interval);
+      } else {
+        console.error("Fallo al actualizar configuración en el servidor");
+      }
+    } catch (err) {
+      console.error("Error actualizando configuración APRS ICA:", err);
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  };
+
+  const handleSaveAllIcaSettings = async (
+    enabled: boolean,
+    interval: number,
+    filterRegular: boolean,
+    tempBuena: string,
+    tempRegular: string,
+    tempDesfavorable: string,
+    tempMuy: string,
+    tempExt: string
+  ) => {
+    setIsUpdatingConfig(true);
+    try {
+      const response = await customFetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...config,
+          enableAprsIca: enabled,
+          pollIntervalIca: interval,
+          enableAprsIcaFilterRegular: filterRegular,
+          icaTemplateBuena: tempBuena,
+          icaTemplateRegular: tempRegular,
+          icaTemplateDesfavorable: tempDesfavorable,
+          icaTemplateMuyDesfavorable: tempMuy,
+          icaTemplateExtremadamente: tempExt
+        })
+      });
+      if (response.ok) {
+        setAprsIcaEnabled(enabled);
+        setAprsIcaInterval(interval);
+        setEnableAprsIcaFilterRegular(filterRegular);
+        setIcaTemplateBuena(tempBuena);
+        setIcaTemplateRegular(tempRegular);
+        setIcaTemplateDesfavorable(tempDesfavorable);
+        setIcaTemplateMuyDesfavorable(tempMuy);
+        setIcaTemplateExtremadamente(tempExt);
+      } else {
+        console.error("Fallo al guardar configuración avanzada de plantillas ICA");
+      }
+    } catch (err) {
+      console.error("Error al guardar la configuración de plantillas ICA:", err);
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  };
+
+  const handleManualTransmitIca = async () => {
+    if (transmitStatus === 'sending') return;
+    setTransmitStatus('sending');
+    setTransmitMessage('');
+    try {
+      const response = await customFetch('/api/ica/beacon/transmit', {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setTransmitStatus('success');
+        setTransmitMessage(data.message || 'Transmisión manual de boletín y baliza ICA completada.');
+        playAlertSound('chime');
+      } else {
+        throw new Error(data.error || 'Error al transmitir baliza');
+      }
+    } catch (err: any) {
+      setTransmitStatus('error');
+      setTransmitMessage(err.message || 'Error en la conexión con el servidor.');
+      playAlertSound('warble');
+    } finally {
+      setTimeout(() => {
+        setTransmitStatus('idle');
+      }, 5000);
+    }
+  };
+
+  const getPreviewIcaBulletin = () => {
+    const aqi = iqair?.aqi || 46;
+    let label = 'Buena';
+    if (aqi <= 50) label = 'Buena';
+    else if (aqi <= 100) label = 'Regular';
+    else if (aqi <= 150) label = 'Desfavorable';
+    else if (aqi <= 200) label = 'Muy Desfavorable';
+    else label = 'Extremadamente Desfavorable';
+
+    const pm25 = iqair?.pm2_5 || 10.4;
+    const pm10 = iqair?.pm10 || 28.3;
+    const co = iqair?.co ? Math.round(iqair.co * 1000) : 102000;
+    const no2 = iqair?.no2 || 15.1;
+    const o3 = iqair?.o3 || 77;
+    const station = iqair?.city || 'MADRID';
+
+    let template = icaTemplateBuena;
+    const l = label.toLowerCase();
+    if (l.includes('regular')) {
+      template = icaTemplateRegular || template;
+    } else if (l.includes('muy')) {
+      template = icaTemplateMuyDesfavorable || template;
+    } else if (l.includes('extremadamente')) {
+      template = icaTemplateExtremadamente || template;
+    } else if (l.includes('desfavorable')) {
+      template = icaTemplateDesfavorable || template;
+    } else if (l.includes('buena')) {
+      template = icaTemplateBuena || template;
+    }
+
+    if (!template) {
+      template = 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    }
+
+    return template
+      .replace(/{aqi}/g, String(aqi))
+      .replace(/{label}/g, label)
+      .replace(/{pm25}/g, pm25.toFixed(1))
+      .replace(/{pm10}/g, pm10.toFixed(1))
+      .replace(/{co}/g, co.toFixed(0))
+      .replace(/{no2}/g, no2.toFixed(1))
+      .replace(/{o3}/g, o3.toFixed(1))
+      .replace(/{station}/g, station);
+  };
+
   // Calima BOE / BLN2AQI Bulletin states
   const [pm10_24h, setPm10_24h] = useState<number>(30);
   const [polvo_sahariano, setPolvo_sahariano] = useState<number>(12);
@@ -1614,6 +1801,262 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
             </div>
           </div>
         )}
+      </div>
+
+      {/* PANEL DE CONTROL DE BALIZAS Y BOLETINES REGULARES ICA (BLN2AQI) */}
+      <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between border-b border-slate-800/85 pb-2 flex-wrap gap-2">
+          <div className="flex items-center gap-1.5 text-sky-400">
+            <Radio size={14} className={aprsIcaEnabled ? "animate-pulse shrink-0" : "shrink-0"} />
+            <div>
+              <span className="text-[9.5px] text-slate-100 font-extrabold uppercase font-mono tracking-wider block">
+                Transmisión de Calidad del Aire APRS (BLN2AQI)
+              </span>
+              <span className="text-[8px] text-slate-500 block leading-none mt-0.5 font-sans">
+                Parámetros para la emisión periódica de balizas de posición AIR-QUAL y boletines de calidad de aire (ICA).
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono">
+            <span className={`w-1.5 h-1.5 rounded-full ${aprsIcaEnabled ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`} />
+            <span className={`text-[8px] uppercase font-black tracking-wider ${aprsIcaEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {aprsIcaEnabled ? 'AUTOMÁTICO ACTIVO' : 'SOPORTE MANUAL'}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Activar/Desactivar Manual */}
+          <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/50 flex flex-col justify-between gap-2">
+            <div>
+              <span className="text-[8px] uppercase text-slate-400 font-extrabold font-mono block mb-1">Estatus del Emisor APRS:</span>
+              <p className="text-[8px] text-slate-500 font-sans leading-tight">
+                Habilita el ciclo automático de sondeo y transmisión periódica a la red APRS-IS.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => handleUpdateIcaConfig(!aprsIcaEnabled, aprsIcaInterval)}
+                disabled={isUpdatingConfig}
+                className={`w-full py-1.5 rounded-lg font-black uppercase text-[9px] transition-all flex items-center justify-center gap-1 cursor-pointer border ${
+                  aprsIcaEnabled
+                    ? 'bg-emerald-950/30 text-emerald-400 border-emerald-900/40 hover:bg-emerald-900/20'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                {aprsIcaEnabled ? 'Activo (Desactivar)' : 'Desactivado (Activar)'}
+              </button>
+            </div>
+          </div>
+
+          {/* Intervalo de Tiempo */}
+          <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/50 flex flex-col justify-between gap-2 font-mono">
+            <div>
+              <span className="text-[8px] uppercase text-slate-400 font-extrabold block mb-1">Intervalo de Transmisión:</span>
+              <p className="text-[8px] text-slate-500 font-sans leading-tight">
+                Frecuencia regular del envío automático de las métricas de la estación local.
+              </p>
+            </div>
+            <div className="mt-1">
+              <select
+                value={aprsIcaInterval}
+                disabled={isUpdatingConfig}
+                onChange={(e) => handleUpdateIcaConfig(aprsIcaEnabled, Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-slate-100 text-[10px] focus:outline-none focus:border-zinc-500/40 font-mono"
+              >
+                <option value={5}>5 Minutos (Pruebas)</option>
+                <option value={10}>10 Minutos</option>
+                <option value={15}>15 Minutos</option>
+                <option value={30}>30 Minutos (Estándar)</option>
+                <option value={45}>45 Minutos</option>
+                <option value={60}>60 Minutos (Bajo tráfico)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Transmitir Manual Ahora */}
+          <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/50 flex flex-col justify-between gap-2">
+            <div>
+              <span className="text-[8px] uppercase text-slate-400 font-extrabold font-mono block mb-1">Disparador Forzado:</span>
+              <p className="text-[8px] text-slate-500 font-sans leading-tight">
+                Emite instantáneamente la baliza regular actual y el boletín de calidad del aire sin esperar al intervalo.
+              </p>
+            </div>
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={handleManualTransmitIca}
+                disabled={transmitStatus === 'sending'}
+                className="w-full bg-sky-500 hover:bg-sky-600 active:scale-95 text-slate-950 font-black uppercase text-[9px] py-1.5 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer border border-sky-400/20"
+              >
+                <RefreshCw size={10} className={transmitStatus === 'sending' ? 'animate-spin' : ''} />
+                <span>Transmitir Boletín e ICA Ahora</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* CONFIGURACIÓN AVANZADA: FILTRO Y PLANTILLAS DE ESTADOS */}
+        <div className="bg-slate-950/35 p-3 rounded-lg border border-slate-900/60 flex flex-col gap-3">
+          <div className="flex items-center justify-between border-b border-slate-800/40 pb-1.5">
+            <span className="font-extrabold uppercase text-[7.5px] text-sky-400 tracking-wider font-mono">
+              Configuración Avanzada de Envío y Mensajería por Estado
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="enableAprsIcaFilterRegular"
+              type="checkbox"
+              checked={enableAprsIcaFilterRegular}
+              onChange={(e) => handleSaveAllIcaSettings(
+                aprsIcaEnabled,
+                aprsIcaInterval,
+                e.target.checked,
+                icaTemplateBuena,
+                icaTemplateRegular,
+                icaTemplateDesfavorable,
+                icaTemplateMuyDesfavorable,
+                icaTemplateExtremadamente
+              )}
+              className="w-3.5 h-3.5 rounded border-slate-850 bg-slate-950 text-sky-500 focus:ring-0 cursor-pointer"
+            />
+            <label htmlFor="enableAprsIcaFilterRegular" className="text-[8.5px] text-slate-300 font-sans cursor-pointer select-none">
+              <span className="font-bold text-slate-200">Filtro de cambio de estado:</span> Transmitir de inmediato sólo si el nuevo estado es <span className="text-amber-400 font-bold">Regular o peor</span> (comenzando a partir de regular; evita transmisiones ruidosas en estado Buena).
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2.5 mt-1 text-[8.5px]">
+            <div>
+              <span className="text-slate-400 font-bold block mb-1">Contexto del Boletín para cada Estado (Plantillas):</span>
+              <p className="text-[7.5px] text-slate-500 leading-normal mb-2">
+                Utiliza variables dinámicas: <code className="text-sky-400 font-mono font-bold">{'{aqi}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{label}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{pm25}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{pm10}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{co}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{no2}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{o3}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{station}'}</code>. Se guarda automáticamente al hacer clic fuera del campo.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex flex-col gap-1">
+                <span className="text-emerald-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Buena (ICA 0 - 50)</span>
+                <input
+                  type="text"
+                  value={icaTemplateBuena}
+                  onChange={(e) => setIcaTemplateBuena(e.target.value)}
+                  onBlur={() => handleSaveAllIcaSettings(
+                    aprsIcaEnabled,
+                    aprsIcaInterval,
+                    enableAprsIcaFilterRegular,
+                    icaTemplateBuena,
+                    icaTemplateRegular,
+                    icaTemplateDesfavorable,
+                    icaTemplateMuyDesfavorable,
+                    icaTemplateExtremadamente
+                  )}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-emerald-500/30"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-amber-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Regular (ICA 51 - 100)</span>
+                <input
+                  type="text"
+                  value={icaTemplateRegular}
+                  onChange={(e) => setIcaTemplateRegular(e.target.value)}
+                  onBlur={() => handleSaveAllIcaSettings(
+                    aprsIcaEnabled,
+                    aprsIcaInterval,
+                    enableAprsIcaFilterRegular,
+                    icaTemplateBuena,
+                    icaTemplateRegular,
+                    icaTemplateDesfavorable,
+                    icaTemplateMuyDesfavorable,
+                    icaTemplateExtremadamente
+                  )}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-amber-500/30"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-orange-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Desfavorable (ICA 101 - 150)</span>
+                <input
+                  type="text"
+                  value={icaTemplateDesfavorable}
+                  onChange={(e) => setIcaTemplateDesfavorable(e.target.value)}
+                  onBlur={() => handleSaveAllIcaSettings(
+                    aprsIcaEnabled,
+                    aprsIcaInterval,
+                    enableAprsIcaFilterRegular,
+                    icaTemplateBuena,
+                    icaTemplateRegular,
+                    icaTemplateDesfavorable,
+                    icaTemplateMuyDesfavorable,
+                    icaTemplateExtremadamente
+                  )}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-orange-500/30"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-rose-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Muy Desfavorable (ICA 151 - 200)</span>
+                <input
+                  type="text"
+                  value={icaTemplateMuyDesfavorable}
+                  onChange={(e) => setIcaTemplateMuyDesfavorable(e.target.value)}
+                  onBlur={() => handleSaveAllIcaSettings(
+                    aprsIcaEnabled,
+                    aprsIcaInterval,
+                    enableAprsIcaFilterRegular,
+                    icaTemplateBuena,
+                    icaTemplateRegular,
+                    icaTemplateDesfavorable,
+                    icaTemplateMuyDesfavorable,
+                    icaTemplateExtremadamente
+                  )}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-rose-500/30"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-purple-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Extremadamente Desfavorable (ICA &gt; 200)</span>
+                <input
+                  type="text"
+                  value={icaTemplateExtremadamente}
+                  onChange={(e) => setIcaTemplateExtremadamente(e.target.value)}
+                  onBlur={() => handleSaveAllIcaSettings(
+                    aprsIcaEnabled,
+                    aprsIcaInterval,
+                    enableAprsIcaFilterRegular,
+                    icaTemplateBuena,
+                    icaTemplateRegular,
+                    icaTemplateDesfavorable,
+                    icaTemplateMuyDesfavorable,
+                    icaTemplateExtremadamente
+                  )}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-purple-500/30"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Transient feedback banner or APRS packet template representation */}
+        <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-900/40 text-[7.5px] font-mono flex flex-col gap-1 select-text">
+          <div className="flex justify-between items-center text-slate-400">
+            <span className="font-extrabold uppercase text-[7px] text-sky-400 tracking-wider">PREVISUALIZACIÓN DE TRAMAS APRS (SNECA)</span>
+            <span className="text-[6.5px]">SSID: {config?.callsign || 'EA1URG-13'} • Servidor: APRS-IS (TCPIP)</span>
+          </div>
+          <div className="text-slate-300 bg-[#040608] p-1.5 rounded border border-slate-900 overflow-x-auto whitespace-pre leading-normal">
+            <span className="text-amber-500 font-bold">{config?.callsign || 'EA1URG-13'}&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+            <span>{getPreviewIcaBulletin()}</span>
+          </div>
+          {transmitMessage && (
+            <div className={`mt-1 text-[7.5px] font-bold p-1 rounded ${
+              transmitStatus === 'success' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/25' : 'bg-rose-950/40 text-rose-400 border border-rose-900/25'
+            }`}>
+              {transmitMessage}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* SECCIÓN NUEVA: PROCESADOR DE ALERTA CALIMA BOE Y EMISOR DE BOLETINES (BLN2AQI) */}

@@ -107,6 +107,13 @@ let config: TelemetryConfig = {
   pollIntervalJrc: 5,
   pollIntervalIgn: 2,
   pollIntervalIca: 30,
+  enableAprsIca: true,
+  enableAprsIcaFilterRegular: true,
+  icaTemplateBuena: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
+  icaTemplateRegular: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
+  icaTemplateDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
+  icaTemplateMuyDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
+  icaTemplateExtremadamente: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
   criticalEmail: 'emergencias.cenem@proteccioncivil.es',
   aemetAlertsSubscriptionEnabled: true,
   agpsEnabled: true,
@@ -165,6 +172,13 @@ try {
       if (iniData.APRS.serverPort) config.aprscPort = parseInt(iniData.APRS.serverPort) || config.aprscPort;
       if (iniData.APRS.kissTcpPort) config.kissTcpPort = parseInt(iniData.APRS.kissTcpPort) || config.kissTcpPort;
       if (iniData.APRS.pollIntervalIca) config.pollIntervalIca = parseInt(iniData.APRS.pollIntervalIca) || config.pollIntervalIca;
+      if (iniData.APRS.enableAprsIca !== undefined) config.enableAprsIca = iniData.APRS.enableAprsIca.trim().toLowerCase() === 'true';
+      if (iniData.APRS.enableAprsIcaFilterRegular !== undefined) config.enableAprsIcaFilterRegular = iniData.APRS.enableAprsIcaFilterRegular.trim().toLowerCase() === 'true';
+      if (iniData.APRS.icaTemplateBuena) config.icaTemplateBuena = iniData.APRS.icaTemplateBuena.trim();
+      if (iniData.APRS.icaTemplateRegular) config.icaTemplateRegular = iniData.APRS.icaTemplateRegular.trim();
+      if (iniData.APRS.icaTemplateDesfavorable) config.icaTemplateDesfavorable = iniData.APRS.icaTemplateDesfavorable.trim();
+      if (iniData.APRS.icaTemplateMuyDesfavorable) config.icaTemplateMuyDesfavorable = iniData.APRS.icaTemplateMuyDesfavorable.trim();
+      if (iniData.APRS.icaTemplateExtremadamente) config.icaTemplateExtremadamente = iniData.APRS.icaTemplateExtremadamente.trim();
     }
     if (iniData.OpenWeatherMap && iniData.OpenWeatherMap.apiKey) {
       config.owmApiKey = iniData.OpenWeatherMap.apiKey.trim();
@@ -2048,16 +2062,32 @@ function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: numb
 }
 
 function transmitAirQualityBeacon(force: boolean = false) {
+  if (!force && config.enableAprsIca === false) {
+    console.log(`[APRS ICA] Transmisión de baliza de calidad de aire desactivada (automática).`);
+    return;
+  }
   const { packet, label, aqi, pm25, pm10, co, o3, no2, stationName } = getAirQualityBeaconPacket();
   
   const now = Date.now();
   const timeSinceLast = now - lastIcaBeaconTime;
   const stateChanged = lastIcaStatusLabel && (label !== lastIcaStatusLabel);
+  
+  let triggerOnStateChange = false;
+  if (stateChanged) {
+    if (config.enableAprsIcaFilterRegular !== false) {
+      const oldIsAlert = lastIcaStatusLabel ? !lastIcaStatusLabel.toLowerCase().includes('buena') : false;
+      const newIsAlert = label ? !label.toLowerCase().includes('buena') : false;
+      triggerOnStateChange = oldIsAlert || newIsAlert;
+    } else {
+      triggerOnStateChange = true;
+    }
+  }
+
   const intervalMin = config.pollIntervalIca || 30;
   const intervalMs = intervalMin * 60 * 1000;
   
-  if (force || lastIcaBeaconTime === 0 || timeSinceLast >= intervalMs || stateChanged) {
-    const isStateChange = lastIcaStatusLabel && stateChanged;
+  if (force || lastIcaBeaconTime === 0 || timeSinceLast >= intervalMs || triggerOnStateChange) {
+    const isStateChange = lastIcaStatusLabel && triggerOnStateChange;
     lastIcaBeaconTime = now;
     lastIcaStatusLabel = label;
     
@@ -2080,10 +2110,49 @@ function transmitAirQualityBeacon(force: boolean = false) {
     addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
     
     // Difundir el boletín APRS para que todo coincida perfectamente
-    broadcastAirQualityBulletin(aqi, label, pm25, pm10, co, no2, o3, stationName);
+    broadcastAirQualityBulletin(aqi, label, pm25, pm10, co, no2, o3, stationName, force);
   } else {
     console.log(`[APRS ICA] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${label})`);
   }
+}
+
+function formatIcaBulletinTemplate(
+  label: string,
+  aqi: number,
+  pm25: number,
+  pm10: number,
+  co: number,
+  no2: number,
+  o3: number,
+  station: string
+): string {
+  let template = config.icaTemplateBuena;
+  const l = label.toLowerCase();
+  if (l.includes('regular')) {
+    template = config.icaTemplateRegular || template;
+  } else if (l.includes('muy')) {
+    template = config.icaTemplateMuyDesfavorable || template;
+  } else if (l.includes('extremadamente')) {
+    template = config.icaTemplateExtremadamente || template;
+  } else if (l.includes('desfavorable')) {
+    template = config.icaTemplateDesfavorable || template;
+  } else if (l.includes('buena')) {
+    template = config.icaTemplateBuena || template;
+  }
+
+  if (!template) {
+    template = 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+  }
+
+  return template
+    .replace(/{aqi}/g, String(aqi))
+    .replace(/{label}/g, label)
+    .replace(/{pm25}/g, pm25.toFixed(1))
+    .replace(/{pm10}/g, pm10.toFixed(1))
+    .replace(/{co}/g, co.toFixed(0))
+    .replace(/{no2}/g, no2.toFixed(1))
+    .replace(/{o3}/g, o3.toFixed(1))
+    .replace(/{station}/g, station);
 }
 
 function broadcastAirQualityBulletin(
@@ -2094,8 +2163,13 @@ function broadcastAirQualityBulletin(
   coVal?: number, 
   no2Val?: number, 
   o3Val?: number,
-  stationName?: string
+  stationName?: string,
+  force: boolean = false
 ) {
+  if (!force && config.enableAprsIca === false) {
+    console.log(`[APRS ICA] Transmisión de boletín de calidad de aire desactivada (automática).`);
+    return;
+  }
   const finalAqi = aqi !== undefined ? aqi : iqairState.aqi;
   const finalLabel = label !== undefined ? label : getIcaLabel(finalAqi);
   const pm25 = pm25Val !== undefined ? pm25Val : (iqairState.pm2_5 || 0);
@@ -2105,7 +2179,8 @@ function broadcastAirQualityBulletin(
   const o3 = o3Val !== undefined ? o3Val : (iqairState.o3 || 0);
   const name = stationName !== undefined ? stationName : iqairState.city;
   
-  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${finalAqi} (${finalLabel}) (PM2.5: ${pm25.toFixed(1)}ug, PM10: ${pm10.toFixed(1)}ug, CO: ${co.toFixed(0)}ug, NO2: ${no2.toFixed(1)}ug, O3: ${o3.toFixed(1)}ug)`;
+  const content = formatIcaBulletinTemplate(finalLabel, finalAqi, pm25, pm10, co, no2, o3, name);
+  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${content}`;
   addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Calidad del Aire (ICA) difundido para la estación ${name}.`);
 }
 
@@ -4604,6 +4679,30 @@ app.post('/api/ica/sync', (req, res) => {
   }
 });
 
+app.post('/api/ica/beacon/transmit', (req, res) => {
+  try {
+    // Forzar la transmisión manual de la baliza y el boletín de calidad del aire (ICA)
+    transmitAirQualityBeacon(true);
+    
+    addLog(
+      'SYS',
+      'ICA_TX_MANUAL',
+      'LOCAL',
+      'API',
+      'Transmisión manual del boletín de calidad de aire ICA (BLN2AQI) y baliza AIR-QUAL forzada por el operador.',
+      true,
+      'Transmisión Manual'
+    );
+    
+    res.json({
+      success: true,
+      message: 'Transmisión manual de baliza y boletín ICA (BLN2AQI) completada con éxito.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/ica/station/:id', (req, res) => {
   const station = ICA_STATIONS.find(s => s.id === req.params.id);
   if (!station) {
@@ -6476,6 +6575,13 @@ app.post('/api/config', (req, res) => {
     if (updated.pollIntervalJrc !== undefined) config.pollIntervalJrc = parseInt(updated.pollIntervalJrc.toString());
     if (updated.pollIntervalIgn !== undefined) config.pollIntervalIgn = parseInt(updated.pollIntervalIgn.toString());
     if (updated.pollIntervalIca !== undefined) config.pollIntervalIca = parseInt(updated.pollIntervalIca.toString());
+    if (updated.enableAprsIca !== undefined) config.enableAprsIca = !!updated.enableAprsIca;
+    if (updated.enableAprsIcaFilterRegular !== undefined) config.enableAprsIcaFilterRegular = !!updated.enableAprsIcaFilterRegular;
+    if (updated.icaTemplateBuena !== undefined) config.icaTemplateBuena = updated.icaTemplateBuena;
+    if (updated.icaTemplateRegular !== undefined) config.icaTemplateRegular = updated.icaTemplateRegular;
+    if (updated.icaTemplateDesfavorable !== undefined) config.icaTemplateDesfavorable = updated.icaTemplateDesfavorable;
+    if (updated.icaTemplateMuyDesfavorable !== undefined) config.icaTemplateMuyDesfavorable = updated.icaTemplateMuyDesfavorable;
+    if (updated.icaTemplateExtremadamente !== undefined) config.icaTemplateExtremadamente = updated.icaTemplateExtremadamente;
     if (updated.criticalEmail !== undefined) config.criticalEmail = updated.criticalEmail.trim();
     if (updated.aemetAlertsSubscriptionEnabled !== undefined) {
       config.aemetAlertsSubscriptionEnabled = !!updated.aemetAlertsSubscriptionEnabled;
@@ -6606,6 +6712,15 @@ kissTcpHost = localhost
 kissTcpPort = ${config.kissTcpPort}
 # Intervalo de transmisión de telemetría de calidad del aire en minutos
 pollIntervalIca = ${config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30}
+# Activar o desactivar manualmente la transmisión de calidad del aire
+enableAprsIca = ${config.enableAprsIca !== false}
+# Filtrar transmisión de cambio de estado a partir de Regular
+enableAprsIcaFilterRegular = ${config.enableAprsIcaFilterRegular !== false}
+icaTemplateBuena = ${config.icaTemplateBuena || ''}
+icaTemplateRegular = ${config.icaTemplateRegular || ''}
+icaTemplateDesfavorable = ${config.icaTemplateDesfavorable || ''}
+icaTemplateMuyDesfavorable = ${config.icaTemplateMuyDesfavorable || ''}
+icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
 `;
         fs.writeFileSync(iniPath, iniContent, 'utf8');
         console.log(`[SYS CONFIG] Sincronizado config.ini con éxito tras actualizar en la UI.`);

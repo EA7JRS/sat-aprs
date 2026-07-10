@@ -56,8 +56,60 @@
         "sosSettings": {
           "type": "object",
           "description": "Custom color, sound and zoom mappings for APRS emergency and status codes"
+        },
+        "alertPrefs": {
+          "type": "object",
+          "description": "Custom alert and threshold preferences for sismos, air quality, weather, and notifications"
         }
       }
+    },
+    "Station": {
+      "title": "Station",
+      "description": "Operator configured and owned radio stations/nodes (iGate, WX, Digipeater)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique station identifier"
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Callsign of the station including SSID"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of station (iGate, Digipeater, WX, Mobile)"
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude coordinate"
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude coordinate"
+        },
+        "status": {
+          "type": "string",
+          "description": "Operating status (Online, Offline, Testing)"
+        },
+        "frequency": {
+          "type": "string",
+          "description": "Radio frequency used (e.g. 144.800 MHz)"
+        },
+        "power": {
+          "type": "number",
+          "description": "Transmit power in Watts"
+        },
+        "description": {
+          "type": "string",
+          "description": "Short summary or description of station hardware"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["callsign", "type", "latitude", "longitude", "status"]
     },
     "SystemConfig": {
       "title": "SystemConfig",
@@ -106,6 +158,10 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "User profile and settings"
+    },
+    "/users/{userId}/stations/{stationId}": {
+      "schema": "Station",
+      "description": "Operator owned and configured APRS/WX radio stations"
     },
     "/system/config": {
       "schema": "SystemConfig",

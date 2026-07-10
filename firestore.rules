@@ -18,6 +18,11 @@ service cloud.firestore {
       allow read, write: if isCreator() || (request.auth != null && request.auth.uid == userId);
     }
 
+    // User stations subcollection
+    match /users/{userId}/stations/{stationId} {
+      allow read, write: if isCreator() || (request.auth != null && request.auth.uid == userId);
+    }
+
     // Global system configuration and version controls
     match /system/{document} {
       allow read: if request.auth != null;

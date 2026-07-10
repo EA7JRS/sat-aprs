@@ -151,6 +151,13 @@ export interface TelemetryConfig {
   pollIntervalJrc?: number;
   pollIntervalIgn?: number;
   pollIntervalIca?: number;
+  enableAprsIca?: boolean;
+  enableAprsIcaFilterRegular?: boolean;
+  icaTemplateBuena?: string;
+  icaTemplateRegular?: string;
+  icaTemplateDesfavorable?: string;
+  icaTemplateMuyDesfavorable?: string;
+  icaTemplateExtremadamente?: string;
   criticalEmail?: string;
   aemetAlertsSubscriptionEnabled?: boolean;
   agpsEnabled?: boolean;

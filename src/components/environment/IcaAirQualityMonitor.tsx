@@ -397,6 +397,13 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
   });
   const [showThresholdConfig, setShowThresholdConfig] = useState<boolean>(false);
 
+  // Calima BOE / BLN2AQI Bulletin states
+  const [pm10_24h, setPm10_24h] = useState<number>(30);
+  const [polvo_sahariano, setPolvo_sahariano] = useState<number>(12);
+  const [pm25_24h, setPm25_24h] = useState<number>(10);
+  const [autoSyncWithStation, setAutoSyncWithStation] = useState<boolean>(true);
+  const [bulletinLogs, setBulletinLogs] = useState<string[]>([]);
+
   // Save thresholds to localStorage
   useEffect(() => {
     localStorage.setItem('ica_threshold_pm25', thresholdPm25.toString());
@@ -742,6 +749,122 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
   const activeUsAqi = activeStation ? calculateUsAqiEquivalent(activeStation.pm25, activeStation.no2) : 50;
   const activeUsAqiInfo = getUsAqiInfo(activeUsAqi);
 
+  // Synchronize state with selected station if auto-sync is active
+  useEffect(() => {
+    if (autoSyncWithStation && activeStation) {
+      const pm10Val = activeStation.pm10 ?? 24;
+      const pm25Val = activeStation.pm25 ?? 9.9;
+      setPm10_24h(pm10Val);
+      setPm25_24h(pm25Val);
+      // Simulate dusting factor based on PM10 with minor tick fluctuation
+      const simulatedDust = Math.max(0, parseFloat((pm10Val * 0.45 + (Math.sin(tick * 0.1) * 1)).toFixed(1)));
+      setPolvo_sahariano(simulatedDust);
+    }
+  }, [activeStation, autoSyncWithStation, tick]);
+
+  const calimaAnalysis = useMemo(() => {
+    if (pm10_24h <= 0 || pm25_24h <= 0) {
+      return { calima: false, motivo: "Datos insuficientes o incorrectos" };
+    }
+
+    if (polvo_sahariano > 100) {
+      return {
+        calima: true, 
+        criterio: "Polvo sahariano extremo (>100 µg/m³)",
+        ratio_pm25_pm10: `${((pm25_24h / pm10_24h) * 100).toFixed(1)}%`,
+        metricas: {
+          ratio_sahariano_pm10: `${((polvo_sahariano / pm10_24h) * 100).toFixed(1)}%`,
+          ratio_pm25_pm10_real: `${((pm25_24h / pm10_24h) * 100).toFixed(1)}%`,
+          ratio_referencia_boe: "50.0%"
+        }
+      };
+    }
+        
+    const superaLimiteLegal = pm10_24h > 50;          
+    const polvoSignificativo = polvo_sahariano > 30;   
+    
+    const ratioOrigen = (polvo_sahariano / pm10_24h) * 100;
+    const origenSahariano = ratioOrigen >= 60;
+
+    const ratioPm25Pm10 = (pm25_24h / pm10_24h) * 100;
+    const esPolvoGrueso = ratioPm25Pm10 < 40;  
+
+    const calimaConfirmada = superaLimiteLegal && polvoSignificativo && origenSahariano && esPolvoGrueso;
+
+    return {
+      calima: calimaConfirmada,
+      criterio: calimaConfirmada ? "Fórmula estándar + Filtro granulométrico" : "Condiciones no cumplidas (requiere PM10 > 50, Polvo > 30, Origen Sahariano ≥ 60% y Polvo Grueso PM2.5/PM10 < 40%)",
+      metricas: {
+        ratio_sahariano_pm10: `${ratioOrigen.toFixed(1)}%`,
+        ratio_pm25_pm10_real: `${ratioPm25Pm10.toFixed(1)}%`,
+        ratio_referencia_boe: "50.0%"
+      }
+    };
+  }, [pm10_24h, polvo_sahariano, pm25_24h]);
+
+  const handleTransmitCalimaBulletin = async () => {
+    const callsign = config?.callsign || 'EA1URG-10';
+    const packetsToSend: string[] = [];
+    const timestampStr = new Date().toLocaleTimeString('es-ES');
+
+    // Standard broadcast callsign
+    const destino_bc = "CQ       "; // 9 characters obligatory for broadcast messages
+
+    // 1. PUBLIC AIR QUALITY BULLETIN (BLN2AQI)
+    const coVal = activeStation?.co !== null && activeStation?.co !== undefined ? Math.round(activeStation.co * 1000) : 102; // convert to ug if mg
+    const o3Val = activeStation?.o3 !== null && activeStation?.o3 !== undefined ? activeStation.o3 : 104.0;
+    const icaScore = activeStation ? activeUsAqi : 42;
+
+    const mainBlnPacket = `${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${icaScore} (PM2.5: ${pm25_24h.toFixed(1)}ug, CO: ${coVal}ug, O3: ${o3Val.toFixed(1)}ug)`;
+    packetsToSend.push(mainBlnPacket);
+
+    // 2. ALERT LEVEL PROCESSING ACCORDING TO BOE
+    if (pm10_24h > 150 || polvo_sahariano > 100) {
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4      :ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.`);
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::${destino_bc}:ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.`);
+    } else if (pm10_24h > 100) {
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3      :ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.`);
+    } else if (pm10_24h > 50) {
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2      :ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.`);
+    } else if (pm10_24h > 35) {
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1      :ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.`);
+    }
+
+    if (calimaAnalysis.calima) {
+      packetsToSend.push(`${callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA (${calimaAnalysis.criterio})`);
+    }
+
+    // Now inject packets
+    const logEntries: string[] = [];
+    for (const packet of packetsToSend) {
+      try {
+        let ok = false;
+        if (onInjectRaw) {
+          ok = await onInjectRaw(packet);
+        } else {
+          const resp = await fetch('/api/aprs/inject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'RAW_PACKET', payload: packet })
+          });
+          ok = resp.ok;
+        }
+
+        if (ok) {
+          logEntries.push(`[${timestampStr}] ENVIADO OK: ${packet}`);
+        } else {
+          logEntries.push(`[${timestampStr}] FALLO INYECCIÓN: ${packet}`);
+        }
+      } catch (e: any) {
+        logEntries.push(`[${timestampStr}] ERROR RED: ${e.message || e}`);
+      }
+    }
+
+    setBulletinLogs(prev => [...logEntries, ...prev].slice(0, 15));
+    playAlertSound('chime');
+  };
+
   return (
     <div className="bg-slate-950 border border-slate-900 rounded-2xl shadow-xl p-4 flex flex-col gap-3 font-mono text-xs" id="ica-calidad-aire-widget">
       
@@ -1069,6 +1192,182 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw }: IcaA
             </div>
           </div>
         )}
+      </div>
+
+      {/* SECCIÓN NUEVA: PROCESADOR DE ALERTA CALIMA BOE Y EMISOR DE BOLETINES (BLN2AQI) */}
+      <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between border-b border-slate-800/85 pb-2 flex-wrap gap-2">
+          <div className="flex items-center gap-1.5 text-amber-400">
+            <ShieldAlert size={14} className="animate-pulse shrink-0" />
+            <div>
+              <span className="text-[9.5px] text-slate-100 font-extrabold uppercase font-mono tracking-wider block">
+                Boletín de Calima BOE & Difusión APRS (BLN2AQI)
+              </span>
+              <span className="text-[8px] text-slate-500 block leading-none mt-0.5 font-sans">
+                Procesamiento de episodios de polvo sahariano y ratios temporales oficiales.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-[8.5px] font-sans text-slate-400 cursor-pointer select-none">
+              <input 
+                type="checkbox" 
+                checked={autoSyncWithStation} 
+                onChange={(e) => setAutoSyncWithStation(e.target.checked)}
+                className="rounded border-slate-800 bg-slate-950 accent-emerald-500 w-3 h-3 cursor-pointer"
+              />
+              <span>Autosincronizar</span>
+            </label>
+            <span className="bg-amber-950/40 text-amber-400 text-[8px] px-1.5 py-0.5 rounded font-black border border-amber-900/30 uppercase tracking-wider shrink-0">
+              MITECO BOE-A-2020-10426
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* PM10 24h Input */}
+          <div className="space-y-1 bg-black/25 p-2 rounded-lg border border-slate-900/60">
+            <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+              <span className="text-slate-400">PM10 (Med. 24h)</span>
+              <span className="text-slate-200">{pm10_24h} µg/m³</span>
+            </div>
+            <input 
+              type="range" 
+              min="0" 
+              max="200" 
+              step="1"
+              disabled={autoSyncWithStation}
+              value={pm10_24h} 
+              onChange={(e) => setPm10_24h(parseInt(e.target.value))}
+              className="w-full accent-amber-500 h-1 bg-slate-950 rounded cursor-pointer disabled:opacity-40"
+            />
+            <p className="text-[7.5px] text-slate-500 font-sans leading-tight">
+              Límite BOE: 50 µg/m³
+            </p>
+          </div>
+
+          {/* Polvo Sahariano Input */}
+          <div className="space-y-1 bg-black/25 p-2 rounded-lg border border-slate-900/60">
+            <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+              <span className="text-slate-400">Polvo Sahariano</span>
+              <span className="text-slate-200">{polvo_sahariano} µg/m³</span>
+            </div>
+            <input 
+              type="range" 
+              min="0" 
+              max="150" 
+              step="0.5"
+              disabled={autoSyncWithStation}
+              value={polvo_sahariano} 
+              onChange={(e) => setPolvo_sahariano(parseFloat(e.target.value))}
+              className="w-full accent-amber-500 h-1 bg-slate-950 rounded cursor-pointer disabled:opacity-40"
+            />
+            <p className="text-[7.5px] text-slate-500 font-sans leading-tight">
+              Origen Sahariano (ratio ≥60%)
+            </p>
+          </div>
+
+          {/* PM2.5 24h Input */}
+          <div className="space-y-1 bg-black/25 p-2 rounded-lg border border-slate-900/60">
+            <div className="flex justify-between items-baseline text-[8.5px] font-bold">
+              <span className="text-slate-400">PM2.5 (Med. 24h)</span>
+              <span className="text-slate-200">{pm25_24h} µg/m³</span>
+            </div>
+            <input 
+              type="range" 
+              min="0" 
+              max="100" 
+              step="0.5"
+              disabled={autoSyncWithStation}
+              value={pm25_24h} 
+              onChange={(e) => setPm25_24h(parseFloat(e.target.value))}
+              className="w-full accent-amber-500 h-1 bg-slate-950 rounded cursor-pointer disabled:opacity-40"
+            />
+            <p className="text-[7.5px] text-slate-500 font-sans leading-tight">
+              Filtro granulométrico (ratio &lt;40%)
+            </p>
+          </div>
+        </div>
+
+        {/* Real-time BOE Analysis Outcome */}
+        <div className="bg-slate-950 border border-slate-900 p-2.5 rounded-lg flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[8.5px] uppercase text-slate-400 font-bold">Dictamen Calima (Criterio BOE)</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[7.5px] text-slate-500">Estado:</span>
+              <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
+                calimaAnalysis.calima 
+                  ? 'bg-rose-950/50 text-rose-400 border border-rose-900/45 animate-pulse' 
+                  : 'bg-slate-900 text-slate-400 border border-slate-800'
+              }`}>
+                {calimaAnalysis.calima ? '⚠️ CALIMA DETECTADA' : 'NO DETECTADA'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[8px] font-mono border-t border-slate-900/80 pt-2">
+            <div>
+              <span className="text-slate-500 block">MÉTODO DETECCIÓN</span>
+              <span className="text-slate-200 truncate max-w-full block" title={calimaAnalysis.criterio}>
+                {calimaAnalysis.criterio}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">RATIO SAHARIANO / PM10</span>
+              <span className={`font-bold ${
+                calimaAnalysis.metricas && parseFloat(calimaAnalysis.metricas.ratio_sahariano_pm10) >= 60 
+                  ? 'text-amber-400' 
+                  : 'text-slate-300'
+              }`}>
+                {calimaAnalysis.metricas?.ratio_sahariano_pm10 || '0%'} (BOE: ≥60%)
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">RATIO PM2.5 / PM10</span>
+              <span className={`font-bold ${
+                calimaAnalysis.metricas && parseFloat(calimaAnalysis.metricas.ratio_pm25_pm10_real) < 40 
+                  ? 'text-emerald-400' 
+                  : 'text-rose-400'
+              }`}>
+                {calimaAnalysis.metricas?.ratio_pm25_pm10_real || '0%'} (BOE: &lt;40%)
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">PM10 MÁXIMO LEGAL</span>
+              <span className={`font-bold ${pm10_24h > 50 ? 'text-red-400' : 'text-emerald-400'}`}>
+                {pm10_24h} / 50 µg/m³
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action button & Logs */}
+        <div className="flex flex-col gap-2 border-t border-slate-900/60 pt-2.5">
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <span className="text-[8px] text-slate-500 leading-tight">
+              El boletín de difusión pública BLN2AQI se inyectará junto a los boletines y advertencias de rango correspondientes.
+            </span>
+            <button
+              onClick={handleTransmitCalimaBulletin}
+              className="bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-extrabold uppercase text-[9.5px] px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border border-amber-400/20"
+              id="transmit-calima-btn"
+            >
+              <Radio size={12} className="animate-pulse" />
+              <span>Inyectar Boletines Calima (BLN2AQI)</span>
+            </button>
+          </div>
+
+          {bulletinLogs.length > 0 && (
+            <div className="bg-[#040608] border border-slate-900 rounded p-2 max-h-[100px] overflow-y-auto space-y-1 text-[7.5px] font-mono text-slate-400 shadow-inner">
+              <span className="text-[7.5px] text-emerald-500 uppercase font-bold block mb-1">Monitor de Inyección APRS-IS (SNECA)</span>
+              {bulletinLogs.map((log, index) => (
+                <div key={index} className="border-b border-slate-900/40 pb-0.5 truncate select-text" title={log}>
+                  {log}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Selected Station Telemetry Showcase */}

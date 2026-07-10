@@ -2765,7 +2765,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            {data && <IcaAirQualityMonitor gpsd={data.gpsd} config={data.config} onInjectRaw={handleInjectRaw} />}
+            {data && <IcaAirQualityMonitor gpsd={data.gpsd} config={data.config} onInjectRaw={handleInjectRaw} iqair={data.iqair} />}
           </motion.div>
         ) : activeTab === 'propagacion' ? (
           /* HF PROPAGATION & SPACE WEATHER MONITOR */

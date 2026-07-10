@@ -246,8 +246,69 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan
       </div>
 
       {/* DANGERS EXPLAINER BOX (Optional but very high-end design) */}
-      <div className="bg-cyan-950/15 border border-cyan-800/30 p-3.5 rounded-xl text-xs text-cyan-300 font-mono leading-relaxed">
-        <strong>🛡️ Escala de Seguridad Civil (Tasa de Dosis equivalente):</strong> En España, la radiación natural de fondo oscila habitualmente entre <strong className="text-cyan-200">0.05 y 0.20 µSv/h</strong>. Niveles hasta <strong className="text-cyan-200">0.25 µSv/h</strong> se consideran normales. Valores por encima de <strong className="text-yellow-400">0.30 µSv/h</strong> activan alarmas preventivas de bajo nivel en el CSN para descartar perturbaciones climáticas (arrastre de radón por lluvias). Niveles sobre <strong className="text-red-400 font-bold">1.00 µSv/h</strong> representarán estados significativos y requerirían intervención o planes de emergencia en el radio de influencia.
+      <div className="bg-cyan-950/15 border border-cyan-800/30 p-3.5 rounded-xl text-xs text-cyan-300 font-mono leading-relaxed flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex-1">
+          <strong>🛡️ Escala de Seguridad Civil (Tasa de Dosis equivalente):</strong> En España, la radiación natural de fondo oscila habitualmente entre <strong className="text-cyan-200">0.05 y 0.20 µSv/h</strong>. Niveles hasta <strong className="text-cyan-200">0.25 µSv/h</strong> se consideran normales. Valores por encima de <strong className="text-yellow-400">0.30 µSv/h</strong> activan alarmas preventivas de bajo nivel en el CSN para descartar perturbaciones climáticas (arrastre de radón por lluvias). Niveles sobre <strong className="text-red-400 font-bold">1.00 µSv/h</strong> representarán estados significativos y requerirían intervención o planes de emergencia en el radio de influencia.
+        </div>
+        
+        {/* Simulation Controls embedded gracefully inside the explainer or right next to it */}
+        <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-lg shrink-0 w-full md:w-80 flex flex-col gap-2 shadow-md">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
+              <Activity size={12} className="animate-pulse" /> Simular Tasa Gamma (µSv/h)
+            </span>
+            {rarRan?.valueUsVh && rarRan.valueUsVh !== 0.12 && (
+              <button
+                onClick={async () => {
+                  try {
+                    await fetch('/api/radiological/rar-ran/simulate', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ valueUsVh: null })
+                    });
+                  } catch (e) {
+                    console.error("Error disabling simulation:", e);
+                  }
+                }}
+                className="text-[9px] text-red-400 hover:text-red-300 underline font-mono cursor-pointer"
+              >
+                Resetear
+              </button>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min="0.05"
+              max="2.50"
+              step="0.05"
+              value={rarRan?.valueUsVh || 0.12}
+              onChange={async (e) => {
+                const val = parseFloat(e.target.value);
+                try {
+                  await fetch('/api/radiological/rar-ran/simulate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ valueUsVh: val })
+                  });
+                } catch (err) {
+                  console.error("Error simulating gamma value:", err);
+                }
+              }}
+              className="flex-1 accent-amber-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-[11px] font-mono font-bold text-slate-300 w-16 text-right">
+              {rarRan?.valueUsVh?.toFixed(2) || '0.12'} µSv/h
+            </span>
+          </div>
+          
+          <div className="flex justify-between text-[8px] text-slate-500 font-mono">
+            <span>Normal: &lt;0.30</span>
+            <span className="text-yellow-500 font-bold">Alerta: &gt;0.30</span>
+            <span className="text-red-500 font-bold">Emergencia: &gt;1.00</span>
+          </div>
+        </div>
       </div>
 
       {/* APRS RAD-RAR BEACON STATUS BAR */}
@@ -274,7 +335,7 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan
           </div>
           <span className="text-cyan-400 font-bold">TX: </span>
           <span className="text-slate-300">
-            {rarRan?.rawAprsRar || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;RAD-RAR  *${new Date().getUTCHours().toString().padStart(2, '0')}0000z${gpsd?.lat ? (gpsd.lat >= 0 ? gpsd.lat.toFixed(2) + 'N' : Math.abs(gpsd.lat).toFixed(2) + 'S') : '40.41N'}R${gpsd?.lon ? (gpsd.lon >= 0 ? gpsd.lon.toFixed(2) + 'E' : Math.abs(gpsd.lon).toFixed(2) + 'W') : '03.70W'}H${rarRan?.valueUsVh ? rarRan.valueUsVh.toFixed(3) : '0.120'} uSv/h (${rarRan?.status === 'HEAVY' ? 'nivel elevado / peligro' : rarRan?.status === 'ALERT' ? 'estado de alerta' : 'estado normal'}) CSN-${rarRan?.name || 'Madrid - Sabatini'}`}
+            {rarRan?.rawAprsRar || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;RAD-RAR  *${new Date().getUTCHours().toString().padStart(2, '0')}0000z${gpsd?.lat ? (gpsd.lat >= 0 ? gpsd.lat.toFixed(2) + 'N' : Math.abs(gpsd.lat).toFixed(2) + 'S') : '40.41N'}R${gpsd?.lon ? (gpsd.lon >= 0 ? gpsd.lon.toFixed(2) + 'E' : Math.abs(gpsd.lon).toFixed(2) + 'W') : '03.70W'}H${rarRan?.valueUsVh ? rarRan.valueUsVh.toFixed(3) : '0.120'} uSv/h (${rarRan?.status === 'HEAVY' ? 'EMERGENCIA CRITICA - INTERVENCION' : rarRan?.status === 'ALERT' ? 'nivel de alerta preventiva' : 'estado normal'}) CSN-${rarRan?.name || 'Madrid - Sabatini'}`}
           </span>
         </div>
       </div>
@@ -287,8 +348,8 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan
             
             // Color mapping for safety
             let valColor = 'text-emerald-400 bg-emerald-950/20 border-emerald-500/20';
-            if (st.liveValue >= 0.25) valColor = 'text-amber-400 bg-amber-950/20 border-amber-500/20 animate-pulse';
-            if (st.liveValue >= 0.50) valColor = 'text-red-400 bg-red-950/20 border-red-500/20 animate-pulse-slow';
+            if (st.liveValue > 0.30) valColor = 'text-amber-400 bg-amber-950/20 border-amber-500/20 animate-pulse';
+            if (st.liveValue > 1.00) valColor = 'text-red-400 bg-red-950/20 border-red-500/20 animate-pulse-slow';
 
             return (
               <div 

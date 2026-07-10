@@ -25,7 +25,7 @@ import {
   HelpCircle,
   FileCode
 } from 'lucide-react';
-import { EarthquakeEvent, DgtIncident, CsnReaStation } from '../../types';
+import { EarthquakeEvent, DgtIncident, CsnReaStation, WeatherTelemetry } from '../../types';
 import { NavareaWarning } from '../environment/NavareaMonitor';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, Cell } from 'recharts';
 
@@ -64,6 +64,7 @@ interface AprsAdaptorProps {
   setAprsPackets: React.Dispatch<React.SetStateAction<AprsPacket[]>>;
   playBuzzerSound?: (freq?: number, duration?: number, type?: OscillatorType) => void;
   showToast?: (msg: string) => void;
+  weather?: WeatherTelemetry;
 }
 
 // Convert Decimal Coordinates to standard APRS format:
@@ -392,10 +393,50 @@ export default function AprsAdaptor({
   aprsPackets,
   setAprsPackets,
   playBuzzerSound,
-  showToast
+  showToast,
+  weather
 }: AprsAdaptorProps) {
   
   const [innerTab, setInnerTab] = useState<'adaptar' | 'consola' | 'doc'>('adaptar');
+  const [activeExplainToken, setActiveExplainToken] = useState<string | null>(null);
+
+  // Translate fields for easier understanding (if weather is provided)
+  const tempF = weather ? Math.round((weather.tempC * 9/5) + 32) : 68;
+  const dirToken = weather ? weather.windDirDeg.toString().padStart(3, '0') : '000';
+  const speedToken = weather ? Math.round(weather.windSpeedKts).toString().padStart(3, '0') : '000';
+  const gustToken = `g${weather ? Math.round(weather.gustKts || 0).toString().padStart(3, '0') : '000'}`;
+  const tempToken = `t${tempF >= 0 ? tempF.toString().padStart(3, '0') : '-' + Math.abs(tempF).toString().padStart(2, '0')}`;
+  const rain1hToken = `r${weather ? Math.round(weather.rain1hIn * 100).toString().padStart(3, '0') : '000'}`;
+  const rain24hToken = `p${weather ? Math.round(weather.rain24hIn * 100).toString().padStart(3, '0') : '000'}`;
+  let humVal = weather ? weather.humidityPct : 50;
+  if (humVal === 100) humVal = 0;
+  const humToken = `h${humVal.toString().padStart(2, '0')}`;
+  const pressToken = `b${weather ? Math.round(weather.pressureHpa * 10).toString().padStart(5, '0') : '10130'}`;
+
+  function getWindDirectionName(deg: number): string {
+    const d = deg % 360;
+    if (d > 337.5 || d <= 22.5) return 'Norte (N)';
+    if (d > 22.5 && d <= 67.5) return 'Nordeste (NE)';
+    if (d > 67.5 && d <= 112.5) return 'Este (E)';
+    if (d > 112.5 && d <= 157.5) return 'Sudeste (SE)';
+    if (d > 157.5 && d <= 202.5) return 'Sur (S)';
+    if (d > 202.5 && d <= 247.5) return 'Sudoeste (SO)';
+    if (d > 247.5 && d <= 292.5) return 'Oeste (O)';
+    return 'Noroeste (NO)';
+  }
+
+  const tokens = [
+    { code: '_', label: 'Estructura WX', desc: 'Define que el paquete es un informe de estación meteorológica sin posición dedicada.', color: 'text-pink-400' },
+    { code: `${dirToken}/`, label: 'Viento (Dirección/Div)', desc: `Dirección de donde sopla el viento: ${weather ? weather.windDirDeg : 0}° (${getWindDirectionName(weather ? weather.windDirDeg : 0)}).`, color: 'text-red-400' },
+    { code: speedToken, label: 'Viento (Velocidad)', desc: `Velocidad sostenida del viento: ${weather ? Math.round(weather.windSpeedKts) : 0} nudos (${weather ? (weather.windSpeedKts * 1.852).toFixed(1) : '0.0'} km/h).`, color: 'text-amber-400' },
+    { code: gustToken, label: 'Racha Máxima', desc: `Velocidad racha de viento máxima en los últimos 5 minutos: ${weather ? Math.round(weather.gustKts || 0) : 0} nudos (${weather ? ((weather.gustKts || 0) * 1.852).toFixed(1) : '0.0'} km/h).`, color: 'text-yellow-400' },
+    { code: tempToken, label: 'Temperatura', desc: `Temperatura ambiente en Fahrenheit: ${tempF}°F (Equivale a ${weather ? weather.tempC.toFixed(1) : '20.0'}°C).`, color: 'text-orange-400' },
+    { code: rain1hToken, label: 'Lluvia Crítica (1h)', desc: `Precipitaciones caídas en la última hora: ${weather ? weather.rain1hIn.toFixed(2) : '0.00'} pulgadas (Equivale a ${weather ? (weather.rain1hIn * 25.4).toFixed(1) : '0.0'} mm).`, color: 'text-blue-400' },
+    { code: rain24hToken, label: 'Lluvia Semanal (24h)', desc: `Acumulado de lluvias en las últimas 24 horas: ${weather ? weather.rain24hIn.toFixed(2) : '0.00'} pulgadas (Equivale a ${weather ? (weather.rain24hIn * 25.4).toFixed(1) : '0.0'} mm).`, color: 'text-cyan-400' },
+    { code: humToken, label: 'Humedad Relativa', desc: `Humedad atmosférica en porcentaje: ${weather && weather.humidityPct === 100 ? '100% (APRS codificado como h00)' : (weather ? weather.humidityPct : 50) + '%'}.`, color: 'text-indigo-400' },
+    { code: pressToken, label: 'Presión Barométrica', desc: `Presión barométrica en décimas de hPa/mb: ${weather ? weather.pressureHpa.toFixed(1) : '1013.0'} hPa.`, color: 'text-violet-400' }
+  ];
+
   const [selectedFeedEvent, setSelectedFeedEvent] = useState<{
     id: string;
     type: 'sismo' | 'incendio' | 'meteo' | 'radiologico' | 'dgt';
@@ -1694,6 +1735,61 @@ export default function AprsAdaptor({
                     <strong className="text-orange-400">Balizas de Posicionamiento (Format =)</strong>: Posicionamiento instantáneo del núcleo coordinador central EA4SAT.
                   </li>
                 </ul>
+              </div>
+
+              {/* APRS WX frame Parser Explainer (Interactive) */}
+              <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 justify-between mt-4">
+                <div className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[10px] text-slate-400 uppercase font-black tracking-widest block">APRS WX Frame Parser Explainer (Pilar VI Weather Station)</span>
+                  <span className="text-[10px] text-slate-400 font-sans leading-tight">
+                    Pasa el cursor o presiona los tokens de la baliza ambiental generada para descifrar la norma técnica del protocolo de radioaficionados:
+                  </span>
+                </div>
+
+                {/* Raw string block splitter */}
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-900 font-mono text-xs flex flex-wrap gap-0.5 items-center font-black select-none tracking-wider justify-center">
+                  {tokens.map((tok) => {
+                    const matches = activeExplainToken === tok.code;
+                    return (
+                      <span
+                        key={tok.code}
+                        onMouseEnter={() => setActiveExplainToken(tok.code)}
+                        onMouseLeave={() => setActiveExplainToken(null)}
+                        onClick={() => setActiveExplainToken(matches ? null : tok.code)}
+                        className={`px-1 rounded transition-colors cursor-help py-1 ${
+                          matches 
+                            ? 'bg-emerald-950 border border-emerald-500 ' + tok.color 
+                            : 'hover:bg-slate-900 border border-transparent ' + tok.color
+                        }`}
+                      >
+                        {tok.code}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                {/* active explain tooltip display */}
+                <div className="min-h-[55px] font-mono text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-900">
+                  {activeExplainToken ? (
+                    (() => {
+                      const tok = tokens.find(t => t.code === activeExplainToken);
+                      if (!tok) return null;
+                      return (
+                        <div>
+                          <div className="font-extrabold text-[#10b981] flex items-center gap-1.5 font-sans text-xs">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            {tok.label} (Token: `{tok.code.trim()}`)
+                          </div>
+                          <p className="text-[11px] text-slate-300 mt-1 leading-normal">{tok.desc}</p>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="text-[10px] text-slate-500 font-sans italic text-center py-2">
+                      Pasa el ratón sobre los caracteres de la fila superior para traducción instantánea de RF.
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4">

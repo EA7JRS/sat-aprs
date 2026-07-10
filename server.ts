@@ -1947,6 +1947,10 @@ function calculateAqiFromPm25(val: number): number {
 let lastIcaBeaconTime = 0;
 let lastIcaStatusLabel = '';
 
+// Variables para rastrear el último envío de balizas de radiactividad y su estado
+let lastRarRanBeaconTime = 0;
+let lastRarRanStatusLabel = '';
+
 function getNearestIcaStation() {
   const originLat = gpsdState.lat || 40.416775;
   const originLon = gpsdState.lon || -3.703790;
@@ -2340,6 +2344,8 @@ async function refreshRarRan() {
       status,
       distanciaKm: dist
     };
+
+    transmitRarRanBeacon();
   } catch (err: any) {
     console.error("Error refreshing RarRan state:", err ? err.message : err);
   }
@@ -2428,12 +2434,62 @@ function getSeismoBeaconPacket(): string | null {
 }
 
 function getRarRanBeaconPacket(): string {
-  const name = "RAR-RAN  "; // exactly 9 chars
+  const name = "RAD-RAR  "; // exactly 9 chars
   const timestamp = getAprsTimestamp(new Date());
   const aprsLat = latToAprs(rarRanState.latitude);
   const aprsLon = lonToAprs(rarRanState.longitude);
-  const comment = `RAD: ${rarRanState.valueUsVh.toFixed(3)} uSv/h Estacion: ${rarRanState.name} - Red CSN REA`;
-  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}/${aprsLon}[${comment}`;
+  
+  let statusLabel = "estado normal";
+  if (rarRanState.status === 'HEAVY') {
+    statusLabel = "nivel elevado / peligro";
+  } else if (rarRanState.status === 'ALERT') {
+    statusLabel = "estado de alerta";
+  }
+  
+  const comment = `${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) CSN-${rarRanState.name}`;
+  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}R${aprsLon}H${comment}`;
+}
+
+function transmitRarRanBeacon(force: boolean = false) {
+  if (config.systemPower === false) return;
+  
+  const packet = getRarRanBeaconPacket();
+  const now = Date.now();
+  const timeSinceLast = now - lastRarRanBeaconTime;
+  const stateChanged = lastRarRanStatusLabel && (rarRanState.status !== lastRarRanStatusLabel);
+  // Intervalo de 1 hora
+  const intervalMs = 60 * 60 * 1000;
+  
+  if (force || lastRarRanBeaconTime === 0 || timeSinceLast >= intervalMs || stateChanged) {
+    const isStateChange = lastRarRanStatusLabel && stateChanged;
+    lastRarRanBeaconTime = now;
+    lastRarRanStatusLabel = rarRanState.status;
+    
+    rarRanState.rawAprsRar = packet;
+    
+    const remarks = isStateChange 
+      ? `Cambio de nivel de radiación detectado en estación cercana '${rarRanState.name}' (${rarRanState.status}). Baliza APRS RAD-RAR transmitida inmediatamente.`
+      : `Baliza de Posición APRS para Radiación Ambiental (RAD-RAR) transmitida con éxito (Estación cercana: ${rarRanState.name}).`;
+
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+    
+    // Difundir boletín de radiación en la red APRS
+    broadcastRarRanBulletin();
+  } else {
+    console.log(`[APRS RAD-RAR] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${rarRanState.status})`);
+  }
+}
+
+function broadcastRarRanBulletin() {
+  let statusLabel = "estado normal";
+  if (rarRanState.status === 'HEAVY') {
+    statusLabel = "nivel elevado / peligro";
+  } else if (rarRanState.status === 'ALERT') {
+    statusLabel = "estado de alerta";
+  }
+  
+  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4RAD  :MEDICION RADIACTIVIDAD - REA: ${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) en CSN-${rarRanState.name}`;
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Radiación Ambiental (REA) difundido para la estación CSN-${rarRanState.name}.`);
 }
 
 // Earthquake Spain Feeds - Ingest from real IGN or fallback USGS Spain
@@ -4008,7 +4064,7 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
         const idxDensity = first.findIndex(h => typeof h === 'string' && h.toLowerCase().includes('density'));
         const idxTemp = first.findIndex(h => typeof h === 'string' && h.toLowerCase().includes('temp'));
 
-        for (let i = windData.length - 1; i > 0; i--) {
+        for (let i = 1; i < windData.length; i++) {
           const row = windData[i];
           if (row && Array.isArray(row)) {
             const sVal = idxSpeed !== -1 ? row[idxSpeed] : null;
@@ -4025,7 +4081,7 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
           }
         }
       } else {
-        for (let i = windData.length - 1; i >= 0; i--) {
+        for (let i = 0; i < windData.length; i++) {
           const item = windData[i];
           if (item) {
             const rawSpeed = item.proton_speed !== undefined ? item.proton_speed : item.speed;
@@ -4057,7 +4113,7 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
         const idxBt = first.findIndex(h => typeof h === 'string' && h.toLowerCase() === 'bt');
         const idxBz = first.findIndex(h => typeof h === 'string' && (h.toLowerCase() === 'bz' || h.toLowerCase().includes('bz_gse')));
 
-        for (let i = magData.length - 1; i > 0; i--) {
+        for (let i = 1; i < magData.length; i++) {
           const row = magData[i];
           if (row && Array.isArray(row)) {
             const btVal = idxBt !== -1 ? row[idxBt] : null;
@@ -4073,7 +4129,7 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
           }
         }
       } else {
-        for (let i = magData.length - 1; i >= 0; i--) {
+        for (let i = 0; i < magData.length; i++) {
           const item = magData[i];
           if (item) {
             const rawBt = item.bt;
@@ -4164,7 +4220,7 @@ async function fetchNoaaProtons() {
   if (now - lastProtonsFetch < 300000 && cachedProtons > 0) {
     return cachedProtons;
   }
-  const url = 'https://services.swpc.noaa.gov/json/goes/primary/protons-1-day.json';
+  const url = 'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json';
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6000);
   try {
@@ -4173,7 +4229,12 @@ async function fetchNoaaProtons() {
     if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
-      cachedProtons = parseFloat(data[data.length - 1].flux) || 0.0;
+      const filtered = data.filter((item: any) => item.energy === '>=10 MeV' || item.energy === '>=10MeV');
+      if (filtered.length > 0) {
+        cachedProtons = parseFloat(filtered[filtered.length - 1].flux) || 0.0;
+      } else {
+        cachedProtons = parseFloat(data[data.length - 1].flux) || 0.0;
+      }
       lastProtonsFetch = now;
       return cachedProtons;
     }

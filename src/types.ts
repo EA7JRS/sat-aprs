@@ -206,6 +206,7 @@ export interface RarRanStatus {
   valueUsVh: number; // Radiation gamma dose rate in uSv/h
   status: 'NORMAL' | 'ALERT' | 'HEAVY';
   distanciaKm: number;
+  rawAprsRar?: string;
 }
 
 export interface TsunamiAlert {

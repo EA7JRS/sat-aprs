@@ -2,15 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { Database, ShieldAlert, Activity, Globe, Compass, Radio, Layout, CheckCircle, Info } from 'lucide-react';
 import CsnStationsDatabase from './CsnStationsDatabase';
 import JrcDataPortal from '../environment/JrcDataPortal';
-import { CsnReaStation, GPSDStatus } from '../../types';
+import { CsnReaStation, GPSDStatus, RarRanStatus } from '../../types';
 
 interface RadiologicalNetworksProps {
   stations: CsnReaStation[];
   gpsd: GPSDStatus;
   onRelocate: (lat: number, lon: number) => void;
+  rarRan?: RarRanStatus;
 }
 
-export default function RadiologicalNetworks({ stations, gpsd, onRelocate }: RadiologicalNetworksProps) {
+export default function RadiologicalNetworks({ stations, gpsd, onRelocate, rarRan }: RadiologicalNetworksProps) {
   const [activeSubTab, setActiveSubTab] = useState<'csn' | 'jrc'>('csn');
 
   // Compute stats for Spain REA (CSN)
@@ -149,6 +150,7 @@ export default function RadiologicalNetworks({ stations, gpsd, onRelocate }: Rad
               stations={stations} 
               gpsd={gpsd} 
               onRelocate={onRelocate} 
+              rarRan={rarRan}
             />
           </div>
         ) : (

@@ -1086,7 +1086,7 @@ def obtener_clima_espacial_avanzado():
         kp_url = "https://services.swpc.noaa.gov/json/estimated_kp_1d.json"
         solar_url = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
         xray_url = "https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json"
-        protons_url = "https://services.swpc.noaa.gov/json/goes/primary/protons-1-day.json"
+        protons_url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-1-day.json"
 
         # 1. Obtener ubicación GNSS actual de gpsd o fallback
         lat, lon, alt, is_fallback = get_gpsd_coordinates()
@@ -1162,7 +1162,11 @@ def obtener_clima_espacial_avanzado():
             with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
                 proton_data = json.loads(r.read().decode('utf-8'))
                 if proton_data:
-                    proton_flux = float(proton_data[-1].get("flux", 0.0))
+                    filtered = [d for d in proton_data if d.get("energy") in [">=10 MeV", ">=10MeV"]]
+                    if filtered:
+                        proton_flux = float(filtered[-1].get("flux", 0.0))
+                    else:
+                        proton_flux = float(proton_data[-1].get("flux", 0.0))
         except Exception as e:
             print(f"  [NOAA WARNING] Error al descargar Protones: {e}")
 
@@ -1248,8 +1252,10 @@ def obtener_clima_espacial_avanzado():
         iuv = calculate_uv_index(sfi_computado, lat, lon)
         solar_noise = estimate_solar_noise(sfi_computado)
 
-        # Usar Kp efectivo para escalas NOAA (si no hay kp_val, usar estimación por viento solar)
+        # Usar Kp efectivo para escalas NOAA (si no hay kp_val, usar hp30_val, si no usar estimación por viento solar)
         kp_efectivo = kp_val
+        if kp_efectivo is None:
+            kp_efectivo = hp30_val
         if kp_efectivo is None:
             kp_efectivo = 1
             viento_spd = actual_sat.get('speed') or 350.0

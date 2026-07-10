@@ -2659,6 +2659,7 @@ export default function App() {
               stations={data.csnStations || []} 
               gpsd={data.gpsd} 
               onRelocate={(lat, lon) => handleRelocate(lat, lon, 'Estación CSN REA')} 
+              rarRan={data.rarRan}
             />
           </motion.div>
         ) : activeTab === 'dgt' ? (

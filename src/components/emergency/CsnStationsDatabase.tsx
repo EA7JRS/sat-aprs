@@ -3,15 +3,16 @@ import {
   Search, Radio, Shield, TrendingUp, MapPin, 
   Database, Filter, Activity, Compass, AlertTriangle, ArrowRight 
 } from 'lucide-react';
-import { CsnReaStation, GPSDStatus } from '../../types';
+import { CsnReaStation, GPSDStatus, RarRanStatus } from '../../types';
 
 interface CsnStationsDatabaseProps {
   stations: CsnReaStation[];
   gpsd: GPSDStatus;
   onRelocate: (lat: number, lon: number) => void;
+  rarRan?: RarRanStatus;
 }
 
-export default function CsnStationsDatabase({ stations, gpsd, onRelocate }: CsnStationsDatabaseProps) {
+export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan }: CsnStationsDatabaseProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'radiation' | 'distance'>('name');
@@ -247,6 +248,35 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate }: CsnS
       {/* DANGERS EXPLAINER BOX (Optional but very high-end design) */}
       <div className="bg-cyan-950/15 border border-cyan-800/30 p-3.5 rounded-xl text-xs text-cyan-300 font-mono leading-relaxed">
         <strong>🛡️ Escala de Seguridad Civil (Tasa de Dosis equivalente):</strong> En España, la radiación natural de fondo oscila habitualmente entre <strong className="text-cyan-200">0.05 y 0.20 µSv/h</strong>. Niveles hasta <strong className="text-cyan-200">0.25 µSv/h</strong> se consideran normales. Valores por encima de <strong className="text-yellow-400">0.30 µSv/h</strong> activan alarmas preventivas de bajo nivel en el CSN para descartar perturbaciones climáticas (arrastre de radón por lluvias). Niveles sobre <strong className="text-red-400 font-bold">1.00 µSv/h</strong> representarán estados significativos y requerirían intervención o planes de emergencia en el radio de influencia.
+      </div>
+
+      {/* APRS RAD-RAR BEACON STATUS BAR */}
+      <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 flex flex-col gap-2.5 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Radio className="text-cyan-400 animate-pulse" size={16} />
+            <span className="font-sans font-extrabold text-xs text-slate-200 tracking-tight uppercase">
+              Baliza de Informe de Radiactividad Ambiental (APRS RAD-RAR)
+            </span>
+          </div>
+          <span className="text-[9px] bg-slate-900 border border-slate-800 text-slate-400 font-bold font-mono px-2 py-0.5 rounded">
+            INTERVALO: 1H
+          </span>
+        </div>
+        
+        <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+          Conforme a las directrices de comunicación de emergencia, el terminal transmite automáticamente una trama APRS de posición con el indicador de radiactividad <strong className="text-slate-300">RAD-RAR</strong> cada hora. El comentario incluye el valor instantáneo de fondo gama (µSv/h) y la estación de referencia CSN REA más próxima.
+        </p>
+
+        <div className="bg-slate-900 border border-slate-850 rounded-lg p-2.5 font-mono text-[10px] select-all relative overflow-x-auto">
+          <div className="absolute right-2 top-1.5 text-[8px] font-bold text-cyan-500/80 uppercase">
+            Última Trama Transmitida
+          </div>
+          <span className="text-cyan-400 font-bold">TX: </span>
+          <span className="text-slate-300">
+            {rarRan?.rawAprsRar || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;RAD-RAR  *${new Date().getUTCHours().toString().padStart(2, '0')}0000z${gpsd?.lat ? (gpsd.lat >= 0 ? gpsd.lat.toFixed(2) + 'N' : Math.abs(gpsd.lat).toFixed(2) + 'S') : '40.41N'}R${gpsd?.lon ? (gpsd.lon >= 0 ? gpsd.lon.toFixed(2) + 'E' : Math.abs(gpsd.lon).toFixed(2) + 'W') : '03.70W'}H${rarRan?.valueUsVh ? rarRan.valueUsVh.toFixed(3) : '0.120'} uSv/h (${rarRan?.status === 'HEAVY' ? 'nivel elevado / peligro' : rarRan?.status === 'ALERT' ? 'estado de alerta' : 'estado normal'}) CSN-${rarRan?.name || 'Madrid - Sabatini'}`}
+          </span>
+        </div>
       </div>
 
       {/* THE STATIONS GRID CARD LIST */}

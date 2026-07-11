@@ -23,7 +23,8 @@ import {
   Layers,
   ChevronRight,
   HelpCircle,
-  FileCode
+  FileCode,
+  Compass
 } from 'lucide-react';
 import { EarthquakeEvent, DgtIncident, CsnReaStation, WeatherTelemetry } from '../../types';
 import { NavareaWarning } from '../environment/NavareaMonitor';
@@ -397,7 +398,7 @@ export default function AprsAdaptor({
   weather
 }: AprsAdaptorProps) {
   
-  const [innerTab, setInnerTab] = useState<'adaptar' | 'consola' | 'doc'>('adaptar');
+  const [innerTab, setInnerTab] = useState<'adaptar' | 'consola' | 'traductor' | 'doc'>('adaptar');
   const [activeExplainToken, setActiveExplainToken] = useState<string | null>(null);
 
   // Translate fields for easier understanding (if weather is provided)
@@ -892,6 +893,17 @@ export default function AprsAdaptor({
             {aprsPackets.some(p => p.status === 'APROBADO') && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-yellow-400 rounded-full border border-slate-950" />
             )}
+          </button>
+          <button
+            onClick={() => setInnerTab('traductor')}
+            className={`px-3 py-1.5 rounded-md font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              innerTab === 'traductor'
+                ? 'bg-orange-500 text-slate-950 shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Compass size={13} />
+            Traductor WX APRS
           </button>
           <button
             onClick={() => setInnerTab('doc')}
@@ -1737,61 +1749,6 @@ export default function AprsAdaptor({
                 </ul>
               </div>
 
-              {/* APRS WX frame Parser Explainer (Interactive) */}
-              <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 justify-between mt-4">
-                <div className="flex flex-col gap-1.5">
-                  <span className="font-mono text-[10px] text-slate-400 uppercase font-black tracking-widest block">APRS WX Frame Parser Explainer (Pilar VI Weather Station)</span>
-                  <span className="text-[10px] text-slate-400 font-sans leading-tight">
-                    Pasa el cursor o presiona los tokens de la baliza ambiental generada para descifrar la norma técnica del protocolo de radioaficionados:
-                  </span>
-                </div>
-
-                {/* Raw string block splitter */}
-                <div className="p-3 bg-slate-950 rounded-lg border border-slate-900 font-mono text-xs flex flex-wrap gap-0.5 items-center font-black select-none tracking-wider justify-center">
-                  {tokens.map((tok) => {
-                    const matches = activeExplainToken === tok.code;
-                    return (
-                      <span
-                        key={tok.code}
-                        onMouseEnter={() => setActiveExplainToken(tok.code)}
-                        onMouseLeave={() => setActiveExplainToken(null)}
-                        onClick={() => setActiveExplainToken(matches ? null : tok.code)}
-                        className={`px-1 rounded transition-colors cursor-help py-1 ${
-                          matches 
-                            ? 'bg-emerald-950 border border-emerald-500 ' + tok.color 
-                            : 'hover:bg-slate-900 border border-transparent ' + tok.color
-                        }`}
-                      >
-                        {tok.code}
-                      </span>
-                    );
-                  })}
-                </div>
-
-                {/* active explain tooltip display */}
-                <div className="min-h-[55px] font-mono text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-900">
-                  {activeExplainToken ? (
-                    (() => {
-                      const tok = tokens.find(t => t.code === activeExplainToken);
-                      if (!tok) return null;
-                      return (
-                        <div>
-                          <div className="font-extrabold text-[#10b981] flex items-center gap-1.5 font-sans text-xs">
-                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                            {tok.label} (Token: `{tok.code.trim()}`)
-                          </div>
-                          <p className="text-[11px] text-slate-300 mt-1 leading-normal">{tok.desc}</p>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="text-[10px] text-slate-500 font-sans italic text-center py-2">
-                      Pasa el ratón sobre los caracteres de la fila superior para traducción instantánea de RF.
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
@@ -1802,6 +1759,81 @@ export default function AprsAdaptor({
                   PROBAR GENERADOR TONOS AFSK (BELL-202)
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {innerTab === 'traductor' && (
+          <div className="border border-slate-850 rounded-xl bg-slate-950/30 p-6 space-y-4 max-w-4xl mx-auto flex flex-col justify-start min-h-[460px] font-sans">
+            <div className="flex items-center gap-2">
+              <Compass className="text-orange-400" size={18} />
+              <h3 className="text-sm font-bold text-slate-100 uppercase">Traductor Técnico de Tramas APRS Ambientales</h3>
+            </div>
+
+            <p className="font-mono text-xs text-slate-400 leading-relaxed">
+              El siguiente módulo interactivo descifra en tiempo real las tramas de telemetría meteorológica (balizas WX) transmitidas por las estaciones APRS de emergencia. Selecciona o pasa el cursor sobre cada token codificado para visualizar la traducción directa y los cálculos físicos aplicados en base a la especificación técnica internacional de APRS.
+            </p>
+
+            {/* APRS WX frame Parser Explainer (Interactive) */}
+            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-5 flex flex-col gap-4 justify-between mt-2">
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-[10px] text-slate-400 uppercase font-black tracking-widest block">Análisis Sintáctico y Semántico de la Trama</span>
+                <span className="text-[10px] text-slate-400 font-sans leading-tight">
+                  La trama generada por la estación climatológica local (Pilar VI Weather Station) es la siguiente:
+                </span>
+              </div>
+
+              {/* Raw string block splitter */}
+              <div className="p-4 bg-slate-950 rounded-lg border border-slate-900 font-mono text-sm flex flex-wrap gap-1 items-center font-black select-none tracking-wider justify-center">
+                {tokens.map((tok) => {
+                  const matches = activeExplainToken === tok.code;
+                  return (
+                    <span
+                      key={tok.code}
+                      onMouseEnter={() => setActiveExplainToken(tok.code)}
+                      onMouseLeave={() => setActiveExplainToken(null)}
+                      onClick={() => setActiveExplainToken(matches ? null : tok.code)}
+                      className={`px-1.5 rounded transition-colors cursor-help py-1.5 ${
+                        matches 
+                          ? 'bg-emerald-950 border border-emerald-500 ' + tok.color 
+                          : 'hover:bg-slate-900 border border-transparent ' + tok.color
+                      }`}
+                    >
+                      {tok.code}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* active explain tooltip display */}
+              <div className="min-h-[75px] font-mono text-xs bg-slate-950 p-3 rounded-lg border border-slate-900 flex flex-col justify-center">
+                {activeExplainToken ? (
+                  (() => {
+                    const tok = tokens.find(t => t.code === activeExplainToken);
+                    if (!tok) return null;
+                    return (
+                      <div>
+                        <div className="font-extrabold text-[#10b981] flex items-center gap-1.5 font-sans text-xs">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                          {tok.label} (Token: `{tok.code.trim()}`)
+                        </div>
+                        <p className="text-[11px] text-slate-300 mt-1 leading-normal">{tok.desc}</p>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="text-[11px] text-slate-500 font-sans italic text-center py-2">
+                    Pasa el ratón sobre los caracteres de la fila superior para traducción instantánea de RF.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/20 p-4 border border-slate-900 rounded-lg space-y-2 text-xs text-slate-400">
+              <span className="font-sans font-bold text-slate-300 uppercase text-[10px] tracking-wider block">Reglas de Formateo de Balizas WX</span>
+              <p className="leading-relaxed">
+                La norma APRS indica que un paquete meteorológico sin posición geográfica comienza con el identificador <code className="text-pink-400 bg-slate-950 px-1 py-0.5 rounded font-mono font-bold">_</code>. A partir de allí, se concatena información fija de dirección del viento de 3 dígitos seguida de una barra inclinada <code className="text-slate-200">/</code> y velocidad del viento en nudos. Las demás variables físicas opcionales se formatean mediante letras clave identificadoras seguidas de sus correspondientes valores numéricos con padding estricto.
+              </p>
             </div>
           </div>
         )}

@@ -396,6 +396,43 @@ function formatUpdateTimes(fechaUtcStr: string) {
   }
 }
 
+function getVoltageEquivalent(dbm: number) {
+  try {
+    const p_watts = Math.pow(10, (dbm - 30) / 10);
+    const v_volts = Math.sqrt(p_watts * 50);
+    if (v_volts >= 1) {
+      return `${v_volts.toFixed(2)} V`;
+    } else if (v_volts >= 0.001) {
+      return `${(v_volts * 1000).toFixed(2)} mV`;
+    } else {
+      return `${(v_volts * 1e6).toFixed(2)} μV`;
+    }
+  } catch (e) {
+    return "0.00 μV";
+  }
+}
+
+function getSMeterReading(dbm: number, freq: number) {
+  const isHF = freq < 30;
+  const s9_ref = isHF ? -73 : -93;
+  
+  if (dbm >= s9_ref) {
+    const over = dbm - s9_ref;
+    if (over === 0) return { label: "S9", dbOver: 0, sValue: 9 };
+    return { label: `S9 +${over.toFixed(0)}dB`, dbOver: over, sValue: 9 + (over / 10) };
+  } else {
+    const diff = s9_ref - dbm;
+    const s_units_below = diff / 6;
+    const s_val = Math.max(0, 9 - s_units_below);
+    const s_integer = Math.floor(s_val);
+    
+    if (s_integer < 1) {
+      return { label: "S0", dbOver: 0, sValue: s_val };
+    }
+    return { label: `S${s_integer}`, dbOver: 0, sValue: s_val };
+  }
+}
+
 export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
@@ -407,6 +444,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
 
   // ITU-R P.372-15 Noise Spectrometer & SNR Calculator states
   const [ituFreq, setItuFreq] = useState<number>(14.0);
+  const [syncWithBandaUtil, setSyncWithBandaUtil] = useState<boolean>(true);
   const [ituEnv, setItuEnv] = useState<'city' | 'residential' | 'rural' | 'quiet'>('residential');
   const [ituPower, setItuPower] = useState<number>(100);
   const [ituGain, setItuGain] = useState<number>(0);
@@ -513,6 +551,17 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     ssn: "110",
     solar_updated: ""
   };
+
+  const mufValForSync = noaa.muf !== undefined ? noaa.muf : 14.50;
+  const lufValForSync = noaa.luf !== undefined ? noaa.luf : 2.00;
+  const bandaUtilValForSync = mufValForSync > lufValForSync ? mufValForSync - lufValForSync : 2.00;
+  const boundedBandaUtil = Math.max(2.0, Math.min(50.0, bandaUtilValForSync));
+
+  useEffect(() => {
+    if (syncWithBandaUtil) {
+      setItuFreq(boundedBandaUtil);
+    }
+  }, [syncWithBandaUtil, boundedBandaUtil]);
 
   const defaultRtsw = {
     speed: 412.5,
@@ -2594,7 +2643,14 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
             {/* Frecuencia Slider */}
             <div>
               <div className="flex items-center justify-between text-xs font-sans mb-1.5">
-                <span className="text-slate-600 font-medium">Frecuencia (f):</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-600 font-medium">Frecuencia (f):</span>
+                  {syncWithBandaUtil && (
+                    <span className="text-[8.5px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 animate-pulse">
+                      Sincronizado
+                    </span>
+                  )}
+                </div>
                 <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 border border-indigo-100 rounded text-[11px]">
                   {ituFreq.toFixed(1)} MHz
                 </span>
@@ -2605,13 +2661,36 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                 max="50.0"
                 step="0.5"
                 value={ituFreq}
-                onChange={(e) => setItuFreq(parseFloat(e.target.value))}
+                onChange={(e) => {
+                  setItuFreq(parseFloat(e.target.value));
+                  setSyncWithBandaUtil(false);
+                }}
                 className="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
               />
               <div className="flex justify-between text-[9px] font-mono text-slate-400 mt-1">
                 <span>2 MHz (HF)</span>
                 <span>28 MHz (10m)</span>
                 <span>50 MHz (6m/VHF)</span>
+              </div>
+
+              {/* Sincronización dinámica de BANDA UTIL */}
+              <div className="mt-2.5 bg-white border border-slate-150 p-2.5 rounded-xl shadow-2xs flex items-center justify-between">
+                <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={syncWithBandaUtil}
+                    onChange={(e) => setSyncWithBandaUtil(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 w-3.5 h-3.5 mt-0.5 cursor-pointer"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-sans font-semibold text-slate-700">
+                      Vincular con BANDA UTIL
+                    </span>
+                    <span className="text-[9px] font-sans text-slate-400 mt-0.5 leading-normal">
+                      Aplica el valor dinámico calculado de la banda útil ({boundedBandaUtil.toFixed(2)} MHz) de forma continua. Al arrastrar el slider manual se desvincula.
+                    </span>
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -2828,7 +2907,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
             </div>
 
             {/* Tarjeta de Telemetría de Ruido a Frecuencia Seleccionada */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               
               {/* Ruido Externo */}
               <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl flex flex-col justify-between">
@@ -2882,6 +2961,58 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                      ituSnr >= 6 ? '🟡 Copia Legible' :
                      ituSnr >= 0 ? '🟠 Dificultosa (QRM)' : '🔴 Ininteligible'}
                   </span>
+                </div>
+              </div>
+
+              {/* S-Meter (Escala IARU) */}
+              <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[9px] uppercase tracking-wider block font-bold font-sans">S-Meter (IARU)</span>
+                    <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      ituFreq < 30 ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                    }`}>
+                      {ituFreq < 30 ? 'HF (Ref -73 dBm)' : 'VHF/UHF (Ref -93 dBm)'}
+                    </span>
+                  </div>
+                  <span className="text-slate-700 font-sans text-xs mt-1 block">Señal Rx: {getVoltageEquivalent(p_rx_dbm)}</span>
+                </div>
+                <div className="mt-3">
+                  {(() => {
+                    const smVal = getSMeterReading(p_rx_dbm, ituFreq);
+                    const pct = Math.min(100, Math.max(0, (smVal.sValue / 15) * 100));
+                    return (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <span className={`text-2xl font-black font-mono ${
+                            smVal.sValue >= 9 ? 'text-red-500' : 'text-emerald-600'
+                          }`}>
+                            {smVal.label}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-mono">({p_rx_dbm.toFixed(1)} dBm)</span>
+                        </div>
+                        
+                        {/* S-meter Bar Graphic */}
+                        <div className="mt-2">
+                          <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden flex">
+                            <div 
+                              className={`h-full transition-all duration-300 ${
+                                smVal.sValue >= 9 ? 'bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[7px] font-mono text-slate-400 mt-1 leading-none">
+                            <span>S1</span>
+                            <span>S5</span>
+                            <span className="text-amber-500 font-bold">S9</span>
+                            <span className="text-red-500 font-bold">+30</span>
+                            <span className="text-red-600 font-bold">+60</span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

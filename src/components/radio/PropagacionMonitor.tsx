@@ -118,6 +118,241 @@ export function getUvDetailedStyle(uvVal: number | string | undefined) {
   }
 }
 
+export function getKpStyle(kp: number) {
+  if (kp <= 1.5) {
+    return {
+      text: "Calmo",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (kp <= 3.5) {
+    return {
+      text: "Inquieto",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else if (kp <= 4.5) {
+    return {
+      text: "Activo",
+      textColor: "text-orange-600",
+      badgeClass: "bg-orange-50 text-orange-700 border-orange-200"
+    };
+  } else {
+    return {
+      text: "Tormenta",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
+export function getSfiStyle(sfi: number) {
+  if (sfi <= 90) {
+    return {
+      text: "Bajo",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (sfi <= 150) {
+    return {
+      text: "Moderado",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Elevado",
+      textColor: "text-orange-600",
+      badgeClass: "bg-orange-50 text-orange-700 border-orange-200"
+    };
+  }
+}
+
+export function getSsnStyle(ssn: number) {
+  if (ssn <= 30) {
+    return {
+      text: "Bajo",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (ssn <= 100) {
+    return {
+      text: "Moderado",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Elevado",
+      textColor: "text-orange-600",
+      badgeClass: "bg-orange-50 text-orange-700 border-orange-200"
+    };
+  }
+}
+
+export function getWindStyle(speed: number) {
+  if (speed <= 400) {
+    return {
+      text: "Lento",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (speed <= 600) {
+    return {
+      text: "Moderado",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Rápido",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
+export function getSnrStyle(noiseStr: string | undefined) {
+  const str = (noiseStr || "").toLowerCase();
+  if (str.includes("mínimo") || str.includes("minimo")) {
+    return {
+      value: "S0",
+      text: "Mínimo (+0.0 dB)",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (str.includes("bajo") || str.includes("+0.5") || str.includes("+0,5")) {
+    return {
+      value: "S1",
+      text: "Bajo (+0.5 dB)",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (str.includes("moderado") || str.includes("+1.5") || str.includes("+1,5")) {
+    return {
+      value: "S2",
+      text: "Moderado (+1.5 dB)",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else if (str.includes("elevado") || str.includes("+3.0") || str.includes("+3,0") || str.includes("alto")) {
+    return {
+      value: "S3",
+      text: "Elevado (+3.0 dB)",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  } else {
+    return {
+      value: "S1",
+      text: "Bajo (+0.5 dB)",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  }
+}
+
+export function getDensityStyle(density: number) {
+  if (density <= 8) {
+    return {
+      text: "Normal",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (density <= 15) {
+    return {
+      text: "Elevada",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Muy Alta",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
+export function getBzStyle(bz: number) {
+  if (bz >= 0) {
+    return {
+      text: "Norte (Estable)",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (bz >= -4) {
+    return {
+      text: "Sur Leve",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Sur Crítico",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
+export function getBtStyle(bt: number) {
+  if (bt <= 8) {
+    return {
+      text: "Estable",
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (bt <= 15) {
+    return {
+      text: "Moderado",
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      text: "Fuerte",
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
+export function parseNoaaScale(scaleStr: string | undefined, defaultVal: string) {
+  const str = scaleStr || defaultVal;
+  const match = str.match(/^([^(]+)\(([^)]+)\)/);
+  if (match) {
+    return {
+      value: match[1].trim(),
+      status: match[2].trim()
+    };
+  }
+  const parts = str.split(" ");
+  const value = parts[0] || str;
+  const status = str.substring(value.length).replace(/[()]/g, "").trim() || "Normal";
+  return { value, status };
+}
+
+export function getNoaaScaleStyle(value: string) {
+  const num = parseInt(value.replace(/[^0-9]/g, "")) || 0;
+  if (num === 0) {
+    return {
+      textColor: "text-emerald-600",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    };
+  } else if (num <= 2) {
+    return {
+      textColor: "text-amber-600",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200"
+    };
+  } else {
+    return {
+      textColor: "text-red-600 font-black animate-pulse",
+      badgeClass: "bg-red-50 text-red-700 border-red-200 animate-pulse"
+    };
+  }
+}
+
 interface PropagacionMonitorProps {
   data?: PropagationData;
 }
@@ -279,7 +514,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     solar_updated: ""
   };
 
-  const rtsw = data?.rtsw || {
+  const defaultRtsw = {
     speed: 412.5,
     density: 5.4,
     temperature: 110200,
@@ -288,6 +523,16 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     time: new Date().toISOString().replace('T', ' ').substring(0, 16),
     real: false
   };
+
+  const rtsw = data?.rtsw ? {
+    speed: data.rtsw.speed !== null && data.rtsw.speed !== undefined ? data.rtsw.speed : defaultRtsw.speed,
+    density: data.rtsw.density !== null && data.rtsw.density !== undefined ? data.rtsw.density : defaultRtsw.density,
+    temperature: data.rtsw.temperature !== null && data.rtsw.temperature !== undefined ? data.rtsw.temperature : defaultRtsw.temperature,
+    bt: data.rtsw.bt !== null && data.rtsw.bt !== undefined ? data.rtsw.bt : defaultRtsw.bt,
+    bz: data.rtsw.bz !== null && data.rtsw.bz !== undefined ? data.rtsw.bz : defaultRtsw.bz,
+    time: data.rtsw.time || defaultRtsw.time,
+    real: data.rtsw.real ?? defaultRtsw.real
+  } : defaultRtsw;
 
   // Notification logic when Hp60 or Kp exceeds 5.0 (Active Storm Level)
   useEffect(() => {
@@ -1490,50 +1735,22 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
               </span>
             </div>
 
-            {/* Solar Weather Indicators */}
             <div className="grid grid-cols-2 gap-3 mt-4">
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">SFU (Solar Flux Unit)</span>
-                <span className="text-lg font-extrabold text-amber-600 font-mono block mt-1">
-                  {noaa.dia1}
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Número Manchas</span>
-                <span className="text-lg font-extrabold text-amber-600 font-mono block mt-1">
-                  {noaa.ssn ? `${noaa.ssn} SSN` : `${Math.max(0, Math.round((parseInt(noaa.dia1) - 64) * 0.9))} SSN`}
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Índice Geomag. Kp</span>
-                <span className={`text-lg font-extrabold font-mono block mt-1 ${
-                  gfz.Hp60 >= 4 ? 'text-red-600 font-black animate-pulse' : 'text-emerald-600'
-                }`}>
-                  {gfz.Hp60 ? gfz.Hp60.toFixed(1) : "2.1"} Kp
-                </span>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Viento Solar</span>
-                <span className="text-lg font-extrabold text-cyan-600 font-mono block mt-1">
-                  {rtsw.speed ? Math.round(rtsw.speed) : "412"} km/s
-                </span>
-              </div>
+              {/* SFU */}
               <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
                 <div>
-                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Índice UV Dinámico</span>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">SFU</span>
                   {(() => {
-                    const uvStyle = getUvDetailedStyle(noaa.iuv);
+                    const sfiVal = parseInt(noaa.dia1) || 140;
+                    const sfiStyle = getSfiStyle(sfiVal);
                     return (
                       <>
-                        <span className={`text-lg font-extrabold font-mono block mt-1 ${uvStyle.textColor}`}>
-                          {noaa.iuv !== undefined ? noaa.iuv.toFixed(1) : "0.0"}
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${sfiStyle.textColor}`}>
+                          {sfiVal}
                         </span>
                         <div className="mt-1 flex flex-col items-center gap-0.5">
-                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${uvStyle.badgeClass}`}>
-                            {uvStyle.text}
-                          </span>
-                          <span className="text-[7px] text-slate-400 font-mono font-medium block mt-0.5">
-                            {uvStyle.pantone} | {uvStyle.hex}
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${sfiStyle.badgeClass}`}>
+                            {sfiStyle.text}
                           </span>
                         </div>
                       </>
@@ -1541,123 +1758,374 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                   })()}
                 </div>
               </div>
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Ruido Radio HF</span>
-                <span className="text-[11px] font-bold text-indigo-600 font-sans block mt-2 leading-tight">
-                  {noaa.solarNoise || "Mínimo"}
-                </span>
+
+              {/* MANCHAS SOLARES */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">MANCHAS SOLARES</span>
+                  {(() => {
+                    const ssnVal = parseInt(noaa.ssn) || Math.max(0, Math.round((parseInt(noaa.dia1) - 64) * 0.9)) || 0;
+                    const ssnStyle = getSsnStyle(ssnVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${ssnStyle.textColor}`}>
+                          {ssnVal} SSN
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${ssnStyle.badgeClass}`}>
+                            {ssnStyle.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Kp */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Índice Geomag. Kp</span>
+                  {(() => {
+                    const kpVal = gfz.Hp60 !== undefined ? gfz.Hp60 : 2.1;
+                    const kpStyle = getKpStyle(kpVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${kpStyle.textColor}`}>
+                          {kpVal.toFixed(2)} Kp
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${kpStyle.badgeClass}`}>
+                            {kpStyle.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* VIENTO SOLAR */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">VIENTO SOLAR</span>
+                  {(() => {
+                    const windVal = rtsw.speed || 412.5;
+                    const windStyle = getWindStyle(windVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${windStyle.textColor}`}>
+                          {windVal.toFixed(1)} <span className="text-[10px]">km/s</span>
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${windStyle.badgeClass}`}>
+                            {windStyle.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* UVI */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">UVI</span>
+                  {(() => {
+                    const uvStyle = getUvDetailedStyle(noaa.iuv);
+                    const uvVal = noaa.iuv !== undefined ? noaa.iuv : 0.0;
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${uvStyle.textColor}`}>
+                          {uvVal.toFixed(1)}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${uvStyle.badgeClass}`}>
+                            {uvStyle.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* SNR */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">SNR</span>
+                  {(() => {
+                    const snrStyle = getSnrStyle(noaa.solarNoise);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${snrStyle.textColor}`}>
+                          {snrStyle.value}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${snrStyle.badgeClass}`}>
+                            {snrStyle.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               
-              {/* MUF & LUF Ionospheric Window */}
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl col-span-2">
-                <div className="flex justify-around items-center">
-                  <div className="text-center">
-                    <span className="text-slate-500 text-[8.5px] uppercase block tracking-wider font-sans font-bold">MUF (Máxima)</span>
-                    <span className="text-base font-extrabold text-sky-600 font-mono block mt-0.5">
-                      {noaa.muf !== undefined ? `${noaa.muf.toFixed(2)}` : "14.50"}<span className="text-[10px] ml-0.5">MHz</span>
-                    </span>
-                  </div>
-                  <div className="h-6 w-px bg-slate-200"></div>
-                  <div className="text-center">
-                    <span className="text-slate-500 text-[8.5px] uppercase block tracking-wider font-sans font-bold">LUF (Mínima)</span>
-                    <span className="text-base font-extrabold text-rose-500 font-mono block mt-0.5">
-                      {noaa.luf !== undefined ? `${noaa.luf.toFixed(2)}` : "2.00"}<span className="text-[10px] ml-0.5">MHz</span>
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 flex justify-between items-center text-[9px] font-sans">
-                  <span className="text-slate-400">Espectro útil de propagación:</span>
+              {/* MUF */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">MUF (Máx Usable)</span>
                   {(() => {
-                    const mufVal = noaa.muf || 14.5;
-                    const lufVal = noaa.luf || 2.0;
-                    if (mufVal > lufVal) {
-                      return (
-                        <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                          {(mufVal - lufVal).toFixed(2)} MHz Útil
+                    const mufVal = noaa.muf !== undefined ? noaa.muf : 14.50;
+                    return (
+                      <>
+                        <span className="text-lg font-extrabold font-mono block mt-1 text-sky-600">
+                          {mufVal.toFixed(2)} <span className="text-[10px] ml-0.5">MHz</span>
                         </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className="px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border bg-sky-50 text-sky-700 border-sky-200">
+                            Frec. Refractiva
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* LUF */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">LUF (Mín Usable)</span>
+                  {(() => {
+                    const lufVal = noaa.luf !== undefined ? noaa.luf : 2.00;
+                    return (
+                      <>
+                        <span className="text-lg font-extrabold font-mono block mt-1 text-rose-500">
+                          {lufVal.toFixed(2)} <span className="text-[10px] ml-0.5">MHz</span>
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className="px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border bg-rose-50 text-rose-700 border-rose-200">
+                            Frec. Absorción
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Espectro útil de propagación */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center col-span-2 flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">BANDA UTIL</span>
+                  {(() => {
+                    const mufVal = noaa.muf !== undefined ? noaa.muf : 14.50;
+                    const lufVal = noaa.luf !== undefined ? noaa.luf : 2.00;
+                    const diff = mufVal - lufVal;
+                    if (diff > 0) {
+                      return (
+                        <>
+                          <span className="text-lg font-extrabold font-mono block mt-1 text-emerald-600">
+                            {diff.toFixed(2)} <span className="text-[10px] ml-0.5">MHz</span>
+                          </span>
+                          <div className="mt-1 flex flex-col items-center gap-0.5">
+                            <span className="px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              Ventana de Transmisión Abierta
+                            </span>
+                          </div>
+                        </>
                       );
                     } else {
                       return (
-                        <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 animate-pulse">
-                          APAGÓN (LUF ≥ MUF)
-                        </span>
+                        <>
+                          <span className="text-lg font-extrabold font-mono block mt-1 text-red-600 animate-pulse">
+                            0.00 <span className="text-[10px] ml-0.5">MHz</span>
+                          </span>
+                          <div className="mt-1 flex flex-col items-center gap-0.5">
+                            <span className="px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border bg-red-50 text-red-700 border-red-200 animate-pulse">
+                              APAGÓN (LUF ≥ MUF)
+                            </span>
+                          </div>
+                        </>
                       );
                     }
                   })()}
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center col-span-2">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Alertas NOAA (R, S, G)</span>
-                <span className="text-[10.5px] font-mono font-bold text-slate-700 block mt-1">
-                  R: <span className="text-red-500 font-extrabold">{noaa.rScale || "R0"}</span> | S: <span className="text-red-500 font-extrabold">{noaa.sScale || "S0"}</span> | G: <span className="text-red-500 font-extrabold">{noaa.gScale || "G0"}</span>
-                </span>
+              {/* Alerta NOAA R */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Alerta R (Radio)</span>
+                  {(() => {
+                    const rData = parseNoaaScale(noaa.rScale, "R0 (Normal)");
+                    const rStyle = getNoaaScaleStyle(rData.value);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${rStyle.textColor}`}>
+                          {rData.value}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${rStyle.badgeClass}`}>
+                            {rData.status}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
-              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center col-span-2">
-                <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Ubicación y Estado GNSS</span>
-                <span className="text-[10px] font-semibold text-emerald-600 font-sans block mt-1">
-                  {noaa.gps_status || "GPS Real (Fijado)"}
-                </span>
-              </div>
-            </div>
 
-            {/* Viento Solar en Vivo (NOAA RTSW) - Integrado */}
-            <div className="mt-4 border-t border-slate-100 pt-3.5 font-sans">
-              <span className="text-slate-500 text-[9px] uppercase tracking-wider font-bold block mb-2 flex items-center gap-1.5">
-                <Waves size={12} className="text-emerald-500 animate-pulse" />
-                Viento Solar en Vivo (NOAA RTSW)
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
-                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Velocidad</span>
-                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
-                    {typeof rtsw.speed === 'number' ? `${rtsw.speed.toFixed(1)} km/s` : '---'}
-                  </span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
-                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Densidad</span>
-                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
-                    {typeof rtsw.density === 'number' ? `${rtsw.density.toFixed(1)} p/cm³` : '---'}
-                  </span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
-                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">IMF Bz (N/S)</span>
-                  <span className={`font-mono text-xs font-extrabold block mt-0.5 ${
-                    typeof rtsw.bz === 'number' && rtsw.bz < -4.0 
-                      ? 'text-red-600 font-black animate-pulse' 
-                      : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                      ? 'text-amber-600' 
-                      : 'text-emerald-600'
-                  }`}>
-                    {typeof rtsw.bz === 'number' ? `${rtsw.bz > 0 ? '+' : ''}${rtsw.bz.toFixed(1)} nT` : '---'}
-                  </span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg text-center">
-                  <span className="text-slate-400 text-[8px] block font-bold uppercase tracking-wider">Campo Total Bt</span>
-                  <span className="font-mono text-xs font-extrabold text-slate-850 block mt-0.5">
-                    {typeof rtsw.bt === 'number' ? `${rtsw.bt.toFixed(1)} nT` : '---'}
-                  </span>
+              {/* Alerta NOAA S */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Alerta S (Solar)</span>
+                  {(() => {
+                    const sData = parseNoaaScale(noaa.sScale, "S0 (Normal)");
+                    const sStyle = getNoaaScaleStyle(sData.value);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${sStyle.textColor}`}>
+                          {sData.value}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${sStyle.badgeClass}`}>
+                            {sData.status}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
-              <div className={`mt-2 border rounded-lg py-1 px-2 text-center text-[9px] font-bold ${
-                typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
-                  ? 'bg-red-50 text-red-700 border-red-100' 
-                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                  ? 'bg-amber-50 text-amber-700 border-amber-100' 
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-              }`}>
-                {typeof rtsw.bz === 'number' && rtsw.bz <= -4.0 
-                  ? 'Bz Sur fuerte (Riesgo de tormenta)' 
-                  : typeof rtsw.bz === 'number' && rtsw.bz < 0 
-                  ? 'Bz Sur leve (Inestabilidad leve)' 
-                  : 'Bz Norte (Campo magnético estable)'}
+
+              {/* Alerta NOAA G */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Alerta G (Geomag)</span>
+                  {(() => {
+                    const gData = parseNoaaScale(noaa.gScale, "G0 (Normal)");
+                    const gStyle = getNoaaScaleStyle(gData.value);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${gStyle.textColor}`}>
+                          {gData.value}
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${gStyle.badgeClass}`}>
+                            {gData.status}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* RTSW Densidad */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">Densidad</span>
+                  {(() => {
+                    const densityVal = typeof rtsw.density === 'number' ? rtsw.density : 5.4;
+                    const style = getDensityStyle(densityVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${style.textColor}`}>
+                          {densityVal.toFixed(1)} <span className="text-[10px]">p/cm³</span>
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${style.badgeClass}`}>
+                            {style.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* RTSW IMF Bz (N/S) */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">IMF Bz (N/S)</span>
+                  {(() => {
+                    const bzVal = typeof rtsw.bz === 'number' ? rtsw.bz : 0.5;
+                    const style = getBzStyle(bzVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${style.textColor}`}>
+                          {bzVal > 0 ? '+' : ''}{bzVal.toFixed(1)} <span className="text-[10px]">nT</span>
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${style.badgeClass}`}>
+                            {style.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* RTSW Campo Total Bt */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
+                <div>
+                  <span className="text-slate-500 text-[9px] uppercase block tracking-wider font-sans font-semibold">IMF BT</span>
+                  {(() => {
+                    const btVal = typeof rtsw.bt === 'number' ? rtsw.bt : 6.2;
+                    const style = getBtStyle(btVal);
+                    return (
+                      <>
+                        <span className={`text-lg font-extrabold font-mono block mt-1 ${style.textColor}`}>
+                          {btVal.toFixed(1)} <span className="text-[10px]">nT</span>
+                        </span>
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className={`px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${style.badgeClass}`}>
+                            {style.text}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* RTSW Diagnóstico Magnetosfera */}
+              <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl col-span-2 text-center text-[9.5px] font-sans">
+                <span className="text-slate-400 block mb-1 font-semibold uppercase tracking-wider text-[8px]">Diagnóstico Magnetosfera (RTSW)</span>
+                {(() => {
+                  const bzVal = typeof rtsw.bz === 'number' ? rtsw.bz : 0.5;
+                  if (bzVal <= -4.0) {
+                    return (
+                      <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 animate-pulse inline-block">
+                        ⚠️ Bz Sur fuerte (Acoplamiento solar crítico / Riesgo de tormenta)
+                      </span>
+                    );
+                  } else if (bzVal < 0) {
+                    return (
+                      <span className="font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 inline-block">
+                        ⚡ Bz Sur leve (Inestabilidad ionosférica leve)
+                      </span>
+                    );
+                  } else {
+                    return (
+                      <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 inline-block">
+                        ✅ Bz Norte (Campo geomagnético estable / Bloqueo de tormenta)
+                      </span>
+                    );
+                  }
+                })()}
               </div>
             </div>
 
             {/* Band propagation conditions matrix (HamClock Classic) */}
             <div className="mt-4 font-sans">
               <span className="text-slate-500 text-[9px] uppercase tracking-wider font-bold block mb-2 border-b border-slate-100 pb-1">
-                MATRIZ DE PROPAGACIÓN HF (BAND CONDITIONS)
+                PROPAGACIÓN HF (BAND CONDITIONS)
               </span>
               <div className="flex flex-col gap-1.5 text-xs">
                 {["80m", "40m", "20m", "15m", "10m"].map((band) => {
@@ -1910,7 +2378,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-sans font-bold text-sm text-slate-700 flex items-center gap-1.5">
               <Radio size={16} className="text-cyan-500" />
-              Estado y Calidad Estimada de Bandas de Radio
+              PROPAGACIÓN HF (BAND CONDITIONS)
             </h3>
             <span className="font-sans text-[10px] bg-slate-100 px-2 py-0.5 rounded font-bold text-slate-500 uppercase tracking-wide">Estimación Dinámica</span>
           </div>
@@ -1923,7 +2391,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                   <th className="py-2">Frecuencia</th>
                   <th className="py-2">Propagación Día</th>
                   <th className="py-2">Propagación Noche</th>
-                  <th className="py-2 text-right">Estado Antena</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 text-slate-700">
@@ -1944,7 +2411,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                           {cond.nightCondition}
                         </span>
                       </td>
-                      <td className="py-3 text-right text-emerald-600 font-semibold">REMER Sintonizada</td>
                     </tr>
                   );
                 })()}
@@ -1966,7 +2432,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                           {cond.nightCondition}
                         </span>
                       </td>
-                      <td className="py-3 text-right text-emerald-600 font-semibold">Estable</td>
                     </tr>
                   );
                 })()}
@@ -1988,7 +2453,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                           {cond.nightCondition}
                         </span>
                       </td>
-                      <td className="py-3 text-right text-slate-400">Espera DX</td>
                     </tr>
                   );
                 })()}
@@ -2010,7 +2474,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                           {cond.nightCondition}
                         </span>
                       </td>
-                      <td className="py-3 text-right text-slate-400">E-Esporádica</td>
                     </tr>
                   );
                 })()}

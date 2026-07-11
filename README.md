@@ -134,6 +134,7 @@ sudo apt install -y nodejs
 
 # 1.3- Instalar dependencias del proyecto
 npm install
+npm install-scripts approve --all
 
 # 1.4- Configurar Variables de Entorno (.env)
 # Copie la plantilla de configuración e introduzca sus credenciales privadas:
@@ -270,13 +271,15 @@ git reset --hard origin/main
 
 # 5. Restaurar sus configuraciones locales (.env y parámetros del agente)
 # Puede comparar los archivos guardados para aplicar nuevos parámetros si existieran:
-mv .env.bak .env
+cp .env.bak .env
 # Nota: Si el archivo aprs_sat.py ha tenido cambios estructurales significativos,
 # aplique manualmente sus constantes (CALLSIGN, PASSCODE) en el nuevo aprs_sat.py.
 
 # 6. Actualizar las dependencias de Node.js e iniciar la compilación
 npm install
+npm install-scripts approve --all
 npm run build
+npm run start
 
 # 7. Actualizar las dependencias de Python dentro del entorno virtual
 source venv/bin/activate

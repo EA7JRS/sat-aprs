@@ -19,7 +19,9 @@ import {
   Sparkles,
   RefreshCw,
   AlertTriangle,
-  Lock
+  Lock,
+  Sliders,
+  Play
 } from 'lucide-react';
 import TwoFactorConfigurator from './TwoFactorConfigurator';
 
@@ -27,6 +29,19 @@ interface UserProfileManagerProps {
   currentUser: any;
   userProfile: any;
   onRefreshProfile?: () => void;
+  defaultSubTab?: 'profile' | 'alerts' | 'stations' | 'security' | 'presets';
+  onApplyPreset?: (callsign: string, aprsStatusComment: string) => void;
+}
+
+interface StationPreset {
+  id?: string;
+  name: string;
+  callsign: string;
+  ssid: string;
+  aprsStatusComment: string;
+  frequency?: string;
+  power?: number;
+  createdAt?: string;
 }
 
 interface Station {
@@ -42,8 +57,14 @@ interface Station {
   createdAt: string;
 }
 
-export default function UserProfileManager({ currentUser, userProfile, onRefreshProfile }: UserProfileManagerProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'alerts' | 'stations' | 'security'>('profile');
+export default function UserProfileManager({ 
+  currentUser, 
+  userProfile, 
+  onRefreshProfile,
+  defaultSubTab = 'profile',
+  onApplyPreset
+}: UserProfileManagerProps) {
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'alerts' | 'stations' | 'security' | 'presets'>(defaultSubTab);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -82,6 +103,18 @@ export default function UserProfileManager({ currentUser, userProfile, onRefresh
   const [stFreq, setStFreq] = useState('144.800 MHz');
   const [stPower, setStPower] = useState('25');
   const [stDesc, setStDesc] = useState('');
+
+  // Configured Presets States
+  const [presets, setPresets] = useState<StationPreset[]>([]);
+  const [loadingPresets, setLoadingPresets] = useState(true);
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+
+  // Preset Form States
+  const [prName, setPrName] = useState('');
+  const [prCallsign, setPrCallsign] = useState('');
+  const [prSsid, setPrSsid] = useState('0');
+  const [prBeacon, setPrBeacon] = useState('');
 
   // Initialize profile form
   useEffect(() => {
@@ -126,6 +159,30 @@ export default function UserProfileManager({ currentUser, userProfile, onRefresh
     }, (error) => {
       console.error("Error reading configured stations:", error);
       setLoadingStations(false);
+    });
+
+    return unsubscribe;
+  }, [currentUser]);
+
+  // Subscribe to presets subcollection
+  useEffect(() => {
+    if (!currentUser) return;
+
+    setLoadingPresets(true);
+    const presetsColRef = collection(db, 'users', currentUser.uid, 'presets');
+    
+    const unsubscribe = onSnapshot(presetsColRef, (snapshot) => {
+      const list: StationPreset[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as StationPreset);
+      });
+      // Sort by name
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      setPresets(list);
+      setLoadingPresets(false);
+    }, (error) => {
+      console.error("Error reading station presets:", error);
+      setLoadingPresets(false);
     });
 
     return unsubscribe;
@@ -353,6 +410,136 @@ export default function UserProfileManager({ currentUser, userProfile, onRefresh
     }
   };
 
+  // Start Edit Preset Form
+  const startEditPreset = (preset: StationPreset) => {
+    if (!preset.id) return;
+    setEditingPresetId(preset.id);
+    setPrName(preset.name);
+    setPrCallsign(preset.callsign);
+    setPrSsid(preset.ssid || '0');
+    setPrBeacon(preset.aprsStatusComment);
+    setIsAddingPreset(true);
+    setErrorMsg(null);
+  };
+
+  // Save/Update Preset
+  const handleSavePreset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    if (!prName.trim() || !prCallsign.trim()) {
+      setErrorMsg('El nombre de preset y el indicativo son obligatorios.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const presetData = {
+      name: prName.trim(),
+      callsign: prCallsign.trim().toUpperCase(),
+      ssid: prSsid,
+      aprsStatusComment: prBeacon.trim() || '📡 S.A.T. Estación Auxiliar • REMER',
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      if (editingPresetId) {
+        const presetDocRef = doc(db, 'users', currentUser.uid, 'presets', editingPresetId);
+        await updateDoc(presetDocRef, presetData);
+        setSuccessMsg('¡Preset de estación modificado con éxito!');
+      } else {
+        const presetsColRef = collection(db, 'users', currentUser.uid, 'presets');
+        await addDoc(presetsColRef, {
+          ...presetData,
+          createdAt: new Date().toISOString()
+        });
+        setSuccessMsg('¡Nuevo preset de estación guardado en Firestore!');
+      }
+
+      // Reset form
+      setPrName('');
+      setPrCallsign('');
+      setPrSsid('0');
+      setPrBeacon('');
+      setEditingPresetId(null);
+      setIsAddingPreset(false);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error("Error saving preset:", err);
+      setErrorMsg(`Error al guardar el preset: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete Preset
+  const handleDeletePreset = async (presetId: string) => {
+    if (!currentUser || !window.confirm('¿Está seguro de que desea eliminar este preset?')) return;
+
+    setLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const presetDocRef = doc(db, 'users', currentUser.uid, 'presets', presetId);
+      await deleteDoc(presetDocRef);
+      setSuccessMsg('Preset eliminado correctamente.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error("Error deleting preset:", err);
+      setErrorMsg(`No se pudo eliminar el preset: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load Default Presets
+  const handleLoadDefaultPresets = async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    setErrorMsg(null);
+
+    const defaultPresetsList: Omit<StationPreset, 'id'>[] = [
+      {
+        name: 'CECOP Coordinador Central',
+        callsign: 'EA4SAT',
+        ssid: '15',
+        aprsStatusComment: '⛺ CECOP Coordinación Central • Emergencias REMER Proteccion Civil',
+        createdAt: new Date().toISOString()
+      },
+      {
+        name: 'iGate Redundante S.A.T.',
+        callsign: 'EA4SAT',
+        ssid: '10',
+        aprsStatusComment: '📡 PILAR IV: Red S.A.T. • iGate RX/TX Internet Gateway Activo',
+        createdAt: new Date().toISOString()
+      },
+      {
+        name: 'Unidad de Movilidad Táctica',
+        callsign: 'EA4SAT',
+        ssid: '9',
+        aprsStatusComment: '🚒 EMCOM Unidad Móvil de Despliegue Rápido de Emergencias',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    try {
+      const presetsColRef = collection(db, 'users', currentUser.uid, 'presets');
+      for (const pr of defaultPresetsList) {
+        await addDoc(presetsColRef, pr);
+      }
+      setSuccessMsg('¡Presets por defecto cargados correctamente en su perfil de Firestore!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error("Error loading default presets:", err);
+      setErrorMsg(`Error al cargar presets por defecto: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-xl" id="operator-profile-manager">
       {/* HEADER */}
@@ -421,6 +608,18 @@ export default function UserProfileManager({ currentUser, userProfile, onRefresh
         >
           <Radio size={13} />
           Mis Estaciones ({stations.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => { setActiveSubTab('presets'); setErrorMsg(null); }}
+          className={`flex-1 py-2 px-3 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeSubTab === 'presets'
+              ? 'bg-slate-800 text-slate-100 border border-slate-700/60'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+          }`}
+        >
+          <Sliders size={13} />
+          Mis Presets ({presets.length})
         </button>
         <button
           type="button"
@@ -1015,6 +1214,227 @@ export default function UserProfileManager({ currentUser, userProfile, onRefresh
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SUB-TAB 5: PRESETS DE ESTACIÓN */}
+        {activeSubTab === 'presets' && (
+          <div className="space-y-4 font-mono text-xs">
+            <div className="flex items-center justify-between border-b border-slate-900 pb-2.5">
+              <div>
+                <span className="font-bold text-slate-200 block">Perfiles de Estación / Presets Rápidos (Firestore)</span>
+                <span className="text-[10px] text-slate-500 font-sans block leading-tight">Define y almacena combinaciones preestablecidas de Indicativo, SSID y comentarios de balizas de estado para activarlas instantáneamente</span>
+              </div>
+              <div className="flex gap-2">
+                {presets.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={handleLoadDefaultPresets}
+                    disabled={loading}
+                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-850 hover:bg-slate-850 text-slate-300 font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-all uppercase text-[9.5px]"
+                  >
+                    <Sparkles size={11} className="text-amber-500" /> Cargar por Defecto
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingPreset(!isAddingPreset);
+                    setEditingPresetId(null);
+                    setPrName('');
+                    setPrCallsign('');
+                    setPrSsid('0');
+                    setPrBeacon('');
+                  }}
+                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-sans font-black rounded-lg flex items-center gap-1 cursor-pointer transition-all uppercase text-[10px] tracking-wide"
+                >
+                  <Plus size={13} />
+                  {isAddingPreset && !editingPresetId ? 'Cancelar' : 'Nuevo Preset'}
+                </button>
+              </div>
+            </div>
+
+            {/* PRESET FORM */}
+            {isAddingPreset && (
+              <form onSubmit={handleSavePreset} className="bg-slate-900/40 border-2 border-emerald-500/10 rounded-xl p-4 space-y-4 animate-fade-in" id="preset-creation-form">
+                <div className="text-emerald-400 font-black flex items-center gap-1.5 text-[10px] uppercase border-b border-slate-900 pb-2">
+                  <PlusCircle size={14} />
+                  {editingPresetId ? 'Modificar Preset de Estación' : 'Crear Nuevo Preset de Operación S.A.T.'}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">Nombre del Preset</label>
+                    <input
+                      type="text"
+                      required
+                      value={prName}
+                      onChange={(e) => setPrName(e.target.value)}
+                      placeholder="e.g. iGate de Campaña"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500/30 font-bold placeholder-slate-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">Llamada (Indicativo)</label>
+                    <input
+                      type="text"
+                      required
+                      value={prCallsign}
+                      onChange={(e) => setPrCallsign(e.target.value)}
+                      placeholder="e.g. EA7JRS"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500/30 font-bold uppercase placeholder-slate-800"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">SSID APRS</label>
+                    <select
+                      value={prSsid}
+                      onChange={(e) => setPrSsid(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500/30 font-bold"
+                    >
+                      <option value="0">Ninguno (-0)</option>
+                      <option value="1">-1 (VHF Packet)</option>
+                      <option value="2">-2 (VHF Packet)</option>
+                      <option value="3">-3 (Weather Station)</option>
+                      <option value="4">-4 (HF Packet)</option>
+                      <option value="5">-5 (Mobile Link)</option>
+                      <option value="7">-7 (Handheld HT)</option>
+                      <option value="8">-8 (Maritime RV)</option>
+                      <option value="9">-9 (Primary Mobile)</option>
+                      <option value="10">-10 (iGate Gateway)</option>
+                      <option value="11">-11 (Airborne/Balloon)</option>
+                      <option value="12">-12 (One-way Tracker)</option>
+                      <option value="13">-13 (Weather Station)</option>
+                      <option value="14">-14 (Trucks/Fleet)</option>
+                      <option value="15">-15 (HF Multiport Digi)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-3">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold">Baliza Predefinida (Comentario de Estado)</label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        required
+                        value={prBeacon}
+                        onChange={(e) => setPrBeacon(e.target.value)}
+                        placeholder="e.g. 📡 S.A.T. Nodo iGate Activo | Soporte Comunicaciones Emergencia"
+                        maxLength={64}
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500/30 placeholder-slate-800"
+                      />
+                      <span className="text-[9px] text-slate-500 whitespace-nowrap">{prBeacon.length}/64</span>
+                    </div>
+                    {/* QUICK SELECTIONS */}
+                    <div className="pt-2 flex flex-wrap gap-1.5">
+                      <span className="text-[9px] text-slate-500 uppercase flex items-center font-bold">Plantillas Rápidas:</span>
+                      {[
+                        "📡 PILAR IV: Red S.A.T. • Operativo en Emergencias",
+                        "🚒 EMCOM Unidad Móvil de Despliegue Rápido",
+                        "⛈️ S.A.T. WX Nodo Meteorológico de Respaldo",
+                        "⛺ CECOP Coordinación y Telecomunicaciones Civiles REMER"
+                      ].map((tpl) => (
+                        <button
+                          key={tpl}
+                          type="button"
+                          onClick={() => setPrBeacon(tpl)}
+                          className="px-2 py-0.5 bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-slate-200 rounded text-[9px] cursor-pointer transition-all"
+                        >
+                          {tpl.length > 25 ? tpl.substring(0, 25) + "..." : tpl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end border-t border-slate-900 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setIsAddingPreset(false); setEditingPresetId(null); }}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 text-slate-400 font-sans font-bold rounded-lg cursor-pointer hover:bg-slate-900"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-sans font-black rounded-lg cursor-pointer flex items-center gap-1 uppercase tracking-wide"
+                  >
+                    {loading ? 'Procesando...' : editingPresetId ? 'Aplicar Modificaciones' : 'Crear Preset'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* PRESETS LIST */}
+            {loadingPresets ? (
+              <div className="flex items-center justify-center py-8 gap-2">
+                <RefreshCw className="animate-spin text-emerald-500" size={16} />
+                <span className="text-slate-500 font-mono text-[10px]">Cargando presets de estación desde Firestore...</span>
+              </div>
+            ) : presets.length === 0 ? (
+              <div className="border border-dashed border-slate-850 rounded-xl p-8 text-center text-slate-500 space-y-2">
+                <Sliders size={28} className="mx-auto text-slate-700 block" />
+                <p className="font-sans font-medium text-[11px]">No tiene ningún preset de estación guardado.</p>
+                <p className="text-[10px] text-slate-600 max-w-sm mx-auto font-sans leading-relaxed">
+                  Cree combinaciones de llamadas, SSID y balizas para configuraciones rápidas de emergencia o pulse &quot;Cargar por Defecto&quot; para precargar ejemplos de telecomunicaciones.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {presets.map((pr) => {
+                  const fullCallsign = pr.ssid && pr.ssid !== '0' ? `${pr.callsign}-${pr.ssid}` : pr.callsign;
+                  return (
+                    <div key={pr.id} className="bg-slate-950/40 border border-slate-900 rounded-xl p-3 flex flex-col justify-between gap-3 hover:border-slate-800 hover:bg-slate-950/80 transition-all">
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="font-bold text-slate-200 text-xs block">{pr.name}</span>
+                            <span className="text-[11px] text-emerald-400 font-bold block mt-1 tracking-wider">
+                              📡 TRAMA: <span className="bg-emerald-950 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-[10px]">{fullCallsign}</span>
+                            </span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditPreset(pr)}
+                              className="p-1 hover:bg-slate-900 hover:text-emerald-400 rounded transition-colors text-slate-500 cursor-pointer"
+                              title="Editar"
+                            >
+                              <Edit2 size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => pr.id && handleDeletePreset(pr.id)}
+                              className="p-1 hover:bg-slate-900 hover:text-rose-400 rounded transition-colors text-slate-500 cursor-pointer"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 bg-slate-900/60 border border-slate-900/80 p-2 rounded-lg font-mono text-[10px] text-slate-400 italic">
+                          &quot;{pr.aprsStatusComment}&quot;
+                        </div>
+                      </div>
+
+                      {onApplyPreset && (
+                        <button
+                          type="button"
+                          onClick={() => onApplyPreset(fullCallsign, pr.aprsStatusComment)}
+                          className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 hover:text-slate-900 font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1.5 uppercase tracking-wide text-[9.5px] transition-all"
+                        >
+                          <Play size={10} />
+                          Aplicar Preset Activo
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

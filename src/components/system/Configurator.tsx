@@ -717,6 +717,30 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
   const [aisShareRawAprs, setAisShareRawAprs] = useState(config.aisShareRawAprs !== false);
   const [winlinkSsid, setWinlinkSsid] = useState(config.winlinkSsid || 'EA1URG-10');
 
+  // Advanced APRS station profile configurations
+  const [aprsSsid, setAprsSsid] = useState<number>(config.aprsSsid !== undefined ? config.aprsSsid : 10);
+  const [aprsSymbolTable, setAprsSymbolTable] = useState<string>(config.aprsSymbolTable || '/');
+  const [aprsSymbolCode, setAprsSymbolCode] = useState<string>(config.aprsSymbolCode || '&');
+  const [aprsPath, setAprsPath] = useState<string>(config.aprsPath || 'WIDE1-1,WIDE2-1');
+  const [aprsPhgPower, setAprsPhgPower] = useState<number>(config.aprsPhgPower !== undefined ? config.aprsPhgPower : 5);
+  const [aprsPhgHeight, setAprsPhgHeight] = useState<number>(config.aprsPhgHeight !== undefined ? config.aprsPhgHeight : 3);
+  const [aprsPhgGain, setAprsPhgGain] = useState<number>(config.aprsPhgGain !== undefined ? config.aprsPhgGain : 3);
+  const [aprsPhgDirectivity, setAprsPhgDirectivity] = useState<number>(config.aprsPhgDirectivity !== undefined ? config.aprsPhgDirectivity : 0);
+  const [aprsBeaconInterval, setAprsBeaconInterval] = useState<number>(config.aprsBeaconInterval !== undefined ? config.aprsBeaconInterval : 30);
+  const [aprsSmartBeaconing, setAprsSmartBeaconing] = useState<boolean>(config.aprsSmartBeaconing !== undefined ? config.aprsSmartBeaconing : false);
+  const [aprsSmartLowInterval, setAprsSmartLowInterval] = useState<number>(config.aprsSmartLowInterval !== undefined ? config.aprsSmartLowInterval : 30);
+  const [aprsSmartHighInterval, setAprsSmartHighInterval] = useState<number>(config.aprsSmartHighInterval !== undefined ? config.aprsSmartHighInterval : 5);
+  const [aprsSmartTurnAngle, setAprsSmartTurnAngle] = useState<number>(config.aprsSmartTurnAngle !== undefined ? config.aprsSmartTurnAngle : 28);
+  const [aprsSmartSlope, setAprsSmartSlope] = useState<number>(config.aprsSmartSlope !== undefined ? config.aprsSmartSlope : 120);
+  const [aprsStatusComment, setAprsStatusComment] = useState<string>(config.aprsStatusComment || '📡 S.A.T. Estación Principal | Coord. Emergencias REMER');
+  const [aprsMiceMsgCode, setAprsMiceMsgCode] = useState<number>(config.aprsMiceMsgCode !== undefined ? config.aprsMiceMsgCode : 1);
+  const [aprsMiceOffset, setAprsMiceOffset] = useState<boolean>(config.aprsMiceOffset !== undefined ? config.aprsMiceOffset : false);
+  const [aprsFilterQuery, setAprsFilterQuery] = useState<string>(config.aprsFilterQuery || 'm/150 t/pms');
+
+  // Station Profile feedback states
+  const [stationSaveSuccess, setStationSaveSuccess] = useState<string | null>(null);
+  const [stationSaveError, setStationSaveError] = useState<string | null>(null);
+
   // A-GPS State
   const [isAgpsEnabled, setIsAgpsEnabled] = useState<boolean>(() => {
     try {
@@ -1144,7 +1168,26 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       agpsTtff: Number(agpsTtff),
       agpsConstellations: agpsConstellations,
       suplPort: Number(suplPort),
-      suplVersion: suplVersion
+      suplVersion: suplVersion,
+      // Advanced APRS station configuration fields
+      aprsSsid: Number(aprsSsid),
+      aprsSymbolTable: aprsSymbolTable.trim(),
+      aprsSymbolCode: aprsSymbolCode.trim(),
+      aprsPath: aprsPath.trim(),
+      aprsPhgPower: Number(aprsPhgPower),
+      aprsPhgHeight: Number(aprsPhgHeight),
+      aprsPhgGain: Number(aprsPhgGain),
+      aprsPhgDirectivity: Number(aprsPhgDirectivity),
+      aprsBeaconInterval: Number(aprsBeaconInterval),
+      aprsSmartBeaconing: Boolean(aprsSmartBeaconing),
+      aprsSmartLowInterval: Number(aprsSmartLowInterval),
+      aprsSmartHighInterval: Number(aprsSmartHighInterval),
+      aprsSmartTurnAngle: Number(aprsSmartTurnAngle),
+      aprsSmartSlope: Number(aprsSmartSlope),
+      aprsStatusComment: aprsStatusComment.trim(),
+      aprsMiceMsgCode: Number(aprsMiceMsgCode),
+      aprsMiceOffset: Boolean(aprsMiceOffset),
+      aprsFilterQuery: aprsFilterQuery.trim()
     };
 
     const success = await onSaveConfig(updated);
@@ -1157,6 +1200,46 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       setTimeout(() => setMessage(null), 8000);
     } else {
       setMessage({ type: 'error', text: 'Error al persistir la configuración en la Intel NUC del S.A.T.' });
+    }
+    setIsSaving(false);
+  };
+
+  const handleSaveStationProfile = async () => {
+    setIsSaving(true);
+    setStationSaveSuccess(null);
+    setStationSaveError(null);
+
+    const updated: TelemetryConfig = {
+      ...config,
+      callsign: callsign.toUpperCase().trim(),
+      aprsPasscode: aprsPasscode.trim(),
+      aprsSsid: Number(aprsSsid),
+      aprsSymbolTable: aprsSymbolTable.trim(),
+      aprsSymbolCode: aprsSymbolCode.trim(),
+      aprsPath: aprsPath.trim(),
+      aprsPhgPower: Number(aprsPhgPower),
+      aprsPhgHeight: Number(aprsPhgHeight),
+      aprsPhgGain: Number(aprsPhgGain),
+      aprsPhgDirectivity: Number(aprsPhgDirectivity),
+      aprsBeaconInterval: Number(aprsBeaconInterval),
+      aprsSmartBeaconing: Boolean(aprsSmartBeaconing),
+      aprsSmartLowInterval: Number(aprsSmartLowInterval),
+      aprsSmartHighInterval: Number(aprsSmartHighInterval),
+      aprsSmartTurnAngle: Number(aprsSmartTurnAngle),
+      aprsSmartSlope: Number(aprsSmartSlope),
+      aprsStatusComment: aprsStatusComment.trim(),
+      aprsMiceMsgCode: Number(aprsMiceMsgCode),
+      aprsMiceOffset: Boolean(aprsMiceOffset),
+      aprsFilterQuery: aprsFilterQuery.trim()
+    };
+
+    const success = await onSaveConfig(updated);
+    if (success) {
+      setStationSaveSuccess("¡Perfil de la Estación APRS Principal guardado y sincronizado con éxito!");
+      setTimeout(() => setStationSaveSuccess(null), 7000);
+    } else {
+      setStationSaveError("Error al sincronizar el Perfil de Estación con el servidor.");
+      setTimeout(() => setStationSaveError(null), 7000);
     }
     setIsSaving(false);
   };
@@ -2164,6 +2247,514 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                 {/* Doble Factor (2FA) */}
                 <div className="bg-slate-900/20 border border-slate-900/40 rounded-xl p-4">
                   <TwoFactorConfigurator currentUser={currentUser} userProfile={userProfile} />
+                </div>
+              </div>
+
+              {/* PERFIL AVANZADO DE LA ESTACIÓN APRS PRINCIPAL */}
+              <div className="bg-slate-900/30 border border-slate-900/80 rounded-xl p-5 space-y-6">
+                <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <Radio size={16} className="text-amber-500 animate-pulse" />
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-slate-200 tracking-wider font-mono">
+                        Perfil Técnico de la Estación APRS Principal
+                      </h3>
+                      <p className="text-[10.5px] text-slate-500 font-sans mt-0.5">
+                        Configuración avanzada de identificadores, balizas, rutas, datos PHG y estados Mic-E según el protocolo APRS 1.2.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold bg-amber-950/20 text-amber-500 border border-amber-900/40 px-2 py-0.5 rounded">
+                    PROTOCOLO AX.25
+                  </span>
+                </div>
+
+                {stationSaveSuccess && (
+                  <div className="bg-emerald-950/30 border border-emerald-900/60 p-3 rounded-lg text-emerald-400 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+                    <Check size={14} className="flex-shrink-0" />
+                    <span>{stationSaveSuccess}</span>
+                  </div>
+                )}
+
+                {stationSaveError && (
+                  <div className="bg-red-950/30 border border-red-900/60 p-3 rounded-lg text-red-400 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+                    <AlertCircle size={14} className="flex-shrink-0" />
+                    <span>{stationSaveError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-slate-300">
+                  
+                  {/* SECCIÓN A: IDENTIFICACIÓN Y SSID */}
+                  <div className="bg-slate-950 border border-slate-900 p-4 rounded-xl space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-900/60 pb-1.5">
+                      <span className="text-[9.5px] text-amber-500 font-black tracking-wider uppercase font-mono">
+                        A. Identidad, SSID y Símbolo Gráfico
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 font-mono text-xs">
+                      {/* SSID Selector */}
+                      <div className="space-y-1">
+                        <label htmlFor="select-aprs-ssid" className="text-slate-400 text-[10px] block font-bold">Sufijo SSID (Substation ID):</label>
+                        <select
+                          id="select-aprs-ssid"
+                          value={aprsSsid}
+                          onChange={(e) => setAprsSsid(Number(e.target.value))}
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                        >
+                          <option value="0">-0: Estación fija principal, laptop o desktop (Home/Office)</option>
+                          <option value="1">-1: Digipeater secundario, repetidor pasivo local</option>
+                          <option value="2">-2: Digipeater temporal, móvil secundario</option>
+                          <option value="3">-3: Móvil secundario o portátil tracker</option>
+                          <option value="4">-4: Estación QTH temporal o digi portátil</option>
+                          <option value="5">-5: Dispositivos móviles inteligentes (teléfonos, tabletas) vía IP</option>
+                          <option value="7">-7: Estación portátil walkie-talkie HT manual (Kenwood/Yaesu)</option>
+                          <option value="8">-8: Estación móvil marítima (embarcación de rescate, buque)</option>
+                          <option value="9">-9: Estación móvil terrestre principal (vehículo de emergencia, coche)</option>
+                          <option value="10">-10: Pasarela IGate / Gateway de Internet a RF fijo</option>
+                          <option value="11">-11: Globos aerostáticos, sondas meteorológicas, satélites (Gran altitud)</option>
+                          <option value="12">-12: Dispositivos portátiles trackers de un solo sentido (LoRa TNC)</option>
+                          <option value="13">-13: Estación meteorológica automatizada fija (WX telemetry data)</option>
+                          <option value="14">-14: Camión pesado, unidad de comando móvil EMCOM compleja</option>
+                          <option value="15">-15: Móvil auxiliar o tracker adicional</option>
+                        </select>
+                        <div className="text-[9px] text-slate-550 leading-relaxed bg-slate-900/40 p-2 rounded border border-slate-900/60 mt-1">
+                          <span className="text-amber-500/80 font-bold block">SSID Actual: -{aprsSsid}</span>
+                          {aprsSsid === 0 && "Uso primario para estaciones residenciales de escritorio fijas."}
+                          {aprsSsid === 5 && "Uso para apps cliente como APRSdroid sobre red celular LTE o WiFi."}
+                          {aprsSsid === 7 && "Optimizado para walkies con APRS integrado de bajo consumo."}
+                          {aprsSsid === 9 && "Para vehículos en movimiento. Intervalos de balizas dinámicos."}
+                          {aprsSsid === 10 && "Enlace de red bidireccional. Convierte RF en paquetes TCP/IP."}
+                          {aprsSsid === 13 && "Prioriza tramas de telemetría de viento, temperatura, lluvia y presión."}
+                          {aprsSsid === 14 && "Unidad móvil pesada de protección civil con mástil y antenas elevadas."}
+                          {![0,5,7,9,10,13,14].includes(aprsSsid) && "Configuración de uso general según norma estándar APRS12c."}
+                        </div>
+                      </div>
+
+                      {/* Symbol Table & Code */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label htmlFor="input-aprs-sym-table" className="text-slate-400 text-[10px] block font-bold">Tabla de Símbolos:</label>
+                          <select
+                            id="input-aprs-sym-table"
+                            value={aprsSymbolTable}
+                            onChange={(e) => setAprsSymbolTable(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                          >
+                            <option value="/">/ (Tabla Primaria)</option>
+                            <option value="\">\ (Tabla Alternativa / Superpuesta)</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label htmlFor="input-aprs-sym-code" className="text-slate-400 text-[10px] block font-bold">Código de Icono:</label>
+                          <input
+                            type="text"
+                            maxLength={1}
+                            id="input-aprs-sym-code"
+                            value={aprsSymbolCode}
+                            onChange={(e) => setAprsSymbolCode(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold text-center focus:border-amber-500/30 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Symbol Quick Presets */}
+                      <div className="space-y-1">
+                        <span className="text-[9.5px] text-slate-400 font-bold block">Preajustes Rápidos de Símbolos APRS:</span>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { name: '🚗 Móvil', tab: '/', code: '>' },
+                            { name: '📡 IGate', tab: '/', code: '&' },
+                            { name: '🌦️ WX', tab: '/', code: '_' },
+                            { name: '🏢 Fijo', tab: '/', code: '-' },
+                            { name: '🏃 Persona', tab: '/', code: '[' },
+                            { name: '🚒 EMCOM', tab: '/', code: 'K' },
+                            { name: '⛵ Barco', tab: '/', code: 'y' },
+                            { name: '🔁 Digi', tab: '/', code: '#' },
+                          ].map((sym) => (
+                            <button
+                              key={sym.name}
+                              type="button"
+                              onClick={() => {
+                                setAprsSymbolTable(sym.tab);
+                                setAprsSymbolCode(sym.code);
+                              }}
+                              className={`p-1.5 rounded text-[9.5px] border cursor-pointer font-bold text-center transition-all ${
+                                aprsSymbolTable === sym.tab && aprsSymbolCode === sym.code
+                                  ? 'bg-amber-950/40 text-amber-400 border-amber-800'
+                                  : 'bg-slate-900/60 text-slate-400 border-slate-850 hover:text-slate-200'
+                              }`}
+                            >
+                              {sym.name}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 bg-slate-900/30 p-2.5 rounded border border-slate-900/60 justify-center">
+                          <span className="text-[10px] text-slate-500">Símbolo APRS activo:</span>
+                          <span className="font-bold text-amber-400 text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-850">
+                            {aprsSymbolTable}{aprsSymbolCode}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN B: TRAYECTORIA Y PARÁMETROS PHG */}
+                  <div className="bg-slate-950 border border-slate-900 p-4 rounded-xl space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-900/60 pb-1.5">
+                      <span className="text-[9.5px] text-amber-500 font-black tracking-wider uppercase font-mono">
+                        B. Ruta de RF AX.25 y Parámetros PHG (Potencia/Altura)
+                      </span>
+                    </div>
+
+                    <div className="space-y-4 font-mono text-xs">
+                      {/* Path/Ruta AX.25 */}
+                      <div className="space-y-1.5">
+                        <label htmlFor="input-aprs-path" className="text-slate-400 text-[10px] block font-bold">Ruta AX.25 (APRS Unnumbered Info Path):</label>
+                        <input
+                          type="text"
+                          id="input-aprs-path"
+                          value={aprsPath}
+                          onChange={(e) => setAprsPath(e.target.value)}
+                          placeholder="WIDE1-1,WIDE2-1"
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                        />
+                        
+                        {/* Quick Path Presets */}
+                        <div className="flex gap-1.5 mt-1">
+                          {['WIDE1-1', 'WIDE1-1,WIDE2-1', 'WIDE2-2', 'VÍA DIRECTA'].map((p) => {
+                            const val = p === 'VÍA DIRECTA' ? 'NOGATE,TCPIP' : p;
+                            return (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => setAprsPath(val)}
+                                className={`px-2 py-0.5 rounded text-[9px] border cursor-pointer font-bold ${
+                                  aprsPath === val
+                                    ? 'bg-amber-950/40 text-amber-400 border-amber-800'
+                                    : 'bg-slate-900 text-slate-400 border-slate-850 hover:text-slate-200'
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[9px] text-slate-550 leading-relaxed mt-1">
+                          Controla los saltos que darán los digipeaters. Para una estación móvil se recomienda <strong>WIDE1-1,WIDE2-1</strong> (2 saltos). Para estaciones fijas se puede usar una ruta menor para evitar saturar la red local.
+                        </p>
+                      </div>
+
+                      {/* PHG (Power-Height-Gain-Directivity) Slider selectors */}
+                      <div className="border-t border-slate-900/60 pt-3 space-y-3">
+                        <span className="text-[9.5px] text-slate-400 font-bold block uppercase tracking-wider">
+                          Configurador PHG Estándar (Cálculo de Cobertura RF)
+                        </span>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Transmit Power */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9px]">
+                              <span className="text-slate-400 font-bold">Potencia TX:</span>
+                              <span className="text-amber-400 font-bold">
+                                {[0, 1, 4, 9, 16, 25, 36, 49, 64, 81][aprsPhgPower] || 25} Watts
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={9}
+                              value={aprsPhgPower}
+                              onChange={(e) => setAprsPhgPower(Number(e.target.value))}
+                              className="w-full accent-amber-500"
+                            />
+                          </div>
+
+                          {/* Antenna Height */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9px]">
+                              <span className="text-slate-400 font-bold">Altitud Antena:</span>
+                              <span className="text-amber-400 font-bold">
+                                {[10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120][aprsPhgHeight] || 80} pies
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={9}
+                              value={aprsPhgHeight}
+                              onChange={(e) => setAprsPhgHeight(Number(e.target.value))}
+                              className="w-full accent-amber-500"
+                            />
+                          </div>
+
+                          {/* Antenna Gain */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9px]">
+                              <span className="text-slate-400 font-bold">Ganancia Antena:</span>
+                              <span className="text-amber-400 font-bold">{aprsPhgGain} dB</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={9}
+                              value={aprsPhgGain}
+                              onChange={(e) => setAprsPhgGain(Number(e.target.value))}
+                              className="w-full accent-amber-500"
+                            />
+                          </div>
+
+                          {/* Directivity */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center text-[9px]">
+                              <span className="text-slate-400 font-bold">Directividad:</span>
+                              <span className="text-amber-400 font-bold">
+                                {['Omnidireccional', 'Nordeste (45°)', 'Este (90°)', 'Sudeste (135°)', 'Sur (180°)', 'Sudoeste (225°)', 'Oeste (270°)', 'Noroeste (315°)', 'Norte (360°)'][aprsPhgDirectivity]}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={8}
+                              value={aprsPhgDirectivity}
+                              onChange={(e) => setAprsPhgDirectivity(Number(e.target.value))}
+                              className="w-full accent-amber-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Live PHG String Generation */}
+                        <div className="bg-slate-900/50 p-2 rounded-lg border border-slate-900/80 text-center space-y-1">
+                          <span className="text-[8.5px] text-slate-500 uppercase tracking-widest font-black block">Código de Tramas PHG Computado:</span>
+                          <span className="text-sm font-bold text-amber-500 tracking-wider">
+                            PHG{aprsPhgPower}{aprsPhgHeight}{aprsPhgGain}{aprsPhgDirectivity}
+                          </span>
+                          <p className="text-[9px] text-slate-400 leading-tight">
+                            Este identificador se inyecta en los comentarios de baliza de posición para que los servidores de propagación APRS calculen tu patrón gráfico de cobertura teórica en tiempo real.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN C: COMPORTAMIENTO DE BALIZAS Y SMARTBEACONING */}
+                  <div className="bg-slate-950 border border-slate-900 p-4 rounded-xl space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-900/60 pb-1.5">
+                      <span className="text-[9.5px] text-amber-500 font-black tracking-wider uppercase font-mono">
+                        C. Temporizadores de Balizas y SmartBeaconing
+                      </span>
+                    </div>
+
+                    <div className="space-y-4 font-mono text-xs">
+                      {/* Estático Beacon Interval */}
+                      <div className="space-y-1">
+                        <label htmlFor="input-aprs-beacon-interval" className="text-slate-400 text-[10px] block font-bold">Intervalo de Baliza Estática (minutos):</label>
+                        <input
+                          type="number"
+                          id="input-aprs-beacon-interval"
+                          value={aprsBeaconInterval}
+                          onChange={(e) => setAprsBeaconInterval(Number(e.target.value) || 30)}
+                          disabled={aprsSmartBeaconing}
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none disabled:opacity-50"
+                        />
+                        <p className="text-[9px] text-slate-550 leading-relaxed">
+                          Tiempo entre transmisiones automáticas cuando la estación está inmóvil o en modo fijo. (Recomendado: 30 minutos para no congestionar).
+                        </p>
+                      </div>
+
+                      {/* SmartBeaconing Toggle */}
+                      <div className="flex items-center justify-between text-xs border-t border-slate-900/60 pt-3">
+                        <div>
+                          <span className="block font-bold text-slate-300">Habilitar Algoritmo SmartBeaconing:</span>
+                          <span className="text-[9.5px] text-slate-500 block">Modula la tasa de balizas según la velocidad y giros del QTH</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAprsSmartBeaconing(!aprsSmartBeaconing)}
+                          className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer relative ${
+                            aprsSmartBeaconing ? 'bg-amber-500' : 'bg-slate-800'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                            aprsSmartBeaconing ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </button>
+                      </div>
+
+                      {/* SmartBeaconing Config Parameters */}
+                      {aprsSmartBeaconing && (
+                        <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-900/80 space-y-3 animate-fadeIn">
+                          <span className="text-[9px] text-amber-500 font-bold block uppercase tracking-wide">
+                            Ajustes Avanzados SmartBeaconing
+                          </span>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label htmlFor="input-smart-low" className="text-slate-400 text-[9px] block">Intervalo Lento (Baja vel.):</label>
+                              <input
+                                type="number"
+                                id="input-smart-low"
+                                value={aprsSmartLowInterval}
+                                onChange={(e) => setAprsSmartLowInterval(Number(e.target.value))}
+                                className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-100 font-bold text-xs"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label htmlFor="input-smart-high" className="text-slate-400 text-[9px] block">Intervalo Rápido (Alta vel.):</label>
+                              <input
+                                type="number"
+                                id="input-smart-high"
+                                value={aprsSmartHighInterval}
+                                onChange={(e) => setAprsSmartHighInterval(Number(e.target.value))}
+                                className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-100 font-bold text-xs"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label htmlFor="input-smart-turn" className="text-slate-400 text-[9px] block">Umbral Giro (Grados):</label>
+                              <input
+                                type="number"
+                                id="input-smart-turn"
+                                value={aprsSmartTurnAngle}
+                                onChange={(e) => setAprsSmartTurnAngle(Number(e.target.value))}
+                                className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-100 font-bold text-xs"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label htmlFor="input-smart-slope" className="text-slate-400 text-[9px] block">Factor Pendiente (Slope):</label>
+                              <input
+                                type="number"
+                                id="input-smart-slope"
+                                value={aprsSmartSlope}
+                                onChange={(e) => setAprsSmartSlope(Number(e.target.value))}
+                                className="w-full bg-slate-950 border border-slate-850 rounded p-1.5 text-slate-100 font-bold text-xs"
+                              />
+                            </div>
+                          </div>
+                          <p className="text-[8.5px] text-slate-500 leading-normal">
+                            Determina la frecuencia óptima de transmisión. En giros de más de {aprsSmartTurnAngle}° o a alta velocidad, se inyectará instantáneamente una baliza AX.25 para mantener la precisión del mapa.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Status Comment Text */}
+                      <div className="space-y-1.5">
+                        <label htmlFor="input-aprs-comment" className="text-slate-400 text-[10px] block font-bold">Comentario de Baliza / Estado APRS:</label>
+                        <input
+                          type="text"
+                          id="input-aprs-comment"
+                          maxLength={64}
+                          value={aprsStatusComment}
+                          onChange={(e) => setAprsStatusComment(e.target.value)}
+                          placeholder="Frecuencia local de escucha: 144.800 MHz"
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                        />
+                        <div className="flex justify-between items-center text-[8.5px] text-slate-500">
+                          <span>Texto libre enviado al final del paquete de posición.</span>
+                          <span>Límite: {aprsStatusComment.length}/64 caracteres</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN D: ESTADO MIC-E Y FILTROS APRS-IS */}
+                  <div className="bg-slate-950 border border-slate-900 p-4 rounded-xl space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-900/60 pb-1.5">
+                      <span className="text-[9.5px] text-amber-500 font-black tracking-wider uppercase font-mono">
+                        D. Compresión Mic-E y Filtros APRS-IS IP
+                      </span>
+                    </div>
+
+                    <div className="space-y-4 font-mono text-xs">
+                      {/* Mic-E Status Message Selection */}
+                      <div className="space-y-1.5">
+                        <label htmlFor="select-aprs-mice-code" className="text-slate-400 text-[10px] block font-bold">Mensaje de Estado Mic-E Codificado:</label>
+                        <select
+                          id="select-aprs-mice-code"
+                          value={aprsMiceMsgCode}
+                          onChange={(e) => setAprsMiceMsgCode(Number(e.target.value))}
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                        >
+                          <option value={0}>M0: Off Duty (Fuera de Servicio)</option>
+                          <option value={1}>M1: In Service (Operativo / En Servicio)</option>
+                          <option value={2}>M2: En Route (En Ruta / Desplazándose)</option>
+                          <option value={3}>M3: Returning (Regresando a Base)</option>
+                          <option value={4}>M4: Committed (Comprometido en Incidente)</option>
+                          <option value={5}>M5: Special (Operación Especial)</option>
+                          <option value={6}>M6: Priority (Prioridad de Comunicación)</option>
+                          <option value={7}>EMG: EMERGENCY (¡S.O.S. EMERGENCIAS ACTIVAS!)</option>
+                        </select>
+                        <p className="text-[9px] text-slate-550 leading-relaxed">
+                          La compresión Mic-E encapsula este código binario directamente dentro de los bits de latitud para minimizar el tamaño del paquete sobre radio VHF/HF.
+                        </p>
+                      </div>
+
+                      {/* Mic-E Coordinate Offset toggle */}
+                      <div className="flex items-center justify-between text-xs border-t border-slate-900/60 pt-3">
+                        <div>
+                          <span className="block font-bold text-slate-300">Desfase de Coordenadas Mic-E (Offset Bits):</span>
+                          <span className="text-[9.5px] text-slate-500 block">Codifica la latitud con bits de offset alternativos</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAprsMiceOffset(!aprsMiceOffset)}
+                          className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer relative ${
+                            aprsMiceOffset ? 'bg-amber-500' : 'bg-slate-800'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                            aprsMiceOffset ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </button>
+                      </div>
+
+                      {/* APRS-IS Server Filter Query */}
+                      <div className="space-y-1.5 border-t border-slate-900/60 pt-3">
+                        <label htmlFor="input-aprs-filter" className="text-slate-400 text-[10px] block font-bold">Filtros de Recepción de Servidor APRS-IS (Server Filter):</label>
+                        <input
+                          type="text"
+                          id="input-aprs-filter"
+                          value={aprsFilterQuery}
+                          onChange={(e) => setAprsFilterQuery(e.target.value)}
+                          placeholder="m/150 t/pms"
+                          className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
+                        />
+                        <div className="text-[9px] text-slate-550 leading-relaxed bg-slate-900/40 p-2.5 rounded border border-slate-900/60 space-y-1">
+                          <span className="text-slate-400 font-bold block">Sintaxis Oficial de Filtros APRS-IS:</span>
+                          <span className="block">• <strong>m/150</strong>: Filtra estaciones a un radio máximo de 150 km de tu QTH.</span>
+                          <span className="block">• <strong>t/pms</strong>: Solo recibe tramas de Posición, Mensajes y Clima.</span>
+                          <span className="block">• <strong>f/EA7JRS/*</strong>: Filtra solo paquetes emitidos por EA7JRS y sus SSID.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* BOTÓN DE CONTROL PARA REGISTRAR EN EL SERVIDOR */}
+                <div className="flex justify-end pt-3 border-t border-slate-900">
+                  <button
+                    type="button"
+                    id="btn-save-aprs-station-profile"
+                    onClick={handleSaveStationProfile}
+                    disabled={isSaving}
+                    className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-sans font-black text-xs px-6 py-3 rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-lg hover:shadow-amber-500/10"
+                  >
+                    {isSaving ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Sincronizando Perfil...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save size={13} />
+                        <span>Guardar Perfil de Estación APRS</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

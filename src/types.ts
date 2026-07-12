@@ -182,6 +182,25 @@ export interface TelemetryConfig {
   localThresholdTempMinC?: number;
   localThresholdRainMm?: number;
   localWeatherInterval?: number;
+  // Advanced APRS station configuration options
+  aprsSsid?: number;
+  aprsSymbolTable?: string;
+  aprsSymbolCode?: string;
+  aprsPath?: string;
+  aprsPhgPower?: number;
+  aprsPhgHeight?: number;
+  aprsPhgGain?: number;
+  aprsPhgDirectivity?: number;
+  aprsBeaconInterval?: number;
+  aprsSmartBeaconing?: boolean;
+  aprsSmartLowInterval?: number;
+  aprsSmartHighInterval?: number;
+  aprsSmartTurnAngle?: number;
+  aprsSmartSlope?: number;
+  aprsStatusComment?: string;
+  aprsMiceMsgCode?: number;
+  aprsMiceOffset?: boolean;
+  aprsFilterQuery?: string;
 }
 
 export interface IQAirStatus {

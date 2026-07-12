@@ -31,6 +31,14 @@ from datetime import datetime, timezone, timedelta
 import urllib.request
 import urllib.error
 
+# Módulo adicional de alertas de múltiples agencias meteorológicas nacionales/regionales
+try:
+    from weather_services import WeatherAlertsManager, generate_aprs_weather_bulletin
+except ImportError:
+    print("[SYSTEM WARNING] No se pudo importar weather_services.py.")
+    WeatherAlertsManager = None
+    generate_aprs_weather_bulletin = None
+
 # ==============================================================================
 # CONFIGURACIÓN DE LA ESTACIÓN (Modificar según necesidad)
 # ==============================================================================
@@ -83,6 +91,10 @@ LOCAL_WEATHER_INTERVAL = 300        # Intervalo de monitoreo local en segundos
 transmitidas_alertas_locales = set()
 ultima_consulta_clima_local = 0
 last_local_weather = (20.0, 50, 5.0, 180, 1013.2, 0.0) # temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm
+
+# Historial para alertas meteorológicas de múltiples servicios nacionales/regionales adicionales
+transmitidas_alertas_multi_servicios = set()
+ultima_consulta_multi_servicios = 0
 
 # ==============================================================================
 # FORMULAS DE INGENIERÍA Y TRADUCTORES APRS
@@ -1607,6 +1619,7 @@ def monitorear_clima_local():
 # ==============================================================================
 def main():
     global transmitido_sw_id, ultima_baliza_wx, transmitidas_alertas_meteo, ultima_consulta_pronostico, ultima_consulta_clima_local
+    global transmitidas_alertas_multi_servicios, ultima_consulta_multi_servicios
     
     print("======================================================================")
     print("     APRS S.A.T. INICIADO - CONSOLA DE EMERGENCIAS REMER")
@@ -1725,6 +1738,46 @@ def main():
                 print("\n[MONITOREO CLIMA LOCAL] Evaluando condiciones de la estación local...")
                 monitorear_clima_local()
                 ultima_consulta_clima_local = curr_time
+                
+            # 8. Alertas Meteorológicas de Múltiples Servicios Nacionales/Regionales (AEMET, MeteoAlarm, DWD, Met Office)
+            if curr_time - ultima_consulta_multi_servicios >= 1200 or ultima_consulta_multi_servicios == 0:
+                if WeatherAlertsManager is not None:
+                    print("\n[SERVICIOS METEO ADICIONALES] Consultando alertas meteorológicas de múltiples agencias...")
+                    try:
+                        manager = WeatherAlertsManager(fallback_lat=lat, fallback_lon=lon)
+                        manager.set_station_coords(lat, lon)
+                        
+                        aemet_key_config = ""
+                        if os.path.exists("sat_config.json"):
+                            try:
+                                with open("sat_config.json", "r", encoding="utf-8") as jf:
+                                    ui_cfg = json.load(jf)
+                                    aemet_key_config = ui_cfg.get("aemetApiKey", "")
+                            except Exception:
+                                pass
+                        
+                        alertas_multi = manager.poll_all_services(aemet_key=aemet_key_config)
+                        
+                        bulletin_idx = 4
+                        for alerta in alertas_multi:
+                            alert_id = alerta["id"]
+                            hoy_str = utc_now.strftime("%Y-%m-%d")
+                            alert_key = f"{alert_id}_{hoy_str}"
+                            
+                            if alert_key not in transmitidas_alertas_multi_servicios:
+                                bulletin_packet = generate_aprs_weather_bulletin(CALLSIGN, alerta, bulletin_index=bulletin_idx)
+                                print(f"  [ALERTA MULTI-AGENCIA] Emitiendo Boletín APRS desde {alerta['source_name']}: {alerta['event']}")
+                                transmit_aprs_packet(bulletin_packet)
+                                transmitidas_alertas_multi_servicios.add(alert_key)
+                                
+                                bulletin_idx = bulletin_idx + 1 if bulletin_idx < 9 else 4
+                                
+                    except Exception as ex:
+                        print(f"[SYSTEM WARNING] Error procesando alertas meteorológicas multi-agencia: {ex}")
+                else:
+                    print("\n[SYSTEM WARNING] Módulo weather_services.py no disponible.")
+                
+                ultima_consulta_multi_servicios = curr_time
                     
         except KeyboardInterrupt:
             print("\n[INFO] Sistema APRS S.A.T. detenido de forma controlada por el operador.")

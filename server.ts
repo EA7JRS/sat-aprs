@@ -137,7 +137,26 @@ let config: TelemetryConfig = {
   localThresholdTempMaxC: 35.0,
   localThresholdTempMinC: 5.0,
   localThresholdRainMm: 10.0,
-  localWeatherInterval: 300
+  localWeatherInterval: 300,
+  // Advanced APRS station defaults
+  aprsSsid: 10, // -10 is standard for IGates and fixed internet-linked stations
+  aprsSymbolTable: '/',
+  aprsSymbolCode: '&', // IGate symbol code (red circle with white arrow, or gateway '&')
+  aprsPath: 'WIDE1-1,WIDE2-1',
+  aprsPhgPower: 5, // 5 = 25 Watts
+  aprsPhgHeight: 3, // 3 = 40 feet
+  aprsPhgGain: 3, // 3 = 6 dB
+  aprsPhgDirectivity: 0, // 0 = omnidirectional
+  aprsBeaconInterval: 30, // 30 minutes for fixed
+  aprsSmartBeaconing: false,
+  aprsSmartLowInterval: 30,
+  aprsSmartHighInterval: 5,
+  aprsSmartTurnAngle: 28,
+  aprsSmartSlope: 120,
+  aprsStatusComment: '📡 S.A.T. Estación Principal | Coord. Emergencias REMER',
+  aprsMiceMsgCode: 1, // M1: In Service
+  aprsMiceOffset: false,
+  aprsFilterQuery: 'm/150 t/pms' // Filter stations in 150km, only position/messages/weather
 };
 
 // Global timestamp tracking when the entire system was turned ON
@@ -6638,6 +6657,26 @@ app.post('/api/config', (req, res) => {
       config.tsunamiMonitorEnabled = !!updated.tsunamiMonitorEnabled;
       setTimeout(() => refreshTsunamis(), 50);
     }
+
+    // Advanced APRS configuration fields parsing
+    if (updated.aprsSsid !== undefined) config.aprsSsid = parseInt(updated.aprsSsid.toString());
+    if (updated.aprsSymbolTable !== undefined) config.aprsSymbolTable = updated.aprsSymbolTable.trim();
+    if (updated.aprsSymbolCode !== undefined) config.aprsSymbolCode = updated.aprsSymbolCode.trim();
+    if (updated.aprsPath !== undefined) config.aprsPath = updated.aprsPath.trim();
+    if (updated.aprsPhgPower !== undefined) config.aprsPhgPower = parseInt(updated.aprsPhgPower.toString());
+    if (updated.aprsPhgHeight !== undefined) config.aprsPhgHeight = parseInt(updated.aprsPhgHeight.toString());
+    if (updated.aprsPhgGain !== undefined) config.aprsPhgGain = parseInt(updated.aprsPhgGain.toString());
+    if (updated.aprsPhgDirectivity !== undefined) config.aprsPhgDirectivity = parseInt(updated.aprsPhgDirectivity.toString());
+    if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
+    if (updated.aprsSmartBeaconing !== undefined) config.aprsSmartBeaconing = !!updated.aprsSmartBeaconing;
+    if (updated.aprsSmartLowInterval !== undefined) config.aprsSmartLowInterval = parseInt(updated.aprsSmartLowInterval.toString());
+    if (updated.aprsSmartHighInterval !== undefined) config.aprsSmartHighInterval = parseInt(updated.aprsSmartHighInterval.toString());
+    if (updated.aprsSmartTurnAngle !== undefined) config.aprsSmartTurnAngle = parseInt(updated.aprsSmartTurnAngle.toString());
+    if (updated.aprsSmartSlope !== undefined) config.aprsSmartSlope = parseInt(updated.aprsSmartSlope.toString());
+    if (updated.aprsStatusComment !== undefined) config.aprsStatusComment = updated.aprsStatusComment.trim();
+    if (updated.aprsMiceMsgCode !== undefined) config.aprsMiceMsgCode = parseInt(updated.aprsMiceMsgCode.toString());
+    if (updated.aprsMiceOffset !== undefined) config.aprsMiceOffset = !!updated.aprsMiceOffset;
+    if (updated.aprsFilterQuery !== undefined) config.aprsFilterQuery = updated.aprsFilterQuery.trim();
 
     if (updated.systemPower !== undefined) {
       const oldPower = config.systemPower;

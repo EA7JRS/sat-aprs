@@ -174,6 +174,12 @@ export default function App() {
   const [incomingAprsModal, setIncomingAprsModal] = useState<AprsPacket | null>(null);
   const [aprsReplyText, setAprsReplyText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
+  const [isAprsPopupEnabled, setIsAprsPopupEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('is_aprs_popup_enabled') !== 'false';
+  });
+  const [aprsPopupFilter, setAprsPopupFilter] = useState<'ALL' | 'MICE_EMG' | 'MICE_PRIO'>(() => {
+    return (localStorage.getItem('aprs_popup_filter') as any) || 'ALL';
+  });
 
   // Hazard tracking for AlertMonitor slide-in animation
   const [knownHazardIds, setKnownHazardIds] = useState<Set<string> | null>(null);
@@ -418,8 +424,36 @@ export default function App() {
             visualPriority: isEmergency ? 'Crítica' : 'Normal'
           };
 
-          // Trigger the incoming APRS modal popup!
-          setIncomingAprsModal(newPacket);
+          // Trigger the incoming APRS modal popup if enabled and matches the filter!
+          let shouldShowPopup = false;
+          if (isAprsPopupEnabled) {
+            if (aprsPopupFilter === 'ALL') {
+              shouldShowPopup = true;
+            } else {
+              const fullText = `${callsign} ${messageText} ${log.destination || ''} ${payloadStr}`.toUpperCase();
+              
+              // Emergency criteria from Mic-E and https://www.aprs.org/aprs12/EmergencyCode.txt (EMG, QRR, SOS, HELP, MED)
+              const hasEmergency = isEmergency || 
+                /\b(EMG|EMERG|EMERGENCIA|EMERGENCY|QRR|SOS|HELP|MED|MEDICAL|MEDICA)\b/i.test(fullText) ||
+                payloadStr.includes('!EMERGENCY!');
+                
+              // Priority & Special criteria from Mic-E and APRS Search & Rescue (PRIO, SPC, SAR, CIV, FIRE, POL, CRIT)
+              const hasPriorityOrSpecial = hasEmergency || 
+                /\b(PRIO|PRIORITY|PRIORIDAD|SPC|SPECIAL|ESPECIAL|SAR|CIV|FIRE|INCENDIO|POL|POLICE|POLICIA|CRIT|CRITICAL|HAZ|HAZMAT)\b/i.test(fullText) ||
+                payloadStr.includes('!PRIORITY!') || 
+                payloadStr.includes('!SPECIAL!');
+                
+              if (aprsPopupFilter === 'MICE_EMG') {
+                shouldShowPopup = hasEmergency;
+              } else if (aprsPopupFilter === 'MICE_PRIO') {
+                shouldShowPopup = hasPriorityOrSpecial;
+              }
+            }
+          }
+
+          if (shouldShowPopup) {
+            setIncomingAprsModal(newPacket);
+          }
 
           // Append to local state list so it appears in the logs and gonio map
           setAprsPackets(prev => {
@@ -436,7 +470,7 @@ export default function App() {
         }
       }
     });
-  }, [data?.logs, lastSeenLogId]);
+  }, [data?.logs, lastSeenLogId, isAprsPopupEnabled, aprsPopupFilter]);
 
   // Firebase Database Sync Status indicator state
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'disabled' | 'offline'>('synced');
@@ -2639,6 +2673,16 @@ export default function App() {
               playBuzzerSound={playBuzzerSound}
               showToast={showToast}
               weather={data.weather}
+              isAprsPopupEnabled={isAprsPopupEnabled}
+              setIsAprsPopupEnabled={(val) => {
+                setIsAprsPopupEnabled(val);
+                localStorage.setItem('is_aprs_popup_enabled', val ? 'true' : 'false');
+              }}
+              aprsPopupFilter={aprsPopupFilter}
+              setAprsPopupFilter={(val) => {
+                setAprsPopupFilter(val);
+                localStorage.setItem('aprs_popup_filter', val);
+              }}
             />
           </motion.div>
         ) : activeTab === 'pat-pillar' ? (
@@ -2894,6 +2938,38 @@ export default function App() {
             {/* Config & Stations Parameters */}
             <div className="lg:col-span-5 flex flex-col gap-4">
               <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} currentUser={currentUser} />
+              
+              {/* Perfiles de Estación (Presets) */}
+              {currentUser ? (
+                <UserProfileManager 
+                  currentUser={currentUser} 
+                  userProfile={userProfile} 
+                  defaultSubTab="presets"
+                  onApplyPreset={async (callsign, statusComment) => {
+                    const updated = {
+                      ...data.config,
+                      callsign: callsign,
+                      aprsStatusComment: statusComment
+                    };
+                    const success = await handleSaveConfig(updated);
+                    if (success) {
+                      showToast(`¡Preset aplicado! Estación configurada como ${callsign}`);
+                    } else {
+                      showToast(`Error al aplicar preset.`);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs">
+                  <div className="text-emerald-500 font-bold uppercase mb-2 flex items-center gap-1.5">
+                    <Sliders size={14} />
+                    Perfiles de Estación (Presets)
+                  </div>
+                  <p className="text-slate-400 font-sans text-[11px] leading-relaxed">
+                    Para configurar, guardar y aplicar perfiles de estación (presets) persistidos en Firestore, por favor inicie sesión o cree un perfil de operador en el panel de control.
+                  </p>
+                </div>
+              )}
               
               {/* Architecture block chart */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs">
@@ -3464,6 +3540,32 @@ export default function App() {
                     </div>
                   </motion.div>
                 )}
+
+                {/* Filtro de Alertas Pop-up (Mic-E / EmergencyCode.txt) */}
+                <div className="border-t border-slate-800/60 pt-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono text-orange-400 font-bold uppercase block">Filtro de Alertas Pop-up</label>
+                    <span className="text-[8.5px] text-slate-500 font-mono">Mic-E / APRS 1.2</span>
+                  </div>
+                  <select
+                    value={aprsPopupFilter}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setAprsPopupFilter(val);
+                      localStorage.setItem('aprs_popup_filter', val);
+                      showToast(`Filtro pop-up cambiado a: ${
+                        val === 'ALL' ? 'Todos los mensajes/boletines' :
+                        val === 'MICE_EMG' ? 'Solo Emergencias Críticas' :
+                        'Tránsito Prioritario y Especial'
+                      }`);
+                    }}
+                    className="w-full bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 text-xs font-mono text-slate-300 outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    <option value="ALL">📬 Mostrar todos los tráficos APRS (Por Defecto)</option>
+                    <option value="MICE_EMG">🚨 Solo Emergencias Críticas (Mic-E EMG / SOS / QRR / MED)</option>
+                    <option value="MICE_PRIO">⚠️ Tránsito Prioritario y Especial (Prioridad / Especial / SAR)</option>
+                  </select>
+                </div>
               </div>
 
               {/* Botonera de acciones */}

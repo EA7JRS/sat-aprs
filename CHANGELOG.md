@@ -4,6 +4,22 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 
 ---
 
+## [v1.2.0] - 2026-07-13
+### Mejorado & Depurado
+- **Auditoría de Sockets de Hardware (KISS y GPSD)**:
+  - Verificado el comportamiento de los sockets TCP locales en `server.ts` (`gpsd` en puerto 2947 y TNC/Direwolf KISS) frente a pérdidas de conexión física.
+  - Asegurado el correcto funcionamiento del temporizador de reintento exponencial para evitar picos de uso de CPU y garantizar la autoreparación inmediata del enlace de radiofrecuencia (AX25) en situaciones críticas de emergencia.
+- **Validación del Compilador y Linter en React**:
+  - Ejecutada una auditoría estricta de tipos de TypeScript en todo el proyecto frontend (`npm run lint`), certificando la ausencia de discrepancias o declaraciones implícitas peligrosas.
+  - Comprobada la compilación completa de producción con Vite (`npm run build`) generando un bundle optimizado y libre de errores de importación circular o dependencias rotas.
+- **Refinamiento de "Pilar IV: Respuesta" & Presets de Estación**:
+  - Pulido el flujo estético del componente de administración `UserProfileManager` para alinear los inputs de configuración de indicativo (Callsign), SSID y balizas.
+  - Optimizado el diseño de los bloques de Presets con diseño responsive mejorado, tipografías monoespaciadas legibles de alta visibilidad para operadores civiles e inyección de Toasts dinámicos en pantalla.
+- **Alineación de Seguridad y Telemetría del Servidor**:
+  - Verificado el uso del cliente API de Gemini con el SDK moderno `@google/genai` y la correcta configuración de cabeceras de telemetría de desarrollo.
+
+---
+
 ## [v1.1.0] - 2026-07-12
 ### Añadido
 - **Módulo de Alertas Meteorológicas Multi-Agencia en Python (`aprs_sat.py`)**:

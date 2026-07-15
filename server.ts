@@ -2027,28 +2027,29 @@ function getIcaLabel(aqi: number): string {
 }
 
 function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: number; pm25: number; pm10: number; co: number; o3: number; no2: number; stationName: string } {
-  const station = getNearestIcaStation();
+  const lat = gpsdState.lat || 40.416775;
+  const lon = gpsdState.lon || -3.703790;
   
-  // Real-time live fluctuations
-  const minOfHour = new Date().getMinutes();
-  const secSeed = new Date().getSeconds() * 0.05;
-  const seedFactor = 1 + Math.sin(station.name.charCodeAt(1) + minOfHour * 0.12 + secSeed) * 0.14;
-  
-  const pm25 = station.pm25 !== null && station.pm25 !== undefined ? parseFloat(Math.max(1, station.pm25 * seedFactor).toFixed(1)) : 8.0;
-  const pm10 = station.pm10 !== null && station.pm10 !== undefined ? parseFloat(Math.max(2, station.pm10 * seedFactor).toFixed(1)) : 12.0;
-  const no2 = station.no2 !== null && station.no2 !== undefined ? parseFloat(Math.max(2, station.no2 * seedFactor).toFixed(1)) : 15.0;
-  const o3 = station.o3 !== null && station.o3 !== undefined ? parseFloat(Math.max(5, station.o3 * seedFactor).toFixed(1)) : 45.0;
-  const so2 = station.so2 !== null && station.so2 !== undefined ? parseFloat(Math.max(1, station.so2 * seedFactor).toFixed(1)) : 2.0;
-  const co = station.co !== null && station.co !== undefined ? parseFloat(Math.max(0.1, station.co * seedFactor).toFixed(2)) : 0.3;
-  
-  const aqi = calculateAqiFromPm25(pm25);
+  // Usamos los datos consolidados en iqairState (procedentes de IQAir API, Open-Meteo o simulación local para la ubicación real)
+  const aqi = iqairState.aqi || 42;
   const label = getIcaLabel(aqi);
+  
+  const pm25 = iqairState.pm2_5 !== undefined ? iqairState.pm2_5 : 8.0;
+  const pm10 = iqairState.pm10 !== undefined ? iqairState.pm10 : 12.0;
+  const no2 = iqairState.no2 !== undefined ? iqairState.no2 : 15.0;
+  const o3 = iqairState.o3 !== undefined ? iqairState.o3 : 45.0;
+  const co = iqairState.co !== undefined ? iqairState.co : 0.3; // en mg/m3
+  
+  const prov = getClosestProvince(lat, lon);
+  const stationName = iqairState.city && iqairState.city !== 'Madrid (Live)' && iqairState.city !== 'Estación Local' && iqairState.city !== 'Madrid' && iqairState.city !== 'Madrid (Simulado)'
+    ? iqairState.city
+    : (prov ? prov.name : 'Estación Local');
 
   const name = "AIR-QUAL "; // exactly 9 chars
   const timestamp = getAprsTimestamp(new Date());
   
-  const aprsLat = latToAprs(station.lat);
-  const aprsLon = lonToAprs(station.lon);
+  const aprsLat = latToAprs(lat);
+  const aprsLon = lonToAprs(lon);
   
   const coVal = co * 1000; // microgramos (ug)
 
@@ -2078,7 +2079,7 @@ function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: numb
     co: coVal, 
     o3, 
     no2,
-    stationName: station.name 
+    stationName
   };
 }
 
@@ -2231,11 +2232,12 @@ async function refreshIQAir() {
       const o3Val = cur.ozone || 45.0;
       const so2Val = cur.sulphur_dioxide || 1.5;
       const computedAqi = calculateAqiFromPm25(pm25Val);
+      const prov = getClosestProvince(lat, lon);
 
       iqairState = {
         aqi: computedAqi,
         mainPollutant: 'pm25',
-        city: gpsdState.isFallback ? 'Madrid (Live)' : 'Estación Local',
+        city: prov ? prov.name : 'Estación Local',
         state: 'Local',
         country: 'España',
         tempC: weatherState.tempC,
@@ -2312,10 +2314,12 @@ async function refreshIQAir() {
       const o3 = Math.max(5, parseFloat((baseAqi * 0.45 + Math.random() * 4).toFixed(1)));
       const so2 = Math.max(0.1, parseFloat((baseAqi * 0.04 + Math.random() * 0.4).toFixed(1)));
 
+      const prov = getClosestProvince(gpsdState.lat || 40.4167, gpsdState.lon || -3.7037);
+
       iqairState = {
         aqi: Math.max(5, Math.min(300, baseAqi)),
         mainPollutant,
-        city: gpsdState.isFallback ? 'Madrid (Simulado)' : 'Estación Local',
+        city: prov ? `${prov.name} (Simulado)` : 'Estación Local',
         state: 'Local',
         country: 'España',
         tempC: weatherState.tempC,

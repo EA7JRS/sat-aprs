@@ -731,7 +731,7 @@ export default function AprsAdaptor({
   setAprsPopupFilter
 }: AprsAdaptorProps) {
   
-  const [innerTab, setInnerTab] = useState<'adaptar' | 'consola' | 'traductor' | 'doc' | 'mensajeria' | 'yaesu'>('adaptar');
+  const [innerTab, setInnerTab] = useState<'adaptar' | 'consola' | 'doc' | 'mensajeria' | 'yaesu'>('adaptar');
   const [activeExplainToken, setActiveExplainToken] = useState<string | null>(null);
 
   // Yaesu FTM-400DR emulation states
@@ -740,8 +740,33 @@ export default function AprsAdaptor({
   const [yaesuSpeed, setYaesuSpeed] = useState(25); // km/h slider
   const [yaesuHeading, setYaesuHeading] = useState(120); // degrees slider
   const [yaesuSteeringAngle, setYaesuSteeringAngle] = useState(0); // degrees
-  const [yaesuIsSmartBeaconActive, setYaesuIsSmartBeaconActive] = useState(true);
-  const [yaesuBeaconIntervalSec, setYaesuBeaconIntervalSec] = useState(120); // seconds left
+  const [yaesuIsSmartBeaconActive, setYaesuIsSmartBeaconActive] = useState(() => {
+    const saved = localStorage.getItem('yaesu_is_smart_beacon_active');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [yaesuStaticBeaconInterval, setYaesuStaticBeaconInterval] = useState<number>(() => {
+    const saved = localStorage.getItem('yaesu_static_beacon_interval');
+    return saved ? parseInt(saved, 10) : 1800; // default 30 minutes (1800s)
+  });
+  const [yaesuBeaconIntervalSec, setYaesuBeaconIntervalSec] = useState(() => {
+    const savedActive = localStorage.getItem('yaesu_is_smart_beacon_active');
+    const isSmart = savedActive !== null ? savedActive === 'true' : true;
+    if (isSmart) {
+      return 120; // Default fast rate starting countdown
+    } else {
+      const savedInt = localStorage.getItem('yaesu_static_beacon_interval');
+      return savedInt ? parseInt(savedInt, 10) : 1800;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('yaesu_is_smart_beacon_active', yaesuIsSmartBeaconActive.toString());
+  }, [yaesuIsSmartBeaconActive]);
+
+  useEffect(() => {
+    localStorage.setItem('yaesu_static_beacon_interval', yaesuStaticBeaconInterval.toString());
+  }, [yaesuStaticBeaconInterval]);
+
   const [yaesuSmartBeaconLog, setYaesuSmartBeaconLog] = useState<string[]>(['[SISTEMA] SmartBeaconing iniciado. Intervalo de reposo: 300s']);
   const [yaesuStatusSlot, setYaesuStatusSlot] = useState(0);
   const [yaesuStatusComments, setYaesuStatusComments] = useState<string[]>([
@@ -754,6 +779,33 @@ export default function AprsAdaptor({
   const [yaesuInputStatusText, setYaesuInputStatusText] = useState('');
   const [yaesuSelectedMsgIndex, setYaesuSelectedMsgIndex] = useState<number | null>(null);
   const [yaesuTxActive, setYaesuTxActive] = useState(false);
+
+  // S-Meter levels (1 to 14 correspond to S1-S9 then S9+10dB to S9+50dB)
+  const [yaesuBandASignal, setYaesuBandASignal] = useState(9); // Default S9 (level 9)
+  const [yaesuBandBSignal, setYaesuBandBSignal] = useState(12); // Default S9+30dB (level 12)
+  const [yaesuSyncTnc, setYaesuSyncTnc] = useState(true); // Sync status with direwolf & aprx
+
+  // S-Meter VHF Calibration data matching IARU scale
+  const smeterCalibrations = [
+    { level: 1, label: 'S1', dbm: -141, uv: '0.02 μV' },
+    { level: 2, label: 'S2', dbm: -135, uv: '0.04 μV' },
+    { level: 3, label: 'S3', dbm: -129, uv: '0.08 μV' },
+    { level: 4, label: 'S4', dbm: -123, uv: '0.16 μV' },
+    { level: 5, label: 'S5', dbm: -117, uv: '0.31 μV' },
+    { level: 6, label: 'S6', dbm: -111, uv: '0.63 μV' },
+    { level: 7, label: 'S7', dbm: -105, uv: '1.25 μV' },
+    { level: 8, label: 'S8', dbm: -99,  uv: '2.50 μV' },
+    { level: 9, label: 'S9', dbm: -93,  uv: '5.00 μV' },
+    { level: 10, label: 'S9+10dB', dbm: -83, uv: '15.8 μV' },
+    { level: 11, label: 'S9+20dB', dbm: -73, uv: '50.0 μV' },
+    { level: 12, label: 'S9+30dB', dbm: -63, uv: '158 μV' },
+    { level: 13, label: 'S9+40dB', dbm: -53, uv: '500 μV' },
+    { level: 14, label: 'S9+50dB', dbm: -43, uv: '1580 μV' }
+  ];
+
+  const getSMeterDetail = (lvl: number) => {
+    return smeterCalibrations.find(c => c.level === lvl) || smeterCalibrations[8];
+  };
 
   const yaesuStationList = [
     { id: '1', callsign: 'EA4CECOP-1', symbol: '[', lat: 40.4189, lon: -3.6919, comment: 'Puesto de Mando CECOP', type: 'fija', timestamp: '10:45:12' },
@@ -1214,9 +1266,9 @@ export default function AprsAdaptor({
     return () => clearInterval(timer);
   }, [setAprsPackets]);
 
-  // SmartBeaconing countdown timer
+  // SmartBeaconing / Static Beaconing countdown timer
   useEffect(() => {
-    if (!yaesuIsSmartBeaconActive || innerTab !== 'yaesu') return;
+    if (innerTab !== 'yaesu') return;
     
     const interval = setInterval(() => {
       setYaesuBeaconIntervalSec(prev => {
@@ -1230,14 +1282,27 @@ export default function AprsAdaptor({
           const lat = 40.416775;
           const lon = -3.703790;
           const { latStr, lonStr } = convertToAprsCoords(lat, lon);
-          const payload = `!${latStr}/${lonStr}>${activeComment} [SPD:${yaesuSpeed}km/h]`;
+          
+          let payload = "";
+          let detail = "";
+          let notes = "";
+          
+          if (yaesuIsSmartBeaconActive) {
+            payload = `!${latStr}/${lonStr}>${activeComment} [SPD:${yaesuSpeed}km/h]`;
+            detail = `Transmisión automática por algoritmo SmartBeaconing (${yaesuSpeed} km/h).`;
+            notes = `SmartBeaconing: Intervalo recalculado en base a velocidad de ${yaesuSpeed} Km/h.`;
+          } else {
+            payload = `!${latStr}/${lonStr}>${activeComment} [STATIC BEACON]`;
+            detail = `Transmisión automática por intervalo estático de ${Math.round(yaesuStaticBeaconInterval / 60)} min.`;
+            notes = `Intervalo estático de baliza persistido: ${yaesuStaticBeaconInterval}s.`;
+          }
           
           const newPkt: AprsPacket = {
             id: `yaesu-sb-${Date.now()}`,
             sourceEventId: 'yaesu-smartbeacon',
             eventType: 'manual',
-            originalTitle: `SMARTBEACON EMITIDO (MÓVIL)`,
-            originalDetail: `Transmisión automática por algoritmo SmartBeaconing (${yaesuSpeed} km/h).`,
+            originalTitle: yaesuIsSmartBeaconActive ? `SMARTBEACON EMITIDO (MÓVIL)` : `BALIZA ESTÁTICA EMITIDA`,
+            originalDetail: detail,
             timestamp: new Date().toLocaleTimeString(),
             latitude: lat,
             longitude: lon,
@@ -1245,32 +1310,32 @@ export default function AprsAdaptor({
             destination: 'APWY40', // APYaesu400
             path: 'WIDE1-1,WIDE2-1',
             aprsType: 'BEACON',
-            symbol: '>',
+            symbol: yaesuIsSmartBeaconActive ? '>' : '-',
             messageText: payload,
             packetString: `${aprsSource}>APWY40,WIDE1-1,WIDE2-1:${payload}`,
             status: 'TRANSMITIDO',
             isEmergency: false,
-            auditNotes: `SmartBeaconing: Intervalo recalculado en base a velocidad de ${yaesuSpeed} Km/h.`
+            auditNotes: notes
           };
           
           setAprsPackets(current => [newPkt, ...current]);
           
           setYaesuSmartBeaconLog(l => [
-            `[${new Date().toLocaleTimeString()}] 🚀 Baliza enviada por SmartBeaconing! Intervalo: ${calculateSmartBeaconInterval(yaesuSpeed)}s. Comentario: "${activeComment}"`,
+            `[${new Date().toLocaleTimeString()}] 🚀 Baliza ${yaesuIsSmartBeaconActive ? 'SmartBeaconing' : 'Estática'} enviada! Intervalo: ${yaesuIsSmartBeaconActive ? calculateSmartBeaconInterval(yaesuSpeed) : yaesuStaticBeaconInterval}s. Comentario: "${activeComment}"`,
             ...l
           ].slice(0, 30));
           
           setTimeout(() => setYaesuTxActive(false), 800);
           
-          // Reset countdown to the dynamic interval according to speed
-          return calculateSmartBeaconInterval(yaesuSpeed);
+          // Reset countdown to the dynamic interval or static interval
+          return yaesuIsSmartBeaconActive ? calculateSmartBeaconInterval(yaesuSpeed) : yaesuStaticBeaconInterval;
         }
         return prev - 1;
       });
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [yaesuIsSmartBeaconActive, yaesuSpeed, yaesuStatusSlot, yaesuStatusComments, innerTab, aprsSource, setAprsPackets]);
+  }, [yaesuIsSmartBeaconActive, yaesuStaticBeaconInterval, yaesuSpeed, yaesuStatusSlot, yaesuStatusComments, innerTab, aprsSource, setAprsPackets]);
 
   // Corner-peg beaconing simulation (Giro brusco en curvas)
   useEffect(() => {
@@ -1758,17 +1823,6 @@ export default function AprsAdaptor({
             <span className="absolute -top-1 -right-1 px-1 py-0.2 text-[7px] font-bold bg-orange-600 text-slate-950 rounded-full border border-slate-950 animate-pulse">
               YAESU
             </span>
-          </button>
-          <button
-            onClick={() => setInnerTab('traductor')}
-            className={`px-3 py-1.5 rounded-md font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              innerTab === 'traductor'
-                ? 'bg-orange-500 text-slate-950 shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Compass size={13} />
-            Traductor WX APRS
           </button>
           <button
             onClick={() => setInnerTab('doc')}
@@ -2644,50 +2698,102 @@ export default function AprsAdaptor({
 
                   {/* Fila de frecuencias A-Band y B-Band (Estilo Yaesu) */}
                   <div className="grid grid-cols-2 gap-2 border-b border-slate-900 pb-2">
-                    <div className="bg-slate-900/50 p-1.5 rounded border border-slate-900/80 flex flex-col justify-between">
+                    {/* BAND A - VOICE EMCOM */}
+                    <div className="bg-slate-900/50 p-2 rounded border border-slate-900/80 flex flex-col justify-between">
                       <div className="flex justify-between items-center text-[9px] font-mono text-slate-500">
-                        <span>BAND A (APRS VHF)</span>
-                        <span className="text-orange-400 font-bold">TX/RX</span>
+                        <span>BAND A (VOICE EMCOM)</span>
+                        <span className="text-cyan-400 font-bold">FM VOICE</span>
+                      </div>
+                      <div className="flex items-baseline gap-1 mt-1">
+                        <span className="text-xl font-mono font-black tracking-tight text-slate-100">145.500</span>
+                        <span className="text-xs font-mono text-slate-400">MHz</span>
+                      </div>
+                      
+                      {/* S-Meter */}
+                      <div className="flex items-center gap-1 mt-1 cursor-pointer select-none" title="Haz clic para cambiar la intensidad de la señal" onClick={() => setYaesuBandASignal(prev => prev >= 14 ? 1 : prev + 1)}>
+                        <span className="text-[8px] text-slate-500 font-mono font-bold">S:</span>
+                        <div className="flex-1 h-2 bg-slate-950 rounded-[1px] overflow-hidden flex gap-[1px] p-[1px] border border-slate-900">
+                          {Array.from({ length: 14 }).map((_, idx) => {
+                            const barLvl = idx + 1;
+                            const isActive = barLvl <= yaesuBandASignal;
+                            let colorClass = 'bg-neutral-900';
+                            if (isActive) {
+                              if (barLvl <= 7) colorClass = 'bg-emerald-500 shadow-[0_0_2px_rgba(16,185,129,0.5)]';
+                              else if (barLvl <= 9) colorClass = 'bg-yellow-500 shadow-[0_0_2px_rgba(234,179,8,0.5)]';
+                              else colorClass = 'bg-rose-500 shadow-[0_0_2px_rgba(244,63,94,0.5)]';
+                            }
+                            return <div key={idx} className={`flex-1 h-full rounded-[1px] ${colorClass}`} />;
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Calibrated readings */}
+                      {(() => {
+                        const d = getSMeterDetail(yaesuBandASignal);
+                        return (
+                          <div className="flex justify-between items-center text-[7.5px] font-mono text-slate-400 mt-0.5 leading-none px-0.5 select-none" onClick={() => setYaesuBandASignal(prev => prev >= 14 ? 1 : prev + 1)}>
+                            <span className="text-cyan-400 font-extrabold">{d.label}</span>
+                            <span>{d.dbm} dBm</span>
+                            <span className="text-slate-500">{d.uv}</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* BAND B - APRS EMCOM */}
+                    <div className="bg-slate-900/30 p-2 rounded border border-slate-900/40 flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[9px] font-mono text-slate-500">
+                        <span>BAND B (APRS EMCOM)</span>
+                        {yaesuTxActive ? (
+                          <span className="text-rose-500 font-black animate-pulse">TX NOW</span>
+                        ) : (
+                          <span className="text-emerald-400 font-bold">TNC RX</span>
+                        )}
                       </div>
                       <div className="flex items-baseline gap-1 mt-1">
                         <span className="text-xl font-mono font-black tracking-tight text-slate-100">144.800</span>
                         <span className="text-xs font-mono text-slate-400">MHz</span>
                       </div>
+                      
                       {/* S-Meter */}
-                      <div className="flex items-center gap-1 mt-1">
-                        <span className="text-[8px] text-slate-500 font-mono">S:</span>
-                        <div className="flex-1 h-1.5 bg-slate-950 rounded overflow-hidden flex gap-0.5">
-                          <div className="w-1/6 h-full bg-emerald-500" />
-                          <div className="w-1/6 h-full bg-emerald-500" />
-                          <div className="w-1/6 h-full bg-emerald-500" />
-                          <div className="w-1/6 h-full bg-emerald-500" />
-                          <div className="w-1/6 h-full bg-yellow-500" />
-                          <div className="w-1/6 h-full bg-rose-500" />
+                      <div className="flex items-center gap-1 mt-1 cursor-pointer select-none" title="Haz clic para cambiar la intensidad de la señal" onClick={() => setYaesuBandBSignal(prev => prev >= 14 ? 1 : prev + 1)}>
+                        <span className="text-[8px] text-slate-500 font-mono font-bold">S:</span>
+                        <div className="flex-1 h-2 bg-slate-950 rounded-[1px] overflow-hidden flex gap-[1px] p-[1px] border border-slate-900">
+                          {Array.from({ length: 14 }).map((_, idx) => {
+                            const barLvl = idx + 1;
+                            const isActive = barLvl <= yaesuBandBSignal;
+                            let colorClass = 'bg-neutral-900';
+                            if (isActive) {
+                              if (barLvl <= 7) colorClass = 'bg-emerald-500 shadow-[0_0_2px_rgba(16,185,129,0.5)]';
+                              else if (barLvl <= 9) colorClass = 'bg-yellow-500 shadow-[0_0_2px_rgba(234,179,8,0.5)]';
+                              else colorClass = 'bg-rose-500 shadow-[0_0_2px_rgba(244,63,94,0.5)]';
+                            }
+                            return <div key={idx} className={`flex-1 h-full rounded-[1px] ${colorClass}`} />;
+                          })}
                         </div>
                       </div>
-                    </div>
 
-                    <div className="bg-slate-900/30 p-1.5 rounded border border-slate-900/40 flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-[9px] font-mono text-slate-500">
-                        <span>BAND B (VOICE EMCOM)</span>
-                        <span>RX ONLY</span>
-                      </div>
-                      <div className="flex items-baseline gap-1 mt-1">
-                        <span className="text-lg font-mono font-bold text-slate-400">430.825</span>
-                        <span className="text-[10px] font-mono text-slate-500">MHz</span>
-                      </div>
-                      {/* S-Meter */}
-                      <div className="flex items-center gap-1 mt-1">
-                        <span className="text-[8px] text-slate-500 font-mono">S:</span>
-                        <div className="flex-1 h-1.5 bg-slate-950 rounded overflow-hidden flex gap-0.5">
-                          <div className="w-1/6 h-full bg-emerald-600/40" />
-                          <div className="w-1/6 h-full bg-emerald-600/40" />
-                          <div className="w-1/6 h-full bg-neutral-800" />
-                          <div className="w-1/6 h-full bg-neutral-800" />
-                          <div className="w-1/6 h-full bg-neutral-800" />
-                          <div className="w-1/6 h-full bg-neutral-800" />
+                      {/* Calibrated readings */}
+                      {(() => {
+                        const d = getSMeterDetail(yaesuBandBSignal);
+                        return (
+                          <div className="flex justify-between items-center text-[7.5px] font-mono text-slate-400 mt-0.5 leading-none px-0.5 select-none animate-pulse" onClick={() => setYaesuBandBSignal(prev => prev >= 14 ? 1 : prev + 1)}>
+                            <span className="text-emerald-400 font-extrabold">{d.label}</span>
+                            <span>{d.dbm} dBm</span>
+                            <span className="text-slate-500">{d.uv}</span>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Direwolf and APRX Sync Status Banner */}
+                      {!yaesuSyncTnc && (
+                        <div className="mt-1.5 flex items-center justify-between text-[7.5px] font-mono border-t border-slate-900/50 pt-1">
+                          <div className="flex items-center gap-1 text-amber-500">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            <span>APRS: NO TNC SYNC (OFFLINE)</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -2874,8 +2980,10 @@ export default function AprsAdaptor({
                                 onChange={(e) => {
                                   const speed = parseInt(e.target.value, 10);
                                   setYaesuSpeed(speed);
-                                  // Recalculate beacon interval based on speed change
-                                  setYaesuBeaconIntervalSec(calculateSmartBeaconInterval(speed));
+                                  // Recalculate beacon interval based on speed change if SmartBeaconing is active
+                                  if (yaesuIsSmartBeaconActive) {
+                                    setYaesuBeaconIntervalSec(calculateSmartBeaconInterval(speed));
+                                  }
                                 }}
                                 className="w-full accent-cyan-500 mt-1 cursor-pointer h-1.5 rounded-lg bg-slate-800"
                               />
@@ -2907,8 +3015,12 @@ export default function AprsAdaptor({
                                 <span className="text-cyan-400 font-bold animate-pulse">{yaesuBeaconIntervalSec} seg</span>
                               </div>
                               <div className="flex justify-between">
-                                <span className="text-slate-500">Intervalo base dinámico:</span>
-                                <span className="text-slate-300 font-bold">{calculateSmartBeaconInterval(yaesuSpeed)}s</span>
+                                <span className="text-slate-500">
+                                  {yaesuIsSmartBeaconActive ? "Intervalo base dinámico:" : "Intervalo de baliza estática:"}
+                                </span>
+                                <span className="text-slate-300 font-bold">
+                                  {yaesuIsSmartBeaconActive ? `${calculateSmartBeaconInterval(yaesuSpeed)}s` : `${yaesuStaticBeaconInterval}s`}
+                                </span>
                               </div>
                               <div className="flex justify-between items-center">
                                 <span className="text-slate-500">Algoritmo SmartBeaconing:</span>
@@ -3147,55 +3259,103 @@ export default function AprsAdaptor({
             {/* COLUMNA DERECHA: DOCUMENTACIÓN DIDÁCTICA Y CONFIGURADOR DE SMARTBEACONING DE YAESU (5 columnas en XL) */}
             <div className="xl:col-span-5 flex flex-col gap-4">
               
-              {/* EXPLICACIÓN DEL MANUAL YAESU APRS */}
-              <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-4 flex flex-col gap-3 font-mono text-xs">
-                <div className="flex items-center gap-2 border-b border-slate-850 pb-2">
-                  <FileText size={15} className="text-orange-400" />
-                  <h3 className="text-sm font-sans font-bold text-slate-100 uppercase">ANÁLISIS DE BRECHA Y ESPECIFICACIÓN YAESU</h3>
-                </div>
-                
-                <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Siguiendo el manual técnico oficial de la <strong className="text-slate-200 font-bold">Yaesu FTM-400DR</strong> (Secciones APRS), hemos adaptado el comportamiento de enrutamiento móvil y posicionamiento al proyecto Pilar II:
-                </p>
-
-                <div className="space-y-2.5 text-[10px] text-slate-300 mt-1">
-                  <div className="p-2 rounded bg-slate-950 border border-slate-900">
-                    <span className="text-cyan-400 font-black">1. SmartBeaconing (Algoritmo Tony Arnerich)</span>
-                    <p className="text-slate-400 text-[9.5px] mt-1 leading-normal">
-                      Ajusta automáticamente el envío de balizas. Al estar estacionario o a baja velocidad (&lt; 5 Km/h), espacia las balizas hasta 30 min (1800s) para evitar colapsar la frecuencia. A alta velocidad (&gt; 70 Km/h), acorta el intervalo a 2 min (120s) para una traza precisa en mapa.
-                    </p>
-                  </div>
-
-                  <div className="p-2 rounded bg-slate-950 border border-slate-900">
-                    <span className="text-cyan-400 font-black">2. Corner-Pegging (Giro brusco por curvas)</span>
-                    <p className="text-slate-400 text-[9.5px] mt-1 leading-normal">
-                      Independientemente del temporizador, si la estación realiza un giro de trayectoria mayor a <strong className="text-yellow-400 font-bold">28 grados</strong> en carretera, la radio emite una baliza instantánea para que el trazo en el mapa de CECOP no dibuje rectas irreales, sino que copie fielmente la carretera.
-                    </p>
-                  </div>
-
-                  <div className="p-2 rounded bg-slate-950 border border-slate-900">
-                    <span className="text-cyan-400 font-black">3. S-D (Status/Data) Mode y S-Meter</span>
-                    <p className="text-slate-400 text-[9.5px] mt-1 leading-normal">
-                      La Yaesu FTM-400DR implementa una pantalla táctil dual donde se ve la intensidad de recepción RSSI de la red local (S-Meter analógico) y se leen los boletines meteorológicos (WX) y de alertas de emergencia de otros operadores con su rumbo y distancia real.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
               {/* AJUSTES ADICIONALES DE PARÁMETROS SMARTBEACONING DE YAESU */}
-              <div className="bg-slate-900/20 border border-slate-850 p-4 rounded-xl flex flex-col gap-3">
+              <div className="bg-slate-900/20 border border-slate-850 p-4 rounded-xl flex flex-col gap-4">
                 <span className="text-xs font-sans font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Sliders size={13} className="text-orange-400" />
-                  Ajustes Avanzados Yaesu APRS
+                  Ajustes de Transceptor y Calibración S-Meter
                 </span>
                 
-                <div className="space-y-3 font-mono text-[10px] text-slate-400">
-                  <div className="flex justify-between items-center bg-slate-950 p-2 rounded border border-slate-900">
+                <div className="space-y-4 font-mono text-[10px] text-slate-400">
+                  {/* TNC SYNC CONTROL WITH DIREWOLF & APRX */}
+                  <div className="bg-slate-950 p-3 rounded border border-slate-900 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-300 font-bold">Enlace Direwolf & APRX (Banda B)</span>
+                      <button
+                        onClick={() => {
+                          setYaesuSyncTnc(!yaesuSyncTnc);
+                          setYaesuSmartBeaconLog(l => [
+                            `[CONEXIÓN] Sincronización TNC (Direwolf/APRX) ${!yaesuSyncTnc ? 'CONECTADA' : 'DESCONECTADA'}`,
+                            ...l
+                          ]);
+                        }}
+                        className={`px-2.5 py-1 rounded text-slate-950 font-sans font-black text-[9px] cursor-pointer ${
+                          yaesuSyncTnc 
+                            ? 'bg-emerald-500 hover:bg-emerald-400' 
+                            : 'bg-amber-600 text-white hover:bg-amber-500'
+                        }`}
+                      >
+                        {yaesuSyncTnc ? 'CONECTADO (OK)' : 'DESCONECTADO (ERROR)'}
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                      La Banda B requiere acoplamiento con Direwolf (módem AFSK) y APRX (enrutador igate/digipeater) para operar funciones APRS-IS y radio-paquete.
+                    </p>
+                  </div>
+
+                  {/* S-METER CALIBRATORS */}
+                  <div className="bg-slate-950 p-3 rounded border border-slate-900 space-y-3">
+                    <span className="text-slate-300 font-bold block border-b border-slate-900 pb-1.5">
+                      CALIBRACIÓN DE INTENSIDAD RSSI (IARU VHF)
+                    </span>
+
+                    {/* Band A Slider */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[9px]">
+                        <span className="text-slate-400">Banda A (FM Voz) RSSI:</span>
+                        <span className="text-cyan-400 font-bold font-sans">
+                          {getSMeterDetail(yaesuBandASignal).label} ({getSMeterDetail(yaesuBandASignal).dbm} dBm / {getSMeterDetail(yaesuBandASignal).uv})
+                        </span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="14" 
+                        value={yaesuBandASignal} 
+                        onChange={(e) => setYaesuBandASignal(parseInt(e.target.value))}
+                        className="w-full accent-cyan-500 h-1 bg-slate-900 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Band B Slider */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[9px]">
+                        <span className="text-slate-400">Banda B (APRS) RSSI:</span>
+                        <span className="text-emerald-400 font-bold font-sans">
+                          {getSMeterDetail(yaesuBandBSignal).label} ({getSMeterDetail(yaesuBandBSignal).dbm} dBm / {getSMeterDetail(yaesuBandBSignal).uv})
+                        </span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="14" 
+                        value={yaesuBandBSignal} 
+                        onChange={(e) => setYaesuBandBSignal(parseInt(e.target.value))}
+                        className="w-full accent-emerald-500 h-1 bg-slate-900 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Quick Standard Reference Cheat Sheet */}
+                    <div className="bg-slate-900/40 p-2 rounded border border-slate-900 text-[8.5px] leading-relaxed font-sans text-slate-500 space-y-1">
+                      <div className="text-slate-400 font-bold font-mono">Norma de VHF IARU:</div>
+                      <div>• S9 de referencia es de <strong className="text-slate-300">-93 dBm (5 μV)</strong></div>
+                      <div>• S1-S8: Pasos de <strong className="text-slate-300">6 dBm</strong> por unidad S (ej. S8 = -99 dBm)</div>
+                      <div>• Por encima de S9: Exceso medido en decibelios (ej. S9+30dB = -63 dBm)</div>
+                    </div>
+                  </div>
+
+                  {/* Simulación de SmartBeaconing Toggle */}
+                  <div className="flex justify-between items-center bg-slate-950 p-2.5 rounded border border-slate-900">
                     <span>Simulación de SmartBeaconing</span>
                     <button
                       onClick={() => {
-                        setYaesuIsSmartBeaconActive(!yaesuIsSmartBeaconActive);
-                        setYaesuSmartBeaconLog(l => [`[SISTEMA] SmartBeaconing ${!yaesuIsSmartBeaconActive ? 'ACTIVADO' : 'DESACTIVADO'}`, ...l]);
+                        const nextVal = !yaesuIsSmartBeaconActive;
+                        setYaesuIsSmartBeaconActive(nextVal);
+                        setYaesuBeaconIntervalSec(nextVal ? calculateSmartBeaconInterval(yaesuSpeed) : yaesuStaticBeaconInterval);
+                        setYaesuSmartBeaconLog(l => [
+                          `[SISTEMA] SmartBeaconing ${nextVal ? 'ACTIVADO' : 'DESACTIVADO'}. Siguiente baliza en: ${nextVal ? calculateSmartBeaconInterval(yaesuSpeed) : yaesuStaticBeaconInterval}s`,
+                          ...l
+                        ]);
                       }}
                       className={`px-3 py-1 rounded text-slate-950 font-sans font-black text-[10px] cursor-pointer ${
                         yaesuIsSmartBeaconActive 
@@ -3205,6 +3365,44 @@ export default function AprsAdaptor({
                     >
                       {yaesuIsSmartBeaconActive ? 'ACTIVADO' : 'DESACTIVADO'}
                     </button>
+                  </div>
+
+                  {/* Configurable Station Beacon Interval */}
+                  <div className="bg-slate-950 p-3 rounded border border-slate-900 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-300 font-bold">Intervalo de Baliza Estática</span>
+                      <div className="flex bg-slate-900 rounded p-0.5 border border-slate-850">
+                        {[
+                          { label: '10 min', val: 600 },
+                          { label: '30 min', val: 1800 },
+                          { label: '60 min', val: 3600 }
+                        ].map(opt => (
+                          <button
+                            key={opt.val}
+                            onClick={() => {
+                              setYaesuStaticBeaconInterval(opt.val);
+                              if (!yaesuIsSmartBeaconActive) {
+                                setYaesuBeaconIntervalSec(opt.val);
+                              }
+                              setYaesuSmartBeaconLog(l => [
+                                `[AJUSTE] Intervalo estático configurado a ${opt.label} (${opt.val}s)`,
+                                ...l
+                              ]);
+                            }}
+                            className={`px-2 py-1 rounded text-[9px] font-sans font-extrabold transition-colors cursor-pointer ${
+                              yaesuStaticBeaconInterval === opt.val
+                                ? 'bg-orange-500 text-slate-950 font-black'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                      Determina la frecuencia con la que se transmite la baliza de posición fija o de reposo cuando no se está utilizando el algoritmo dinámico de SmartBeaconing.
+                    </p>
                   </div>
 
                   <div className="bg-slate-950 p-2.5 rounded border border-slate-900 space-y-2">
@@ -3223,7 +3421,9 @@ export default function AprsAdaptor({
                   </div>
 
                   <button
+                    disabled={!yaesuSyncTnc}
                     onClick={() => {
+                      if (!yaesuSyncTnc) return;
                       setYaesuTxActive(true);
                       playPacketAfsktone();
                       
@@ -3264,10 +3464,14 @@ export default function AprsAdaptor({
                       setYaesuBeaconIntervalSec(calculateSmartBeaconInterval(yaesuSpeed));
                       setTimeout(() => setYaesuTxActive(false), 800);
                     }}
-                    className="w-full bg-orange-600 hover:bg-orange-500 text-slate-950 font-sans font-black text-xs py-2 rounded flex items-center justify-center gap-1.5 shadow-lg shadow-orange-950/20 cursor-pointer"
+                    className={`w-full font-sans font-black text-xs py-2 rounded flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition-all ${
+                      yaesuSyncTnc
+                        ? 'bg-orange-600 hover:bg-orange-500 text-slate-950 shadow-orange-950/20'
+                        : 'bg-slate-850 text-slate-600 cursor-not-allowed border border-slate-900'
+                    }`}
                   >
                     <Send size={13} />
-                    FORZAR TRANSMISIÓN DE BALIZA YAESU (TX NOW)
+                    {yaesuSyncTnc ? 'FORZAR TRANSMISIÓN DE BALIZA YAESU (TX NOW)' : 'BANDA B DESCONECTADA (SINCRO REQUERIDA)'}
                   </button>
                 </div>
               </div>
@@ -3992,7 +4196,7 @@ export default function AprsAdaptor({
           </div>
         )}
 
-        {innerTab === 'traductor' && (
+        {false && (
           <div className="border border-slate-850 rounded-xl bg-slate-950/30 p-6 space-y-4 max-w-4xl mx-auto flex flex-col justify-start min-h-[500px] font-sans">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-850/60 pb-3">
               <div className="flex items-center gap-2">

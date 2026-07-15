@@ -1769,7 +1769,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Card 0: Consola Clima Solar y Propagación HF (Relocated) */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+        <div className="lg:col-span-12 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 text-amber-500/5 pointer-events-none">
             <Sun size={80} />
           </div>
@@ -1784,7 +1784,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-4">
               {/* SFU */}
               <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center flex flex-col justify-between">
                 <div>
@@ -2215,53 +2215,6 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
                 Sincronización solar NOAA: {noaa.solar_updated}
               </span>
             )}
-          </div>
-        </div>
-
-        {/* Card 4: Real-Time Gauge/Chart Trend */}
-        <div className="lg:col-span-8 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-xs font-bold text-slate-400 uppercase tracking-wider">GEOMAGNETIC TREND</span>
-              <TrendingUp size={14} className="text-indigo-500" />
-            </div>
-
-            <h3 className="font-sans font-bold text-base text-slate-700 mt-2">
-              Tendencia de Índices Hp
-            </h3>
-
-            {/* Recharts trend visualization */}
-            <div className="h-52 mt-4" id="hp-chart-container">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} />
-                  <YAxis domain={[0, 9]} stroke="#94a3b8" fontSize={9} ticks={[0, 3, 5, 7, 9]} />
-                  <Tooltip 
-                    contentStyle={{ fontSize: '10px', borderRadius: '8px' }}
-                    labelStyle={{ fontWeight: 'bold' }}
-                  />
-                  <ReferenceLine y={4} stroke="#f97316" strokeDasharray="3 3" label={{ value: 'Activo', fill: '#ea580c', fontSize: 8, position: 'insideRight' }} />
-                  <ReferenceLine y={5} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Alerta', fill: '#dc2626', fontSize: 8, position: 'insideRight' }} />
-                  <Area type="monotone" dataKey="Hp30" stroke="#0ea5e9" fill="url(#colorHp30)" strokeWidth={1.5} />
-                  <Area type="monotone" dataKey="Hp60" stroke="#6366f1" fill="url(#colorHp60)" strokeWidth={1.5} />
-                  <defs>
-                    <linearGradient id="colorHp30" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorHp60" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="flex justify-between items-center text-[10px] font-sans text-slate-400 border-t border-slate-100 pt-3 mt-4">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-500"></span> Hp30 (30 min)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> Hp60 (1 hora)</span>
           </div>
         </div>
       </div>

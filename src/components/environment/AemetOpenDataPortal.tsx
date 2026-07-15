@@ -1550,7 +1550,7 @@ except Exception as e:
             <div>
               <h3 className="font-sans font-extrabold text-sm text-yellow-400 flex items-center gap-1.5 uppercase tracking-wider">
                 <Radio className="animate-pulse" size={15} />
-                Estación Meteorológica REMER / AEMET - Consola Virtual
+                Consola Estación Meteorológica
               </h3>
               <p className="text-xs text-slate-400 font-sans mt-0.5 leading-relaxed">
                 Emulación digital interactiva de un receptor de telemetría exterior de radioaficionados (APRS-IS), capturando lecturas ambientales directas.
@@ -2051,64 +2051,6 @@ except Exception as e:
 
             </div>
 
-          </div>
-
-          {/* APRS RAW PACKET EXPLORER (Interactive) */}
-          <div className="bg-slate-950 border border-slate-900 rounded-xl p-4.5 space-y-3 shadow-md" id="aprs-packet-translator">
-            <div className="flex flex-col gap-1">
-              <h4 className="font-sans font-bold text-xs text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
-                <Terminal size={14} className="text-[#10b981]" />
-                Traductor Técnico de Tramas APRS Ambientales
-              </h4>
-              <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
-                Los paquetes APRS emitidos por estaciones de radio contienen series analógicas codificadas para optimizar el ancho de banda radial. Pasa el cursor por cada bloque para aislar los sensores.
-              </p>
-            </div>
-
-            {/* Raw string block splitter */}
-            <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-900 font-mono text-xs flex flex-wrap gap-0.5 items-center font-black select-none tracking-wider justify-center">
-              {tokens.map((tok) => {
-                const matches = activeExplainToken === tok.code;
-                return (
-                  <span
-                    key={tok.code}
-                    onMouseEnter={() => setActiveExplainToken(tok.code)}
-                    onMouseLeave={() => setActiveExplainToken(null)}
-                    onClick={() => setActiveExplainToken(matches ? null : tok.code)}
-                    className={`px-1.5 rounded transition-all cursor-help py-1 border ${
-                      matches 
-                        ? 'bg-emerald-950/80 border-emerald-500 ' + tok.color 
-                        : 'bg-slate-950/40 border-transparent hover:bg-slate-900 ' + tok.color
-                    }`}
-                  >
-                    {tok.code}
-                  </span>
-                );
-              })}
-            </div>
-
-            {/* active explain tooltip display */}
-            <div className="min-h-[55px] font-mono text-xs bg-slate-900/20 p-3 rounded-lg border border-slate-900">
-              {activeExplainToken ? (
-                (() => {
-                  const tok = tokens.find(t => t.code === activeExplainToken);
-                  if (!tok) return null;
-                  return (
-                    <div>
-                      <div className="font-extrabold text-[#10b981] flex items-center gap-1.5 text-xs">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                        {tok.label} (Token: `{tok.code.trim()}`)
-                      </div>
-                      <p className="text-[11px] text-slate-350 mt-1 leading-normal">{tok.desc}</p>
-                    </div>
-                  );
-                })()
-              ) : (
-                <div className="text-[10px] text-slate-500 font-sans italic text-center py-2">
-                  Coloque el puntero sobre los bloques decodificadores superiores para traducir la telemetría de radioaficiones.
-                </div>
-              )}
-            </div>
           </div>
 
           {/* IQAir Quality Monitor Panel */}

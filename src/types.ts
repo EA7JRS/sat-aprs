@@ -147,6 +147,7 @@ export interface TelemetryConfig {
   minMagnitudBaliza?: number;
   minMagnitudAlertaVisual?: number;
   autoGenerarBoletinEmergencia?: boolean;
+  enableForecastBulletin?: boolean;
   pollIntervalAemet?: number;
   pollIntervalJrc?: number;
   pollIntervalIgn?: number;

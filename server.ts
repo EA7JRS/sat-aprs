@@ -103,6 +103,7 @@ let config: TelemetryConfig = {
   minMagnitudBaliza: 4.0,
   minMagnitudAlertaVisual: 3.0,
   autoGenerarBoletinEmergencia: true,
+  enableForecastBulletin: false,
   pollIntervalAemet: 1,
   pollIntervalJrc: 5,
   pollIntervalIgn: 2,
@@ -1780,6 +1781,7 @@ function generateMockForecast(lat: number, lon: number): ForecastDay[] {
 }
 
 function broadcastForecastBulletin(forecast: ForecastDay[]) {
+  if (!config.enableForecastBulletin) return;
   if (!forecast || forecast.length === 0) return;
   // Construct a concise forecast summary (3 days)
   const summaryDays = forecast.slice(0, 3).map(day => {
@@ -6606,6 +6608,7 @@ app.post('/api/config', (req, res) => {
     if (updated.minMagnitudBaliza !== undefined) config.minMagnitudBaliza = parseFloat(updated.minMagnitudBaliza.toString());
     if (updated.minMagnitudAlertaVisual !== undefined) config.minMagnitudAlertaVisual = parseFloat(updated.minMagnitudAlertaVisual.toString());
     if (updated.autoGenerarBoletinEmergencia !== undefined) config.autoGenerarBoletinEmergencia = !!updated.autoGenerarBoletinEmergencia;
+    if (updated.enableForecastBulletin !== undefined) config.enableForecastBulletin = !!updated.enableForecastBulletin;
     if (updated.pollIntervalAemet !== undefined) config.pollIntervalAemet = parseInt(updated.pollIntervalAemet.toString());
     if (updated.pollIntervalJrc !== undefined) config.pollIntervalJrc = parseInt(updated.pollIntervalJrc.toString());
     if (updated.pollIntervalIgn !== undefined) config.pollIntervalIgn = parseInt(updated.pollIntervalIgn.toString());
@@ -6771,6 +6774,7 @@ pollIntervalIca = ${config.pollIntervalIca !== undefined ? config.pollIntervalIc
 enableAprsIca = ${config.enableAprsIca !== false}
 # Filtrar transmisión de cambio de estado a partir de Regular
 enableAprsIcaFilterRegular = ${config.enableAprsIcaFilterRegular !== false}
+enableForecastBulletin = ${config.enableForecastBulletin === true}
 icaTemplateBuena = ${config.icaTemplateBuena || ''}
 icaTemplateRegular = ${config.icaTemplateRegular || ''}
 icaTemplateDesfavorable = ${config.icaTemplateDesfavorable || ''}

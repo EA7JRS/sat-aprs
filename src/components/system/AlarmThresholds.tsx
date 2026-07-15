@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Radio, Megaphone, Save, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { ShieldAlert, Radio, Megaphone, Save, Check, AlertCircle, Sparkles, Cloud } from 'lucide-react';
 import { TelemetryConfig } from '../../types';
 
 interface AlarmThresholdsProps {
@@ -12,6 +12,7 @@ export default function AlarmThresholds({ config, onSaveConfig, currentUser }: A
   const [minMagnitudBaliza, setMinMagnitudBaliza] = useState(config.minMagnitudBaliza ?? 4.0);
   const [minMagnitudAlertaVisual, setMinMagnitudAlertaVisual] = useState(config.minMagnitudAlertaVisual ?? 3.0);
   const [autoGenerarBoletinEmergencia, setAutoGenerarBoletinEmergencia] = useState(config.autoGenerarBoletinEmergencia ?? true);
+  const [enableForecastBulletin, setEnableForecastBulletin] = useState(config.enableForecastBulletin ?? false);
   const [ignSeismoEnabled, setIgnSeismoEnabled] = useState(config.ignSeismoEnabled ?? true);
   const [tsunamiMonitorEnabled, setTsunamiMonitorEnabled] = useState(config.tsunamiMonitorEnabled ?? true);
   
@@ -29,6 +30,7 @@ export default function AlarmThresholds({ config, onSaveConfig, currentUser }: A
       minMagnitudBaliza: parseFloat(minMagnitudBaliza.toString()),
       minMagnitudAlertaVisual: parseFloat(minMagnitudAlertaVisual.toString()),
       autoGenerarBoletinEmergencia: !!autoGenerarBoletinEmergencia,
+      enableForecastBulletin: !!enableForecastBulletin,
       ignSeismoEnabled: !!ignSeismoEnabled,
       tsunamiMonitorEnabled: !!tsunamiMonitorEnabled
     };
@@ -191,6 +193,28 @@ export default function AlarmThresholds({ config, onSaveConfig, currentUser }: A
             </label>
             <p className="text-[10px] text-slate-500 leading-relaxed">
               Trasmite de forma paralela un boletín general de alta prioridad (<span className="text-red-400 font-semibold font-mono">::BLN1</span>) avisando a todos los nodos con la etiqueta <span className="bg-slate-950 px-1 py-0.5 rounded text-red-400">EMERGENCIA SISMICA</span> para activar las alarmas sonoras civiles.
+            </p>
+          </div>
+        </div>
+
+        {/* boolean checkbox: forecast bulletin */}
+        <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-900/60 flex items-start gap-3">
+          <div className="flex items-center h-4 mt-0.5">
+            <input
+              type="checkbox"
+              id="forecast-bulletin-checkbox"
+              checked={enableForecastBulletin}
+              onChange={(e) => setEnableForecastBulletin(e.target.checked)}
+              className="w-3.5 h-3.5 text-blue-600 bg-slate-950 border-slate-800 rounded focus:ring-blue-500 focus:ring-2 accent-blue-600"
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="forecast-bulletin-checkbox" className="text-slate-300 font-bold flex items-center gap-1.5 cursor-pointer">
+              <Cloud size={13} className="text-blue-500 shrink-0" />
+              Emitir Boletín de Pronóstico Meteorológico (BLN3)
+            </label>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Transmite periódicamente un boletín con el pronóstico de previsión de 3 a 5 días (<span className="text-blue-400 font-semibold font-mono">::BLN3</span>) para operadores civiles de la red REMER S.A.T.
             </p>
           </div>
         </div>

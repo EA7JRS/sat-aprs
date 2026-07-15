@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   Lock,
   Sliders,
-  Play
+  Play,
+  Cloud
 } from 'lucide-react';
 import TwoFactorConfigurator from './TwoFactorConfigurator';
 
@@ -82,6 +83,7 @@ export default function UserProfileManager({
   const [minMagnitudAlertaVisual, setMinMagnitudAlertaVisual] = useState(3.0);
   const [minMagnitudBaliza, setMinMagnitudBaliza] = useState(4.0);
   const [autoGenerarBoletinEmergencia, setAutoGenerarBoletinEmergencia] = useState(true);
+  const [enableForecastBulletin, setEnableForecastBulletin] = useState(false);
   const [ignSeismoEnabled, setIgnSeismoEnabled] = useState(true);
   const [tsunamiMonitorEnabled, setTsunamiMonitorEnabled] = useState(true);
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(true);
@@ -132,6 +134,7 @@ export default function UserProfileManager({
       setMinMagnitudAlertaVisual(prefs.minMagnitudAlertaVisual ?? 3.0);
       setMinMagnitudBaliza(prefs.minMagnitudBaliza ?? 4.0);
       setAutoGenerarBoletinEmergencia(prefs.autoGenerarBoletinEmergencia ?? true);
+      setEnableForecastBulletin(prefs.enableForecastBulletin ?? false);
       setIgnSeismoEnabled(prefs.ignSeismoEnabled ?? true);
       setTsunamiMonitorEnabled(prefs.tsunamiMonitorEnabled ?? true);
       setSoundAlertsEnabled(prefs.soundAlertsEnabled ?? true);
@@ -237,6 +240,7 @@ export default function UserProfileManager({
           minMagnitudAlertaVisual: parseFloat(minMagnitudAlertaVisual.toString()),
           minMagnitudBaliza: parseFloat(minMagnitudBaliza.toString()),
           autoGenerarBoletinEmergencia: !!autoGenerarBoletinEmergencia,
+          enableForecastBulletin: !!enableForecastBulletin,
           ignSeismoEnabled: !!ignSeismoEnabled,
           tsunamiMonitorEnabled: !!tsunamiMonitorEnabled,
           soundAlertsEnabled: !!soundAlertsEnabled,
@@ -942,6 +946,21 @@ export default function UserProfileManager({
                       <Radio size={11} className="text-emerald-500" /> Boletines APRS
                     </span>
                     <span className="text-[9px] text-slate-500 font-sans">Autogeneración ::BLN1</span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 bg-slate-950/40 rounded-lg border border-slate-900 cursor-pointer hover:bg-slate-950/80 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={enableForecastBulletin}
+                    onChange={(e) => setEnableForecastBulletin(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 bg-slate-950 border-slate-800 rounded focus:ring-emerald-500 accent-emerald-500 mt-0.5"
+                  />
+                  <div className="leading-tight">
+                    <span className="font-bold text-slate-300 block flex items-center gap-1">
+                      <Cloud size={11} className="text-emerald-500" /> Previsión (BLN3)
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-sans">Boletín clima 3-5 días</span>
                   </div>
                 </label>
               </div>

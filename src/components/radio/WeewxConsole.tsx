@@ -549,53 +549,6 @@ export default function WeewxConsole({ weather, iqair, callsign }: WeewxConsoleP
 
             {/* Quick driver side bar parameters config (cols: 4) */}
             <div className="xl:col-span-4 flex flex-col gap-3.5">
-              
-              {/* Architecture and data flows information */}
-              <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3.5 flex flex-col justify-between gap-3.5">
-                <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block border-b border-slate-800 pb-1.5">
-                  ESQUEMA DE CONTROLADOR DEL DRIVER
-                </span>
-                
-                <div className="space-y-3 font-mono text-xs">
-                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-                    <span className="text-[9px] text-amber-500 uppercase font-bold block mb-1">Inyecciones Simulación:</span>
-                    <p className="text-[10.5px] text-slate-400 leading-normal mb-2">
-                      Inyecta un dato extremo o una tormenta de prueba en el acumulador del motor WeeWX para gatillar alertas en el SAT:
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-2">
-                      <button 
-                        onClick={() => {
-                          const randWind = parseFloat((35 + Math.random() * 15).toFixed(1));
-                          triggerAction('storm', 'simulate test high-wind hurricane storm');
-                          setWeewxLogs(prev => [...prev, `[SIMULATE] Triggered extreme weather alert. Injecting extreme wind frame: speed=${randWind}kts, gust=${randWind + 12}kts. outTemp=14.2C`]);
-                        }}
-                        className="p-1 px-2 text-[10px] bg-red-955/35 border border-red-500/20 text-red-300 hover:bg-red-950/45 rounded font-bold transition-all cursor-pointer text-center"
-                      >
-                        ⚡ Tormenta Viento
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const randRain = parseFloat((12 + Math.random() * 8).toFixed(1));
-                          triggerAction('rain', 'simulate test critical flashflood precipitation');
-                          setWeewxLogs(prev => [...prev, `[SIMULATE] Triggered critical flood alert. Injecting flashflood rain frame: rain1h=${randRain}mm, rain24h=${randRain + 20}mm`]);
-                        }}
-                        className="p-1 px-2 text-[10px] bg-blue-955/35 border border-blue-500/20 text-blue-300 hover:bg-blue-950/45 rounded font-bold transition-all cursor-pointer text-center"
-                      >
-                        ⛈️ Lluvia Torrencial
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-850 text-[10px] text-slate-400 leading-normal">
-                    <span className="text-emerald-400 font-bold block mb-1 font-sans">Compilados de Reportes HTML:</span>
-                    <p className="text-[9px] leading-relaxed mb-1.5">
-                      WeeWX almacena los históricos en SQLite y un motor secundario compila ficheros HTML y gráficas utilizando el motor de skins de python.
-                    </p>
-                    <span className="text-slate-500 font-mono italic">Directorios locales: `/var/www/html/weewx`</span>
-                  </div>
-                </div>
-              </div>
 
               {/* Mini logs widget console inside the column */}
               <div className="bg-slate-950 border border-slate-900 rounded-xl p-3 flex flex-col font-mono text-[10px]">

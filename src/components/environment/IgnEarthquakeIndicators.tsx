@@ -190,7 +190,7 @@ export default function IgnEarthquakeIndicators({
         const permission = await Notification.requestPermission();
         setNotificationPermission(permission);
         if (permission === 'granted') {
-          const testNotif = new Notification("SAT Sismógrafo - Alertas Activas", {
+          const testNotif = new Notification("SAT Detector Sísmico - Alertas Activas", {
             body: `Recibirás alertas de escritorio para sismos de magnitud ≥ ${userThreshold.toFixed(1)} en el área.`,
             tag: "sat-test-notification"
           });
@@ -908,7 +908,7 @@ export default function IgnEarthquakeIndicators({
           }`}
         >
           <Radio size={14} className={subTab === 'live-detector' ? 'text-rose-400 animate-pulse' : 'text-slate-400'} />
-          <span>Sismógrafo e IGN Detector</span>
+          <span>Detector Sísmico IGN</span>
           <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[8.5px] font-mono px-1.5 rounded uppercase tracking-tight">
             En Directo
           </span>
@@ -945,98 +945,8 @@ export default function IgnEarthquakeIndicators({
 
       {subTab === 'live-detector' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* COL 1: SEISMOGRAPH ENGINE (7 COLS) */}
+          {/* COL 1: SEISMIC DETECTOR & EARTHQUAKES (7 COLS) */}
           <div className="lg:col-span-7 flex flex-col gap-4 animate-fade-in">
-            <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 shadow-md relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl pointer-events-none" />
-              
-              <div className="flex items-center justify-between border-b border-slate-900 pb-2">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Sismógrafo S.A.T Analógico/Digital
-                  </span>
-                  <h3 className="font-sans font-extrabold text-sm text-slate-200">Registrador de Ondas en Tiempo Real</h3>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setIsSoundEnabled(!isSoundEnabled)}
-                    className={`p-1.5 rounded border text-[10px] flex items-center gap-1 transition-all cursor-pointer ${
-                      isSoundEnabled 
-                        ? 'bg-rose-950/40 border-rose-500/30 text-rose-300' 
-                        : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
-                    }`}
-                    title={isSoundEnabled ? 'Silenciar sonido de temblor' : 'Activar zumbido de terremoto'}
-                  >
-                    {isSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                    <span className="font-mono">{isSoundEnabled ? 'AUDIO ON' : 'MUTED'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Seismograph canvas */}
-              <div className="bg-slate-950/90 border border-slate-900/60 rounded-lg h-[240px] relative overflow-hidden flex flex-col items-center justify-center p-1">
-                <canvas 
-                  ref={canvasRef} 
-                  width={640} 
-                  height={240} 
-                  className="w-full h-full cursor-crosshair"
-                />
-                <div className="absolute top-2 left-2 flex flex-col gap-0.5 bg-slate-950/80 border border-slate-900 p-1.5 rounded font-mono text-[9px] text-slate-400 leading-none">
-                  <div>TASA: <span className="text-emerald-400 font-bold">50 Hz</span></div>
-                  <div>SENSIBILIDAD: <span className="text-slate-300 font-bold">{(seismographSensitivity * 100).toFixed(0)}%</span></div>
-                </div>
-
-                <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-slate-950/80 border border-slate-900 p-1 rounded font-mono text-[9px] leading-none">
-                  <span className="text-slate-500">AMP ACTUAL:</span>
-                  <span className={`font-black ${Math.abs(currentAmplitudeRef.current) > 15 ? 'text-rose-400' : Math.abs(currentAmplitudeRef.current) > 4 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {(currentAmplitudeRef.current * 10).toFixed(2)} nm/s
-                  </span>
-                </div>
-              </div>
-
-              {/* Seismograph calibration and simulation controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 border-t border-slate-900/40 pt-3">
-                <div className="sm:col-span-5 space-y-1">
-                  <label className="text-[10px] text-slate-400 font-mono flex justify-between leading-none">
-                    <span>SENSIBILIDAD FÍSICA:</span>
-                    <span className="font-bold text-slate-300">x{seismographSensitivity.toFixed(1)}</span>
-                  </label>
-                  <input 
-                    type="range"
-                    min="0.5"
-                    max="3.0"
-                    step="0.1"
-                    value={seismographSensitivity}
-                    onChange={(e) => setSeismographSensitivity(parseFloat(e.target.value))}
-                    className="w-full accent-rose-500 h-1 bg-slate-900 rounded cursor-pointer"
-                  />
-                </div>
-
-                <div className="sm:col-span-7 flex flex-wrap gap-1.5 items-end justify-start sm:justify-end">
-                  <span className="text-[9px] text-slate-500 font-mono uppercase block w-full text-left sm:text-right mb-0.5">Simular Temblor:</span>
-                  <button
-                    onClick={() => triggerSimulation(1.8, 45)}
-                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-[10px] font-mono rounded cursor-pointer transition-all"
-                  >
-                    M 1.8 (Covaleda)
-                  </button>
-                  <button
-                    onClick={() => triggerSimulation(4.2, 110)}
-                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-[10px] font-mono rounded cursor-pointer transition-all"
-                  >
-                    M 4.2 (Salar, GR)
-                  </button>
-                  <button
-                    onClick={() => triggerSimulation(6.5, 300)}
-                    className="px-2.5 py-1 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/40 text-rose-300 text-[10px] font-mono rounded cursor-pointer transition-all"
-                  >
-                    M 6.5 (Terremoto Mayor)
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* List of Earthquakes currently within configured Max Radio */}
             <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-900 pb-2">
@@ -1225,16 +1135,6 @@ export default function IgnEarthquakeIndicators({
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  triggerSimulation(eq.magnitud, eq.calculatedDist);
-                                }}
-                                className="p-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-900 hover:border-slate-800 rounded text-slate-400 hover:text-rose-400 cursor-pointer transition-all animate-none"
-                                title="Simular en el sismógrafo"
-                              >
-                                <Activity size={12} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
                                   onRelocate(eq.latitude, eq.longitude);
                                 }}
                                 className="p-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-900 hover:border-slate-800 rounded text-slate-400 hover:text-rose-400 cursor-pointer transition-all animate-none"
@@ -1325,14 +1225,6 @@ export default function IgnEarthquakeIndicators({
                           <ExternalLink size={11} />
                           <span>Ver Ficha Oficial IGN</span>
                         </a>
-                        
-                        <button
-                          onClick={() => triggerSimulation(selectedEarthquake.magnitud, selectedEarthquake.calculatedDist)}
-                          className="w-full py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-900 text-slate-300 text-[10px] font-bold rounded flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                        >
-                          <Activity size={11} />
-                          <span>Simular en Sismógrafo</span>
-                        </button>
                       </div>
                     </motion.div>
                   )}
@@ -1680,24 +1572,13 @@ export default function IgnEarthquakeIndicators({
                       <span>Ver Ficha Oficial en el IGN</span>
                     </a>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => {
-                          triggerSimulation(nearestEarthquake.magnitud, nearestEarthquake.calculatedDist);
-                        }}
-                        className="py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-[10px] font-bold rounded flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                      >
-                        <Activity size={12} />
-                        <span>Simular Onda</span>
-                      </button>
                       <button
                         onClick={() => onRelocate(nearestEarthquake.latitude, nearestEarthquake.longitude)}
-                        className="py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-[10px] font-bold rounded flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-[10px] font-bold rounded flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                       >
                         <Compass size={12} />
                         <span>Centrar Radar</span>
                       </button>
-                    </div>
                   </div>
                 </div>
               ) : (

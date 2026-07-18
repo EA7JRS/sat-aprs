@@ -106,7 +106,7 @@ let config: TelemetryConfig = {
   enableForecastBulletin: false,
   pollIntervalAemet: 1,
   pollIntervalJrc: 5,
-  pollIntervalIgn: 2,
+  pollIntervalIgn: 1,
   pollIntervalIca: 30,
   enableAprsIca: true,
   enableAprsIcaFilterRegular: true,
@@ -2723,8 +2723,11 @@ async function refreshEarthquakes() {
         return eqEvent;
       });
 
-      // Sort by recency and always show real fetched recent earthquakes directly without filter
-      const sorted = parsed.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      // Filter by the last 24h (86400000 ms) and sort by recency
+      const limitTime = Date.now() - 24 * 60 * 60 * 1000;
+      const sorted = parsed
+        .filter(e => new Date(e.time).getTime() >= limitTime)
+        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
       earthquakes = sorted;
 
       // If any earthquake is "in range" and exceeds beacon magnitude threshold, announce transmission

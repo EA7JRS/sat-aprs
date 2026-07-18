@@ -2518,10 +2518,8 @@ async function refreshTsunamis() {
       }
     }
 
-    // Filter to only include alerts since the system was turned ON (comenzar registros)
-    tsunamiAlerts = fetchedAlerts.filter(
-      (a) => new Date(a.time).getTime() >= systemPowerOnTime
-    ).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    // Sort by recency and show all real fetched tsunami alerts directly
+    tsunamiAlerts = fetchedAlerts.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   } catch (err: any) {
     console.error("Error refreshing Tsunami telemetry:", err ? err.message : err);
@@ -2619,33 +2617,57 @@ async function refreshEarthquakes() {
     return;
   }
   try {
-    // 1. Try IGN Spain institutional service (FDSNWS query)
+    // 1. Try IGN Spain visualizadores (tproximos) real-time dataset
     let fetchedSismos: any[] = [];
-    const ignUrl = 'https://institucionales.ign.es/fdsnws/event/1/query?format=geojson&limit=150&minmagnitude=1.0';
+    const tProximosUrl = 'https://www.ign.es/web/resources/sismologia/tproximos/todos_visualizadores.js';
     
-    addLog('SYS', 'IGN', 'LOCAL', 'FDSN_API', 'Consultando sismografía del IGN España...', true, 'Sincronización');
+    addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', 'Consultando sismografía de visualizadores (tproximos) de IGN España...', true, 'Sincronización');
     
     try {
-      const response = await fetch(ignUrl, { signal: AbortSignal.timeout(6000) });
+      const response = await fetch(tProximosUrl, { signal: AbortSignal.timeout(6000) });
       if (response.ok) {
-        const geo = await response.json();
+        let rawText = await response.text();
+        rawText = rawText.trim();
+        if (rawText.startsWith('var tproximos =')) {
+          rawText = rawText.substring('var tproximos ='.length).trim();
+        }
+        if (rawText.endsWith(';')) {
+          rawText = rawText.substring(0, rawText.length - 1).trim();
+        }
+        const geo = JSON.parse(rawText);
         if (geo.features && Array.isArray(geo.features)) {
           fetchedSismos = geo.features;
-          addLog('SYS', 'IGN', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde IGN de España.`, true, 'Servicios');
+          addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde visualizadores.ign.es/tproximos.`, true, 'Servicios');
         }
+      } else {
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch (e) {
-      addLog('SYS', 'IGN_FALLBACK', 'LOCAL', 'FDSN', 'Fallo conexión directa IGN. Intentando fallback USGS...', false, 'Reintentando');
+    } catch (e: any) {
+      addLog('SYS', 'IGN_VIS_ERR', 'LOCAL', 'API', `Fallo obteniendo sismos de tproximos (${e.message}). Probando API institucional...`, false, 'Fallback');
       
-      // Autumn/Winter earthquakes query on USGS for Spain bounding box / region
-      // Spain covers: 35N to 44N, -10W to 4E
-      const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=34&maxlatitude=44&minlongitude=-10&maxlongitude=5&limit=100&minmagnitude=1.0`;
-      const resUsgs = await fetch(usgsUrl, { signal: AbortSignal.timeout(5000) });
-      if (resUsgs.ok) {
-        const geoUsgs = await resUsgs.json();
-        if (geoUsgs.features && Array.isArray(geoUsgs.features)) {
-          fetchedSismos = geoUsgs.features;
-          addLog('SYS', 'USGS', 'LOCAL', 'FALLBACKAPI', `Recuperados ${fetchedSismos.length} sismos regionales mediante USGS.`, true, 'Aislado ok');
+      const ignUrl = 'https://institucionales.ign.es/fdsnws/event/1/query?format=geojson&limit=150&minmagnitude=1.0';
+      try {
+        const response = await fetch(ignUrl, { signal: AbortSignal.timeout(6000) });
+        if (response.ok) {
+          const geo = await response.json();
+          if (geo.features && Array.isArray(geo.features)) {
+            fetchedSismos = geo.features;
+            addLog('SYS', 'IGN', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde la API institucional del IGN.`, true, 'Servicios');
+          }
+        }
+      } catch (err) {
+        addLog('SYS', 'IGN_FALLBACK', 'LOCAL', 'FDSN', 'Fallo conexión directa IGN. Intentando fallback USGS...', false, 'Reintentando');
+        
+        // Autumn/Winter earthquakes query on USGS for Spain bounding box / region
+        // Spain covers: 35N to 44N, -10W to 4E
+        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=34&maxlatitude=44&minlongitude=-10&maxlongitude=5&limit=100&minmagnitude=1.0`;
+        const resUsgs = await fetch(usgsUrl, { signal: AbortSignal.timeout(5000) });
+        if (resUsgs.ok) {
+          const geoUsgs = await resUsgs.json();
+          if (geoUsgs.features && Array.isArray(geoUsgs.features)) {
+            fetchedSismos = geoUsgs.features;
+            addLog('SYS', 'USGS', 'LOCAL', 'FALLBACKAPI', `Recuperados ${fetchedSismos.length} sismos regionales mediante USGS.`, true, 'Aislado ok');
+          }
         }
       }
     }
@@ -2653,14 +2675,17 @@ async function refreshEarthquakes() {
     if (fetchedSismos.length > 0) {
       // Map structures to our internal EarthquakeEvent
       const parsed: EarthquakeEvent[] = fetchedSismos.map((f: any) => {
-        const props = f.properties;
-        const geom = f.geometry;
-        const lon = geom.coordinates[0];
-        const lat = geom.coordinates[1];
-        const depth = geom.coordinates[2] || 0;
-        const mag = props.mag || 2.1;
+        const props = f.properties || {};
+        const geom = f.geometry || {};
+        const coordinates = geom.coordinates || [0, 0, 0];
+        const lon = coordinates[0];
+        const lat = coordinates[1];
         
-        let loc = props.place || 'Península Ibérica';
+        // Extract depth and magnitude supporting string / number types
+        const depth = props.depth !== undefined ? parseFloat(props.depth) : (coordinates[2] || 0);
+        const mag = props.mag !== undefined ? parseFloat(props.mag) : (props.magnitud || 2.1);
+        
+        let loc = props.loc || props.place || 'Península Ibérica';
         // Clean place if from USGS (e.g., "10 km SW of Granada, Spain" -> "Granada, ES")
         if (loc.includes('of')) {
           loc = loc.split('of')[1].trim();
@@ -2669,14 +2694,22 @@ async function refreshEarthquakes() {
         const dist = calculateDistance(gpsdState.lat, gpsdState.lon, lat, lon);
         const enRango = dist <= config.filterRadiusKm;
 
+        let sismoTime: string;
+        if (props.fecha) {
+          const utcStr = props.fecha.includes('T') ? props.fecha : props.fecha.replace(' ', 'T') + 'Z';
+          sismoTime = new Date(utcStr).toISOString();
+        } else {
+          sismoTime = new Date(props.time || Date.now()).toISOString();
+        }
+
         const eqEvent: EarthquakeEvent = {
-          id: f.id || props.code || `eq_${Date.now()}_${Math.random()}`,
-          time: new Date(props.time || Date.now()).toISOString(),
+          id: f.id || props.evid || props.code || `eq_${Date.now()}_${Math.random()}`,
+          time: sismoTime,
           latitude: lat,
           longitude: lon,
           depthKm: depth,
           magnitud: mag,
-          magType: props.magType || 'mbLg',
+          magType: props.magtype || props.magType || 'mbLg',
           localizacion: loc,
           distanciaKm: dist,
           enRango
@@ -2690,10 +2723,9 @@ async function refreshEarthquakes() {
         return eqEvent;
       });
 
-      // Sort by recency and filter to only include alerts since the system was turned ON (comenzar registros)
-      earthquakes = parsed
-        .filter((e) => new Date(e.time).getTime() >= systemPowerOnTime)
-        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      // Sort by recency and always show real fetched recent earthquakes directly without filter
+      const sorted = parsed.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      earthquakes = sorted;
 
       // If any earthquake is "in range" and exceeds beacon magnitude threshold, announce transmission
       const rangeEvents = earthquakes.filter(e => e.enRango && e.magnitud >= (config.minMagnitudBaliza || 4.0));
@@ -2709,13 +2741,9 @@ async function refreshEarthquakes() {
           addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.');
         }
       }
-    } else {
-      // Generate some highly realistic simulated Spanish earthquakes to keep dashboard alive for testing
-      generateSimulatedSismos();
     }
   } catch (err: any) {
     console.error("Error refreshing Earthquakes:", err ? err.message : err);
-    generateSimulatedSismos();
   }
 }
 

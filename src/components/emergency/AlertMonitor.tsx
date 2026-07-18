@@ -1057,7 +1057,7 @@ export default function AlertMonitor({
             {config?.ignSeismoEnabled === false ? (
               <div className="text-center py-8 px-4 bg-red-950/20 border border-red-500/20 rounded-lg">
                 <EyeOff className="mx-auto text-red-500 animate-pulse mb-2" size={20} />
-                <h5 className="font-bold text-slate-200">SISMÓGRAFO APAGADO</h5>
+                <h5 className="font-bold text-slate-200">MONITOR SÍSMICO APAGADO</h5>
                 <p className="text-[10px] text-slate-500 mt-1">El detector de sismos IGN ha sido desactivado por el operador. Active el monitor en el gestor de umbrales para iniciar registros.</p>
               </div>
             ) : activeEarthquakes.length > 0 ? (
@@ -1179,12 +1179,12 @@ export default function AlertMonitor({
             )}
           </div>
 
-          {/* SISMÓGRAFO EVENT LOGGER (Historical record keeping) */}
+          {/* REGISTRO SÍSMICO EVENT LOGGER (Historical record keeping) */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-[10px] text-slate-450 uppercase font-black tracking-wider">
               <span className="flex items-center gap-1">
                 <span className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse"></span>
-                Registro Sismógrafo (Logger)
+                Registro Sísmico (Logger)
               </span>
               <span className="text-[8px] bg-slate-900 text-slate-500 py-0.5 px-1 rounded font-mono">
                 {filteredEarthquakes.length} REGISTRADOS
@@ -1192,7 +1192,7 @@ export default function AlertMonitor({
             </div>
             <div className="bg-black/75 border border-slate-900 rounded-lg p-2 font-mono text-[9px] h-[120px] overflow-y-auto space-y-1 scrollbar-thin">
               {config?.ignSeismoEnabled === false ? (
-                <div className="text-center py-6 text-slate-600 italic">LECTURAS SUSPENDIDAS (SISMÓGRAFO APAGADO)</div>
+                <div className="text-center py-6 text-slate-600 italic">LECTURAS SUSPENDIDAS (MONITOR APAGADO)</div>
               ) : filteredEarthquakes.length > 0 ? (
                 filteredEarthquakes.map((eq) => {
                   const isSuppressed = isAutoAck && eq.magnitud < 2.5;

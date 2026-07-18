@@ -20,7 +20,7 @@
   "enableForecastBulletin": false,
   "pollIntervalAemet": 1,
   "pollIntervalJrc": 5,
-  "pollIntervalIgn": 2,
+  "pollIntervalIgn": 1,
   "pollIntervalIca": 30,
   "enableAprsIca": true,
   "enableAprsIcaFilterRegular": true,
@@ -34,7 +34,7 @@
   "agpsEnabled": true,
   "agpsServer": "supl.google.com",
   "agpsInterval": "daily",
-  "agpsLastSync": "2026-07-14T21:01:19.531Z",
+  "agpsLastSync": "2026-07-18T20:02:43.671Z",
   "agpsTtff": 3.2,
   "agpsConstellations": [
     "GPS",

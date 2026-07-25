@@ -4,6 +4,29 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 
 ---
 
+## [v1.3.1] - 2026-07-25
+### Mejorado & Depurado
+- **Intervalos Dinámicos de Transmisión por Nivel ICA (`server.ts` & `IcaAirQualityMonitor.tsx`)**:
+  - Implementado motor de cálculo dinamizado de temporizador para boletines de calidad de aire (ICA/AQI) según la gravedad del nivel detectado:
+    - **Regular (L3)**: 45 minutos.
+    - **Desfavorable (L4)**: 30 minutos.
+    - **Muy Desfavorable (L5)**: 20 minutos.
+    - **Extremo (L6)**: 10 minutos.
+    - **Buena (L1/L2)**: 60 minutos (o valor base configurado).
+  - Añadido selector dinámico en la interfaz que informa de la cadencia automática por nivel ICA.
+
+- **Plantillas de Boletines de Calidad de Aire con Recomendaciones Sanitarias (`server.ts` & `IcaAirQualityMonitor.tsx`)**:
+  - Actualizado el contexto de las plantillas editables incorporando recomendaciones específicas de salud para cada nivel ICA:
+    - **Buena (0-50 / 60m)**: `CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Sin riesgo. Disfrute de actividades al aire libre.`
+    - **Regular (51-100 / L3 / 45m)**: `CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Aceptable. Personas sensibles deben evaluar reducir esfuerzos.`
+    - **Desfavorable (101-150 / L4 / 30m)**: `CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Grupos de riesgo: reduzca actividades intensas en exterior.`
+    - **Muy Desfavorable (151-200 / L5 / 20m)**: `CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.`
+    - **Extremo (>200 / L6 / 10m)**: `CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.`
+  - Añadida resolución automática y reemplazo de la variable dinámica `{mainPollutant}` (o `{contaminante principal}` / `{contaminante}`), calculando el contaminante dominante (PM2.5, PM10, CO, O3, NO2) en base al índice de riesgo relativo en tiempo real.
+  - Actualizada la vista previa en el panel de control de `IcaAirQualityMonitor.tsx` para reflejar con precisión el texto final que será transmitido a través de la red APRS.
+
+---
+
 ## [v1.3.0] - 2026-07-25
 ### Mejorado & Depurado
 - **Caché de Datos Satelitales NASA FIRMS y Protección Servidor (`server.ts`)**:

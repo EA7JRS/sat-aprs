@@ -110,11 +110,11 @@ let config: TelemetryConfig = {
   pollIntervalIca: 30,
   enableAprsIca: true,
   enableAprsIcaFilterRegular: true,
-  icaTemplateBuena: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
-  icaTemplateRegular: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
-  icaTemplateDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
-  icaTemplateMuyDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
-  icaTemplateExtremadamente: 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)',
+  icaTemplateBuena: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Sin riesgo. Disfrute de actividades al aire libre.',
+  icaTemplateRegular: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Aceptable. Personas sensibles deben evaluar reducir esfuerzos.',
+  icaTemplateDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Grupos de riesgo: reduzca actividades intensas en exterior.',
+  icaTemplateMuyDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.',
+  icaTemplateExtremadamente: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.',
   criticalEmail: 'emergencias.cenem@proteccioncivil.es',
   aemetAlertsSubscriptionEnabled: true,
   agpsEnabled: true,
@@ -2085,6 +2085,39 @@ function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: numb
   };
 }
 
+function getIcaIntervalForLevel(label: string, userInterval: number = 30): number {
+  if (userInterval > 0 && userInterval !== 30 && userInterval !== 45 && userInterval !== 20 && userInterval !== 10) {
+    return userInterval;
+  }
+  const l = (label || '').toLowerCase();
+  if (l.includes('extremo') || l.includes('extremadamente')) {
+    return 10; // Extremo (L6): 10m
+  }
+  if (l.includes('muy')) {
+    return 20; // Muy Desfavorable (L5): 20m
+  }
+  if (l.includes('desfavorable')) {
+    return 30; // Desfavorable (L4): 30m
+  }
+  if (l.includes('regular')) {
+    return 45; // Regular (L3): 45m
+  }
+  return userInterval > 0 ? userInterval : 60; // Buena (L1/L2): 60m o predefinido
+}
+
+function getMainPollutantName(pm25: number, pm10: number, coVal: number, no2: number, o3: number): string {
+  if (iqairState.mainPollutant) return iqairState.mainPollutant;
+  const pollutants = [
+    { name: 'PM2.5', score: pm25 / 10.0 },
+    { name: 'PM10', score: pm10 / 20.0 },
+    { name: 'CO', score: coVal / 5000.0 },
+    { name: 'O3', score: o3 / 50.0 },
+    { name: 'NO2', score: no2 / 40.0 }
+  ];
+  pollutants.sort((a, b) => b.score - a.score);
+  return pollutants[0]?.name || 'PM2.5';
+}
+
 function transmitAirQualityBeacon(force: boolean = false) {
   if (!force && config.enableAprsIca === false) {
     console.log(`[APRS ICA] Transmisión de baliza de calidad de aire desactivada (automática).`);
@@ -2107,7 +2140,7 @@ function transmitAirQualityBeacon(force: boolean = false) {
     }
   }
 
-  const intervalMin = config.pollIntervalIca || 30;
+  const intervalMin = getIcaIntervalForLevel(label, config.pollIntervalIca || 30);
   const intervalMs = intervalMin * 60 * 1000;
   
   if (force || lastIcaBeaconTime === 0 || timeSinceLast >= intervalMs || triggerOnStateChange) {
@@ -2140,6 +2173,23 @@ function transmitAirQualityBeacon(force: boolean = false) {
   }
 }
 
+function getHealthRecommendation(label: string): string {
+  const l = (label || '').toLowerCase();
+  if (l.includes('extremo') || l.includes('extremadamente')) {
+    return 'Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.';
+  }
+  if (l.includes('muy')) {
+    return 'Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.';
+  }
+  if (l.includes('desfavorable')) {
+    return 'Grupos de riesgo: reduzca actividades intensas en exterior.';
+  }
+  if (l.includes('regular')) {
+    return 'Aceptable. Personas sensibles deben evaluar reducir esfuerzos.';
+  }
+  return 'Sin riesgo. Disfrute de actividades al aire libre.';
+}
+
 function formatIcaBulletinTemplate(
   label: string,
   aqi: number,
@@ -2156,7 +2206,7 @@ function formatIcaBulletinTemplate(
     template = config.icaTemplateRegular || template;
   } else if (l.includes('muy')) {
     template = config.icaTemplateMuyDesfavorable || template;
-  } else if (l.includes('extremadamente')) {
+  } else if (l.includes('extremadamente') || l.includes('extremo')) {
     template = config.icaTemplateExtremadamente || template;
   } else if (l.includes('desfavorable')) {
     template = config.icaTemplateDesfavorable || template;
@@ -2165,12 +2215,23 @@ function formatIcaBulletinTemplate(
   }
 
   if (!template) {
-    template = 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    template = 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant})';
   }
+
+  const mainPollutant = getMainPollutantName(pm25, pm10, co, no2, o3);
+  const healthRec = getHealthRecommendation(label);
 
   return template
     .replace(/{aqi}/g, String(aqi))
     .replace(/{label}/g, label)
+    .replace(/{mainPollutant}/g, mainPollutant)
+    .replace(/{main_pollutant}/g, mainPollutant)
+    .replace(/{pollutant}/g, mainPollutant)
+    .replace(/{contaminante}/g, mainPollutant)
+    .replace(/{contaminante principal}/g, mainPollutant)
+    .replace(/{recomendacion}/g, healthRec)
+    .replace(/{health_recommendation}/g, healthRec)
+    .replace(/{salud}/g, healthRec)
     .replace(/{pm25}/g, pm25.toFixed(1))
     .replace(/{pm10}/g, pm10.toFixed(1))
     .replace(/{co}/g, co.toFixed(0))

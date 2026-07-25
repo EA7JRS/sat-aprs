@@ -3,9 +3,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { 
   Search, Globe, ShieldAlert, Radio, Wind, Sliders, ExternalLink, 
   Activity, Info, MapPin, Compass, AlertTriangle, ShieldCheck, Database, RefreshCw, X, Map,
-  Bell, BellOff, Star, Check, Settings
+  Bell, BellOff, Star, Check, Settings, Save, Cloud, CloudUpload, FileText
 } from 'lucide-react';
 import { playAlertSound } from '../../utils/audio';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, auth, handleFirestoreError, OperationType } from '../../utils/firebase';
 
 interface AirQualityStation {
   id: string;
@@ -437,6 +439,20 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
   });
   const [showThresholdConfig, setShowThresholdConfig] = useState<boolean>(false);
 
+  // Tab navigation state
+  const [activeTab, setActiveTab] = useState<'monitor' | 'templates'>('monitor');
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
+  const [firebaseSyncStatus, setFirebaseSyncStatus] = useState<string | null>(null);
+
+  // Default ICA Bulletin templates containing dynamic {recomendacion} tag
+  const DEFAULT_ICA_TEMPLATES = {
+    buena: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) - {recomendacion}',
+    regular: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) - {recomendacion}',
+    desfavorable: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) - {recomendacion}',
+    muyDesfavorable: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) - {recomendacion}',
+    extremadamente: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) - {recomendacion}'
+  };
+
   // Local state for APRS ICA Bulletin transmission
   const [aprsIcaEnabled, setAprsIcaEnabled] = useState<boolean>(() => {
     return config?.enableAprsIca !== undefined ? config.enableAprsIca : true;
@@ -448,24 +464,98 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     return config?.enableAprsIcaFilterRegular !== undefined ? config.enableAprsIcaFilterRegular : true;
   });
   const [icaTemplateBuena, setIcaTemplateBuena] = useState<string>(() => {
-    return config?.icaTemplateBuena || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    return config?.icaTemplateBuena || DEFAULT_ICA_TEMPLATES.buena;
   });
   const [icaTemplateRegular, setIcaTemplateRegular] = useState<string>(() => {
-    return config?.icaTemplateRegular || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    return config?.icaTemplateRegular || DEFAULT_ICA_TEMPLATES.regular;
   });
   const [icaTemplateDesfavorable, setIcaTemplateDesfavorable] = useState<string>(() => {
-    return config?.icaTemplateDesfavorable || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    return config?.icaTemplateDesfavorable || DEFAULT_ICA_TEMPLATES.desfavorable;
   });
   const [icaTemplateMuyDesfavorable, setIcaTemplateMuyDesfavorable] = useState<string>(() => {
-    return config?.icaTemplateMuyDesfavorable || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    return config?.icaTemplateMuyDesfavorable || DEFAULT_ICA_TEMPLATES.muyDesfavorable;
   });
   const [icaTemplateExtremadamente, setIcaTemplateExtremadamente] = useState<string>(() => {
-    return config?.icaTemplateExtremadamente || 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+    return config?.icaTemplateExtremadamente || DEFAULT_ICA_TEMPLATES.extremadamente;
   });
 
   const [isUpdatingConfig, setIsUpdatingConfig] = useState<boolean>(false);
   const [transmitStatus, setTransmitStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [transmitMessage, setTransmitMessage] = useState<string>('');
+
+  // Function to save custom templates to Firebase Firestore
+  const saveIcaTemplatesToFirebase = async (
+    tempBuena?: string,
+    tempRegular?: string,
+    tempDesfavorable?: string,
+    tempMuy?: string,
+    tempExt?: string
+  ) => {
+    setIsFirebaseSyncing(true);
+    const b = tempBuena !== undefined ? tempBuena : icaTemplateBuena;
+    const r = tempRegular !== undefined ? tempRegular : icaTemplateRegular;
+    const d = tempDesfavorable !== undefined ? tempDesfavorable : icaTemplateDesfavorable;
+    const m = tempMuy !== undefined ? tempMuy : icaTemplateMuyDesfavorable;
+    const e = tempExt !== undefined ? tempExt : icaTemplateExtremadamente;
+
+    try {
+      const templatesData = {
+        icaTemplateBuena: b,
+        icaTemplateRegular: r,
+        icaTemplateDesfavorable: d,
+        icaTemplateMuyDesfavorable: m,
+        icaTemplateExtremadamente: e,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth.currentUser?.email || 'operator'
+      };
+
+      const systemDocRef = doc(db, 'system', 'ica_templates');
+      await setDoc(systemDocRef, templatesData, { merge: true });
+
+      if (auth.currentUser) {
+        const userDocRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userDocRef, {
+          icaTemplates: templatesData,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      setFirebaseSyncStatus('¡Plantillas guardadas en Firebase correctamente! ✓');
+      playAlertSound('chime');
+      setTimeout(() => setFirebaseSyncStatus(null), 3500);
+    } catch (err) {
+      console.error("Error guardando plantillas en Firebase:", err);
+      try {
+        handleFirestoreError(err, OperationType.WRITE, 'system/ica_templates');
+      } catch (e) {
+        setFirebaseSyncStatus('Error guardando en Firebase');
+        setTimeout(() => setFirebaseSyncStatus(null), 4000);
+      }
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
+
+  // Load templates from Firebase on component initialization
+  useEffect(() => {
+    const loadFirebaseTemplates = async () => {
+      try {
+        const systemDocRef = doc(db, 'system', 'ica_templates');
+        const snap = await getDoc(systemDocRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.icaTemplateBuena) setIcaTemplateBuena(data.icaTemplateBuena);
+          if (data.icaTemplateRegular) setIcaTemplateRegular(data.icaTemplateRegular);
+          if (data.icaTemplateDesfavorable) setIcaTemplateDesfavorable(data.icaTemplateDesfavorable);
+          if (data.icaTemplateMuyDesfavorable) setIcaTemplateMuyDesfavorable(data.icaTemplateMuyDesfavorable);
+          if (data.icaTemplateExtremadamente) setIcaTemplateExtremadamente(data.icaTemplateExtremadamente);
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar plantillas desde Firebase:", err);
+      }
+    };
+    loadFirebaseTemplates();
+  }, []);
 
   // Keep state in sync with config changes
   useEffect(() => {
@@ -542,14 +632,37 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
         setIcaTemplateDesfavorable(tempDesfavorable);
         setIcaTemplateMuyDesfavorable(tempMuy);
         setIcaTemplateExtremadamente(tempExt);
-      } else {
-        console.error("Fallo al guardar configuración avanzada de plantillas ICA");
       }
     } catch (err) {
       console.error("Error al guardar la configuración de plantillas ICA:", err);
     } finally {
       setIsUpdatingConfig(false);
     }
+  };
+
+  const handleResetAllIcaTemplates = () => {
+    setIcaTemplateBuena(DEFAULT_ICA_TEMPLATES.buena);
+    setIcaTemplateRegular(DEFAULT_ICA_TEMPLATES.regular);
+    setIcaTemplateDesfavorable(DEFAULT_ICA_TEMPLATES.desfavorable);
+    setIcaTemplateMuyDesfavorable(DEFAULT_ICA_TEMPLATES.muyDesfavorable);
+    setIcaTemplateExtremadamente(DEFAULT_ICA_TEMPLATES.extremadamente);
+    handleSaveAllIcaSettings(
+      aprsIcaEnabled,
+      aprsIcaInterval,
+      enableAprsIcaFilterRegular,
+      DEFAULT_ICA_TEMPLATES.buena,
+      DEFAULT_ICA_TEMPLATES.regular,
+      DEFAULT_ICA_TEMPLATES.desfavorable,
+      DEFAULT_ICA_TEMPLATES.muyDesfavorable,
+      DEFAULT_ICA_TEMPLATES.extremadamente
+    );
+    saveIcaTemplatesToFirebase(
+      DEFAULT_ICA_TEMPLATES.buena,
+      DEFAULT_ICA_TEMPLATES.regular,
+      DEFAULT_ICA_TEMPLATES.desfavorable,
+      DEFAULT_ICA_TEMPLATES.muyDesfavorable,
+      DEFAULT_ICA_TEMPLATES.extremadamente
+    );
   };
 
   const handleManualTransmitIca = async () => {
@@ -595,13 +708,23 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     const o3 = iqair?.o3 || 77;
     const station = iqair?.city || 'MADRID';
 
+    const pollutants = [
+      { name: 'PM2.5', score: pm25 / 10.0 },
+      { name: 'PM10', score: pm10 / 20.0 },
+      { name: 'CO', score: co / 5000.0 },
+      { name: 'O3', score: o3 / 50.0 },
+      { name: 'NO2', score: no2 / 40.0 }
+    ];
+    pollutants.sort((a, b) => b.score - a.score);
+    const mainPollutant = iqair?.mainPollutant || pollutants[0]?.name || 'PM2.5';
+
     let template = icaTemplateBuena;
     const l = label.toLowerCase();
     if (l.includes('regular')) {
       template = icaTemplateRegular || template;
     } else if (l.includes('muy')) {
       template = icaTemplateMuyDesfavorable || template;
-    } else if (l.includes('extremadamente')) {
+    } else if (l.includes('extremadamente') || l.includes('extremo')) {
       template = icaTemplateExtremadamente || template;
     } else if (l.includes('desfavorable')) {
       template = icaTemplateDesfavorable || template;
@@ -610,18 +733,93 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     }
 
     if (!template) {
-      template = 'CALIDAD AIRE - ICA: {aqi} {label}  ; (PM2.5: {pm25}ug, PM10: {pm10}ug, CO: {co}ug, NO2: {no2}ug, O3: {o3}ug)';
+      template = 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant})';
     }
+
+    const getHealthRec = (lbl: string): string => {
+      const l2 = (lbl || '').toLowerCase();
+      if (l2.includes('extremo') || l2.includes('extremadamente')) {
+        return 'Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.';
+      }
+      if (l2.includes('muy')) {
+        return 'Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.';
+      }
+      if (l2.includes('desfavorable')) {
+        return 'Grupos de riesgo: reduzca actividades intensas en exterior.';
+      }
+      if (l2.includes('regular')) {
+        return 'Aceptable. Personas sensibles deben evaluar reducir esfuerzos.';
+      }
+      return 'Sin riesgo. Disfrute de actividades al aire libre.';
+    };
+
+    const healthRec = getHealthRec(label);
 
     return template
       .replace(/{aqi}/g, String(aqi))
       .replace(/{label}/g, label)
+      .replace(/{mainPollutant}/g, mainPollutant)
+      .replace(/{main_pollutant}/g, mainPollutant)
+      .replace(/{pollutant}/g, mainPollutant)
+      .replace(/{contaminante}/g, mainPollutant)
+      .replace(/{contaminante principal}/g, mainPollutant)
+      .replace(/{recomendacion}/g, healthRec)
+      .replace(/{health_recommendation}/g, healthRec)
+      .replace(/{salud}/g, healthRec)
       .replace(/{pm25}/g, pm25.toFixed(1))
       .replace(/{pm10}/g, pm10.toFixed(1))
       .replace(/{co}/g, co.toFixed(0))
       .replace(/{no2}/g, no2.toFixed(1))
       .replace(/{o3}/g, o3.toFixed(1))
       .replace(/{station}/g, station);
+  };
+
+  const getIcaLevelPreview = (levelNumber: number, templateText: string) => {
+    let aqi = 28;
+    let label = 'Buena';
+    let mainPollutant = 'PM2.5';
+    if (levelNumber === 1) { aqi = 28; label = 'Buena'; mainPollutant = 'PM2.5'; }
+    else if (levelNumber === 2) { aqi = 74; label = 'Regular'; mainPollutant = 'PM10'; }
+    else if (levelNumber === 3) { aqi = 125; label = 'Desfavorable'; mainPollutant = 'NO2'; }
+    else if (levelNumber === 4) { aqi = 175; label = 'Muy Desfavorable'; mainPollutant = 'O3'; }
+    else if (levelNumber === 5) { aqi = 215; label = 'Extremadamente Desfavorable'; mainPollutant = 'PM2.5'; }
+
+    const getHealthRec = (lbl: string): string => {
+      const l2 = (lbl || '').toLowerCase();
+      if (l2.includes('extremo') || l2.includes('extremadamente')) {
+        return 'Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.';
+      }
+      if (l2.includes('muy')) {
+        return 'Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.';
+      }
+      if (l2.includes('desfavorable')) {
+        return 'Grupos de riesgo: reduzca actividades intensas en exterior.';
+      }
+      if (l2.includes('regular')) {
+        return 'Aceptable. Personas sensibles deben evaluar reducir esfuerzos.';
+      }
+      return 'Sin riesgo. Disfrute de actividades al aire libre.';
+    };
+
+    const healthRec = getHealthRec(label);
+
+    return (templateText || '')
+      .replace(/{aqi}/g, String(aqi))
+      .replace(/{label}/g, label)
+      .replace(/{mainPollutant}/g, mainPollutant)
+      .replace(/{main_pollutant}/g, mainPollutant)
+      .replace(/{pollutant}/g, mainPollutant)
+      .replace(/{contaminante}/g, mainPollutant)
+      .replace(/{contaminante principal}/g, mainPollutant)
+      .replace(/{recomendacion}/g, healthRec)
+      .replace(/{health_recommendation}/g, healthRec)
+      .replace(/{salud}/g, healthRec)
+      .replace(/{pm25}/g, '12.4')
+      .replace(/{pm10}/g, '28.1')
+      .replace(/{co}/g, '0.4')
+      .replace(/{no2}/g, '35.0')
+      .replace(/{o3}/g, '62.0')
+      .replace(/{station}/g, 'MADRID-EL ATABAL');
   };
 
   // Calima BOE / BLN2AQI Bulletin states
@@ -642,60 +840,71 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
   });
 
   // Customized APRS Template States
+  const DEFAULT_BOE_BLN_TEMPLATES = {
+    bln2aqi: 'MEDICION CALIDAD AIRE - ICA: {ica} {label} ({mainPollutant}) {recomendacion}',
+    calima: 'MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio}) - {recomendacion}',
+    bln1: 'ICA REGULAR: {recomendacion}',
+    bln2: 'ICA DESFAVORABLE: {recomendacion}',
+    bln3: 'ICA MUY DESFAVORABLE: {recomendacion}',
+    bln4: 'ICA EXTR. DESFAVORABLE: {recomendacion}',
+    walkieGral: 'ALERTA EMER: ICA Extr Desfavorable. Gral: {recomendacion}',
+    walkieSens: 'ALERTA EMER: ICA Extr Desfavorable. Sens: Permanezca en interiores y use mascarilla FFP2.'
+  };
+
   const [templateBln2Aqi, setTemplateBln2Aqi] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_bln2aqi') || 'MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)';
+      return localStorage.getItem('ica_tpl_bln2aqi') || DEFAULT_BOE_BLN_TEMPLATES.bln2aqi;
     } catch {
-      return 'MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)';
+      return DEFAULT_BOE_BLN_TEMPLATES.bln2aqi;
     }
   });
   const [templateCalima, setTemplateCalima] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_calima') || 'MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})';
+      return localStorage.getItem('ica_tpl_calima') || DEFAULT_BOE_BLN_TEMPLATES.calima;
     } catch {
-      return 'MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})';
+      return DEFAULT_BOE_BLN_TEMPLATES.calima;
     }
   });
   const [templateBln4, setTemplateBln4] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_bln4') || 'ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.';
+      return localStorage.getItem('ica_tpl_bln4') || DEFAULT_BOE_BLN_TEMPLATES.bln4;
     } catch {
-      return 'ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.';
+      return DEFAULT_BOE_BLN_TEMPLATES.bln4;
     }
   });
   const [templateWalkieGral, setTemplateWalkieGral] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_walkie_gral') || 'ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.';
+      return localStorage.getItem('ica_tpl_walkie_gral') || DEFAULT_BOE_BLN_TEMPLATES.walkieGral;
     } catch {
-      return 'ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.';
+      return DEFAULT_BOE_BLN_TEMPLATES.walkieGral;
     }
   });
   const [templateWalkieSens, setTemplateWalkieSens] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_walkie_sens') || 'ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.';
+      return localStorage.getItem('ica_tpl_walkie_sens') || DEFAULT_BOE_BLN_TEMPLATES.walkieSens;
     } catch {
-      return 'ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.';
+      return DEFAULT_BOE_BLN_TEMPLATES.walkieSens;
     }
   });
   const [templateBln3, setTemplateBln3] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_bln3') || 'ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.';
+      return localStorage.getItem('ica_tpl_bln3') || DEFAULT_BOE_BLN_TEMPLATES.bln3;
     } catch {
-      return 'ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.';
+      return DEFAULT_BOE_BLN_TEMPLATES.bln3;
     }
   });
   const [templateBln2, setTemplateBln2] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_bln2') || 'ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.';
+      return localStorage.getItem('ica_tpl_bln2') || DEFAULT_BOE_BLN_TEMPLATES.bln2;
     } catch {
-      return 'ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.';
+      return DEFAULT_BOE_BLN_TEMPLATES.bln2;
     }
   });
   const [templateBln1, setTemplateBln1] = useState<string>(() => {
     try {
-      return localStorage.getItem('ica_tpl_bln1') || 'ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.';
+      return localStorage.getItem('ica_tpl_bln1') || DEFAULT_BOE_BLN_TEMPLATES.bln1;
     } catch {
-      return 'ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.';
+      return DEFAULT_BOE_BLN_TEMPLATES.bln1;
     }
   });
 
@@ -732,36 +941,40 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
   const [intervalLevel3, setIntervalLevel3] = useState<number>(() => {
     try {
       const stored = localStorage.getItem('ica_interval_l3');
-      return stored ? parseInt(stored, 10) : 180;
+      const val = stored ? parseInt(stored, 10) : 2700;
+      return (val <= 300 && val !== 2700) ? 2700 : val;
     } catch {
-      return 180;
+      return 2700;
     }
   });
 
   const [intervalLevel4, setIntervalLevel4] = useState<number>(() => {
     try {
       const stored = localStorage.getItem('ica_interval_l4');
-      return stored ? parseInt(stored, 10) : 120;
+      const val = stored ? parseInt(stored, 10) : 1800;
+      return (val <= 300 && val !== 1800) ? 1800 : val;
     } catch {
-      return 120;
+      return 1800;
     }
   });
 
   const [intervalLevel5, setIntervalLevel5] = useState<number>(() => {
     try {
       const stored = localStorage.getItem('ica_interval_l5');
-      return stored ? parseInt(stored, 10) : 60;
+      const val = stored ? parseInt(stored, 10) : 1200;
+      return (val <= 300 && val !== 1200) ? 1200 : val;
     } catch {
-      return 60;
+      return 1200;
     }
   });
 
   const [intervalLevel6, setIntervalLevel6] = useState<number>(() => {
     try {
       const stored = localStorage.getItem('ica_interval_l6');
-      return stored ? parseInt(stored, 10) : 30;
+      const val = stored ? parseInt(stored, 10) : 600;
+      return (val <= 180 && val !== 600) ? 600 : val;
     } catch {
-      return 30;
+      return 600;
     }
   });
 
@@ -1401,9 +1614,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     // Standard broadcast callsign
     const destino_bc = "CQ       "; // 9 characters obligatory for broadcast messages
 
+    // Calculate main pollutant & health recommendation
+    const pollutantsCal = [
+      { name: 'PM2.5', score: pm25_24h / 10.0 },
+      { name: 'PM10', score: pm10_24h / 20.0 },
+      { name: 'CO', score: (activeStation?.co !== null && activeStation?.co !== undefined ? activeStation.co * 1000 : (iqair?.co ?? 0.1) * 1000) / 5000.0 },
+      { name: 'O3', score: (activeStation?.o3 !== null && activeStation?.o3 !== undefined ? activeStation.o3 : (iqair?.o3 ?? 100)) / 50.0 },
+      { name: 'NO2', score: (activeStation?.no2 !== null && activeStation?.no2 !== undefined ? activeStation.no2 : (iqair?.no2 ?? 20)) / 40.0 }
+    ];
+    pollutantsCal.sort((a, b) => b.score - a.score);
+    const mainPollutantCal = iqair?.mainPollutant || pollutantsCal[0]?.name || 'PM2.5';
+
+    const currentLabelCal = activeIca?.label || 'Buena';
+    const getHealthRecCal = (lbl: string): string => {
+      const l2 = (lbl || '').toLowerCase();
+      if (l2.includes('extremo') || l2.includes('extremadamente')) {
+        return 'Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.';
+      }
+      if (l2.includes('muy')) {
+        return 'Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.';
+      }
+      if (l2.includes('desfavorable')) {
+        return 'Grupos de riesgo: reduzca actividades intensas en exterior.';
+      }
+      if (l2.includes('regular')) {
+        return 'Aceptable. Personas sensibles deben evaluar reducir esfuerzos.';
+      }
+      return 'Sin riesgo. Disfrute de actividades al aire libre.';
+    };
+    const recomendacionCal = getHealthRecCal(currentLabelCal);
+
     // Dict of parameters for templates
-    const dict = {
+    const dict: Record<string, string | number> = {
       ica: activeStation ? activeUsAqi : (iqair ? iqair.aqi : 42),
+      aqi: activeStation ? activeUsAqi : (iqair ? iqair.aqi : 42),
+      label: currentLabelCal,
       pm25: pm25_24h.toFixed(1),
       pm10: pm10_24h.toFixed(1),
       co: activeStation?.co !== null && activeStation?.co !== undefined ? Math.round(activeStation.co * 1000) : (iqair?.co !== null && iqair?.co !== undefined ? Math.round(iqair.co * 1000) : 102),
@@ -1412,7 +1657,14 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
       so2: (activeStation?.so2 !== null && activeStation?.so2 !== undefined ? activeStation.so2 : (iqair?.so2 ?? 3.0)).toFixed(1),
       station: calimaDataSource === 'iqair' ? (iqair?.city || 'IQAir Cloud') : (activeStation?.name?.split(' - ')[0] || 'MITECO Local'),
       criterio: calimaAnalysis.criterio,
-      dust: polvo_sahariano.toFixed(1)
+      dust: polvo_sahariano.toFixed(1),
+      mainPollutant: mainPollutantCal,
+      main_pollutant: mainPollutantCal,
+      pollutant: mainPollutantCal,
+      contaminante: mainPollutantCal,
+      recomendacion: recomendacionCal,
+      health_recommendation: recomendacionCal,
+      salud: recomendacionCal
     };
 
     const parseLocalTpl = (tpl: string) => {
@@ -1496,7 +1748,420 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
         </div>
       </div>
 
-      {/* External Visor Portals Grid */}
+      {/* Pestañas Principales de Navegación */}
+      <div className="flex items-center gap-2 border-b border-slate-900 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('monitor')}
+          className={`px-3 py-1.5 rounded-xl font-mono text-[9.5px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'monitor'
+              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 shadow-sm'
+              : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:bg-slate-900 hover:text-slate-200'
+          }`}
+        >
+          <Activity size={12} />
+          <span>Monitoreo & Estaciones</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('templates')}
+          className={`px-3 py-1.5 rounded-xl font-mono text-[9.5px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'templates'
+              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/40 shadow-sm'
+              : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:bg-slate-900 hover:text-slate-200'
+          }`}
+        >
+          <Sliders size={12} />
+          <span>Configuración de Plantillas</span>
+          {isFirebaseSyncing ? (
+            <RefreshCw size={10} className="animate-spin text-amber-400 ml-1" />
+          ) : (
+            <Cloud size={10} className="text-amber-400/80 ml-1" />
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'templates' ? (
+        <div className="flex flex-col gap-3 font-mono text-xs animate-fade-in">
+          {/* Encabezado y Estado de Firebase */}
+          <div className="bg-slate-900/60 border border-amber-900/40 rounded-xl p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-amber-400">
+                <FileText size={16} className="text-amber-400 shrink-0" />
+                <div>
+                  <h4 className="font-extrabold text-[10.5px] uppercase tracking-wider text-slate-100 font-mono">
+                    Configuración de Plantillas de Boletín por Nivel ICA
+                  </h4>
+                  <p className="text-[8px] text-slate-400 font-sans leading-tight mt-0.5">
+                    Edite el formato del mensaje para cada nivel ICA oficial de la MITECO. Incluya la variable <code className="text-emerald-400 font-mono font-bold bg-emerald-950/80 px-1 rounded">{'{recomendacion}'}</code> para insertar dinámicamente la recomendación sanitaria de salud oficial según la calidad del aire.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {firebaseSyncStatus && (
+                  <span className="text-[8px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded font-bold">
+                    {firebaseSyncStatus}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => saveIcaTemplatesToFirebase()}
+                  disabled={isFirebaseSyncing}
+                  className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-[8.5px] uppercase rounded-lg transition-all flex items-center gap-1 cursor-pointer border border-amber-400/30 shadow-md active:scale-95"
+                  title="Guardar plantillas de forma persistente en Firebase Firestore"
+                >
+                  {isFirebaseSyncing ? (
+                    <RefreshCw size={11} className="animate-spin" />
+                  ) : (
+                    <CloudUpload size={11} />
+                  )}
+                  <span>Guardar en Firebase</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetAllIcaTemplates}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono font-bold text-[8.5px] uppercase rounded-lg transition-all flex items-center gap-1 cursor-pointer border border-slate-700"
+                  title="Restablecer todas las plantillas a los formatos oficiales con recomendaciones sanitarias"
+                >
+                  <span>↺</span>
+                  <span>Restablecer Oficiales</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Leyenda de Variables Dinámicas */}
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-900 flex flex-col gap-1.5">
+            <span className="text-[8px] text-slate-400 font-bold uppercase font-mono tracking-wider flex items-center gap-1">
+              <Info size={10} className="text-sky-400" />
+              Variables Dinámicas Disponibles (Reemplazadas en tiempo real en la emisión APRS):
+            </span>
+            <div className="flex flex-wrap gap-1.5 text-[7.5px] font-mono">
+              <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-bold" title="Recomendación oficial de salud según el nivel ICA">{'{recomendacion}'}</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1.5 py-0.5 rounded font-bold" title="Valor numérico AQI (ej. 32, 74, 125)">{'{aqi}'}</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1.5 py-0.5 rounded font-bold" title="Etiqueta MITECO (ej. Buena, Regular, Desfavorable)">{'{label}'}</span>
+              <span className="bg-amber-950/60 text-amber-300 border border-amber-800/50 px-1.5 py-0.5 rounded font-bold" title="Contaminante principal (ej. PM2.5, PM10, NO2)">{'{mainPollutant}'}</span>
+              <span className="bg-slate-900 text-slate-300 border border-slate-800 px-1.5 py-0.5 rounded" title="Nombre de la estación georreferenciada">{'{station}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded">{'{pm25}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded">{'{pm10}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded">{'{no2}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded">{'{o3}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded">{'{co}'}</span>
+            </div>
+          </div>
+
+          {/* EDITOR DE TARJETAS POR NIVEL ICA (5 NIVELES) */}
+          <div className="grid grid-cols-1 gap-3">
+            
+            {/* LEVEL 1: BUENA */}
+            <div className="bg-slate-950/70 border border-emerald-900/40 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-1 border-b border-emerald-900/30 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-400 font-extrabold uppercase font-mono text-[9px] tracking-wider flex items-center gap-1">
+                    💚 Nivel 1: Buena (ICA 0 - 50)
+                  </span>
+                  <span className="text-[7px] text-emerald-300 bg-emerald-950 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                    Intervalo SNECA: 60m
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIcaTemplateBuena(prev => prev.includes('{recomendacion}') ? prev : prev + ' - {recomendacion}')}
+                  className="text-[7.5px] bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono font-bold transition-all"
+                >
+                  + Añadir {'{recomendacion}'}
+                </button>
+              </div>
+
+              <div className="bg-emerald-950/20 border border-emerald-900/30 p-2 rounded text-[8px] text-emerald-200/90 font-sans italic">
+                <strong>Recomendación Sanitaria Dinámica {'{recomendacion}'}:</strong> "Sin riesgo. Disfrute de actividades al aire libre."
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[8px] text-slate-400 font-bold uppercase">Formato del Mensaje del Boletín:</label>
+                <input
+                  type="text"
+                  value={icaTemplateBuena}
+                  onChange={(e) => setIcaTemplateBuena(e.target.value)}
+                  onBlur={() => {
+                    handleSaveAllIcaSettings(
+                      aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                      icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                    );
+                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                  }}
+                  className="w-full bg-slate-900 border border-emerald-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-emerald-500 shadow-inner"
+                />
+              </div>
+
+              {/* Live APRS Packet Preview for Level 1 */}
+              <div className="bg-[#040608] border border-slate-900 rounded-lg p-2 flex flex-col gap-1 font-mono text-[8px]">
+                <span className="text-slate-500 font-bold uppercase text-[7px]">Previsualización Trama APRS (SNECA Nivel Buena):</span>
+                <div className="text-slate-200 overflow-x-auto whitespace-pre">
+                  <span className="text-amber-500 font-bold">EA1URG-13&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+                  <span>{getIcaLevelPreview(1, icaTemplateBuena)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* LEVEL 2: REGULAR */}
+            <div className="bg-slate-950/70 border border-amber-900/40 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-1 border-b border-amber-900/30 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400 font-extrabold uppercase font-mono text-[9px] tracking-wider flex items-center gap-1">
+                    💛 Nivel 2: Regular (ICA 51 - 100 / L3)
+                  </span>
+                  <span className="text-[7px] text-amber-300 bg-amber-950 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                    Intervalo SNECA: 45m
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIcaTemplateRegular(prev => prev.includes('{recomendacion}') ? prev : prev + ' - {recomendacion}')}
+                  className="text-[7.5px] bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono font-bold transition-all"
+                >
+                  + Añadir {'{recomendacion}'}
+                </button>
+              </div>
+
+              <div className="bg-amber-950/20 border border-amber-900/30 p-2 rounded text-[8px] text-amber-200/90 font-sans italic">
+                <strong>Recomendación Sanitaria Dinámica {'{recomendacion}'}:</strong> "Aceptable. Personas sensibles deben evaluar reducir esfuerzos."
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[8px] text-slate-400 font-bold uppercase">Formato del Mensaje del Boletín:</label>
+                <input
+                  type="text"
+                  value={icaTemplateRegular}
+                  onChange={(e) => setIcaTemplateRegular(e.target.value)}
+                  onBlur={() => {
+                    handleSaveAllIcaSettings(
+                      aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                      icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                    );
+                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                  }}
+                  className="w-full bg-slate-900 border border-amber-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-amber-500 shadow-inner"
+                />
+              </div>
+
+              {/* Live APRS Packet Preview for Level 2 */}
+              <div className="bg-[#040608] border border-slate-900 rounded-lg p-2 flex flex-col gap-1 font-mono text-[8px]">
+                <span className="text-slate-500 font-bold uppercase text-[7px]">Previsualización Trama APRS (SNECA Nivel Regular):</span>
+                <div className="text-slate-200 overflow-x-auto whitespace-pre">
+                  <span className="text-amber-500 font-bold">EA1URG-13&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+                  <span>{getIcaLevelPreview(2, icaTemplateRegular)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* LEVEL 3: DESFAVORABLE */}
+            <div className="bg-slate-950/70 border border-orange-900/40 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-1 border-b border-orange-900/30 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-400 font-extrabold uppercase font-mono text-[9px] tracking-wider flex items-center gap-1">
+                    🧡 Nivel 3: Desfavorable (ICA 101 - 150 / L4)
+                  </span>
+                  <span className="text-[7px] text-orange-300 bg-orange-950 border border-orange-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                    Intervalo SNECA: 30m
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIcaTemplateDesfavorable(prev => prev.includes('{recomendacion}') ? prev : prev + ' - {recomendacion}')}
+                  className="text-[7.5px] bg-orange-950 hover:bg-orange-900 text-orange-300 border border-orange-800/60 px-1.5 py-0.5 rounded font-mono font-bold transition-all"
+                >
+                  + Añadir {'{recomendacion}'}
+                </button>
+              </div>
+
+              <div className="bg-orange-950/20 border border-orange-900/30 p-2 rounded text-[8px] text-orange-200/90 font-sans italic">
+                <strong>Recomendación Sanitaria Dinámica {'{recomendacion}'}:</strong> "Grupos de riesgo: reduzca actividades intensas en exterior."
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[8px] text-slate-400 font-bold uppercase">Formato del Mensaje del Boletín:</label>
+                <input
+                  type="text"
+                  value={icaTemplateDesfavorable}
+                  onChange={(e) => setIcaTemplateDesfavorable(e.target.value)}
+                  onBlur={() => {
+                    handleSaveAllIcaSettings(
+                      aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                      icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                    );
+                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                  }}
+                  className="w-full bg-slate-900 border border-orange-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-orange-500 shadow-inner"
+                />
+              </div>
+
+              {/* Live APRS Packet Preview for Level 3 */}
+              <div className="bg-[#040608] border border-slate-900 rounded-lg p-2 flex flex-col gap-1 font-mono text-[8px]">
+                <span className="text-slate-500 font-bold uppercase text-[7px]">Previsualización Trama APRS (SNECA Nivel Desfavorable):</span>
+                <div className="text-slate-200 overflow-x-auto whitespace-pre">
+                  <span className="text-amber-500 font-bold">EA1URG-13&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+                  <span>{getIcaLevelPreview(3, icaTemplateDesfavorable)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* LEVEL 4: MUY DESFAVORABLE */}
+            <div className="bg-slate-950/70 border border-rose-900/40 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-1 border-b border-rose-900/30 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-rose-400 font-extrabold uppercase font-mono text-[9px] tracking-wider flex items-center gap-1">
+                    🔴 Nivel 4: Muy Desfavorable (ICA 151 - 200 / L5)
+                  </span>
+                  <span className="text-[7px] text-rose-300 bg-rose-950 border border-rose-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                    Intervalo SNECA: 20m
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIcaTemplateMuyDesfavorable(prev => prev.includes('{recomendacion}') ? prev : prev + ' - {recomendacion}')}
+                  className="text-[7.5px] bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/60 px-1.5 py-0.5 rounded font-mono font-bold transition-all"
+                >
+                  + Añadir {'{recomendacion}'}
+                </button>
+              </div>
+
+              <div className="bg-rose-950/20 border border-rose-900/30 p-2 rounded text-[8px] text-rose-200/90 font-sans italic">
+                <strong>Recomendación Sanitaria Dinámica {'{recomendacion}'}:</strong> "Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias."
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[8px] text-slate-400 font-bold uppercase">Formato del Mensaje del Boletín:</label>
+                <input
+                  type="text"
+                  value={icaTemplateMuyDesfavorable}
+                  onChange={(e) => setIcaTemplateMuyDesfavorable(e.target.value)}
+                  onBlur={() => {
+                    handleSaveAllIcaSettings(
+                      aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                      icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                    );
+                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                  }}
+                  className="w-full bg-slate-900 border border-rose-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-rose-500 shadow-inner"
+                />
+              </div>
+
+              {/* Live APRS Packet Preview for Level 4 */}
+              <div className="bg-[#040608] border border-slate-900 rounded-lg p-2 flex flex-col gap-1 font-mono text-[8px]">
+                <span className="text-slate-500 font-bold uppercase text-[7px]">Previsualización Trama APRS (SNECA Nivel Muy Desfavorable):</span>
+                <div className="text-slate-200 overflow-x-auto whitespace-pre">
+                  <span className="text-amber-500 font-bold">EA1URG-13&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+                  <span>{getIcaLevelPreview(4, icaTemplateMuyDesfavorable)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* LEVEL 5: EXTREMADAMENTE DESFAVORABLE */}
+            <div className="bg-slate-950/70 border border-purple-900/40 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-1 border-b border-purple-900/30 pb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-purple-400 font-extrabold uppercase font-mono text-[9px] tracking-wider flex items-center gap-1">
+                    💜 Nivel 5: Extremadamente Desfavorable (ICA &gt; 200 / L6)
+                  </span>
+                  <span className="text-[7px] text-purple-300 bg-purple-950 border border-purple-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                    Intervalo SNECA: 10m
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIcaTemplateExtremadamente(prev => prev.includes('{recomendacion}') ? prev : prev + ' - {recomendacion}')}
+                  className="text-[7.5px] bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-800/60 px-1.5 py-0.5 rounded font-mono font-bold transition-all"
+                >
+                  + Añadir {'{recomendacion}'}
+                </button>
+              </div>
+
+              <div className="bg-purple-950/20 border border-purple-900/30 p-2 rounded text-[8px] text-purple-200/90 font-sans italic">
+                <strong>Recomendación Sanitaria Dinámica {'{recomendacion}'}:</strong> "Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2."
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[8px] text-slate-400 font-bold uppercase">Formato del Mensaje del Boletín:</label>
+                <input
+                  type="text"
+                  value={icaTemplateExtremadamente}
+                  onChange={(e) => setIcaTemplateExtremadamente(e.target.value)}
+                  onBlur={() => {
+                    handleSaveAllIcaSettings(
+                      aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                      icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                    );
+                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                  }}
+                  className="w-full bg-slate-900 border border-purple-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-purple-500 shadow-inner"
+                />
+              </div>
+
+              {/* Live APRS Packet Preview for Level 5 */}
+              <div className="bg-[#040608] border border-slate-900 rounded-lg p-2 flex flex-col gap-1 font-mono text-[8px]">
+                <span className="text-slate-500 font-bold uppercase text-[7px]">Previsualización Trama APRS (SNECA Nivel Extremo):</span>
+                <div className="text-slate-200 overflow-x-auto whitespace-pre">
+                  <span className="text-amber-500 font-bold">EA1URG-13&gt;APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :</span>
+                  <span>{getIcaLevelPreview(5, icaTemplateExtremadamente)}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* TABLA DE REFERENCIA DE RECOMENDACIONES DE SALUD OFICIALES */}
+          <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 flex flex-col gap-2 font-sans">
+            <span className="text-[9px] text-slate-200 font-mono font-extrabold uppercase tracking-wider block">
+              Matriz de Recomendaciones de Salud Dinámicas por Nivel MITECO / BOE
+            </span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[8px] font-mono border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 uppercase">
+                    <th className="py-1 px-2">Nivel ICA</th>
+                    <th className="py-1 px-2">Etiqueta</th>
+                    <th className="py-1 px-2">Texto Inyectado por {'{recomendacion}'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900">
+                  <tr>
+                    <td className="py-1 px-2 text-emerald-400 font-bold">Nivel 1 (0-50)</td>
+                    <td className="py-1 px-2 text-emerald-400">Buena</td>
+                    <td className="py-1 px-2 text-slate-300">Sin riesgo. Disfrute de actividades al aire libre.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 px-2 text-amber-400 font-bold">Nivel 2 (51-100)</td>
+                    <td className="py-1 px-2 text-amber-400">Regular (L3)</td>
+                    <td className="py-1 px-2 text-slate-300">Aceptable. Personas sensibles deben evaluar reducir esfuerzos.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 px-2 text-orange-400 font-bold">Nivel 3 (101-150)</td>
+                    <td className="py-1 px-2 text-orange-400">Desfavorable (L4)</td>
+                    <td className="py-1 px-2 text-slate-300">Grupos de riesgo: reduzca actividades intensas en exterior.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 px-2 text-rose-400 font-bold">Nivel 4 (151-200)</td>
+                    <td className="py-1 px-2 text-rose-400">Muy Desfavorable (L5)</td>
+                    <td className="py-1 px-2 text-slate-300">Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 px-2 text-purple-400 font-bold">Nivel 5 (&gt;200)</td>
+                    <td className="py-1 px-2 text-purple-400">Extremadamente Desfavorable (L6)</td>
+                    <td className="py-1 px-2 text-slate-300">Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      ) : (
+        <>
+          {/* External Visor Portals Grid */}
       <div className="grid grid-cols-2 gap-2">
         <a 
           href="https://sig.miteco.gob.es/calidad-aire/" 
@@ -1855,7 +2520,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
             <div>
               <span className="text-[8px] uppercase text-slate-400 font-extrabold block mb-1">Intervalo de Transmisión:</span>
               <p className="text-[8px] text-slate-500 font-sans leading-tight">
-                Frecuencia regular del envío automático de las métricas de la estación local.
+                Intervalo de emisión según nivel ICA detectado o frecuencia personalizada.
               </p>
             </div>
             <div className="mt-1">
@@ -1865,12 +2530,13 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                 onChange={(e) => handleUpdateIcaConfig(aprsIcaEnabled, Number(e.target.value))}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-slate-100 text-[10px] focus:outline-none focus:border-zinc-500/40 font-mono"
               >
+                <option value={30}>Automático según Nivel ICA (L3=45m, L4=30m, L5=20m, L6=10m)</option>
+                <option value={45}>45 Minutos - Regular (L3)</option>
+                <option value={30}>30 Minutos - Desfavorable (L4)</option>
+                <option value={20}>20 Minutos - Muy Desfavorable (L5)</option>
+                <option value={10}>10 Minutos - Extremo (L6)</option>
+                <option value={60}>60 Minutos (Bajo Tráfico / Buena)</option>
                 <option value={5}>5 Minutos (Pruebas)</option>
-                <option value={10}>10 Minutos</option>
-                <option value={15}>15 Minutos</option>
-                <option value={30}>30 Minutos (Estándar)</option>
-                <option value={45}>45 Minutos</option>
-                <option value={60}>60 Minutos (Bajo tráfico)</option>
               </select>
             </div>
           </div>
@@ -1927,17 +2593,81 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
             </label>
           </div>
 
+          {/* TABLA DE INTERVALOS POR NIVEL ICA */}
+          <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-900/50 flex flex-col gap-1.5 font-mono">
+            <span className="text-[8px] uppercase text-sky-400 font-extrabold block">
+              Intervalos de Transmisión por Nivel ICA (minutos):
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[8px]">
+              <div className="bg-amber-950/30 border border-amber-900/40 p-1.5 rounded flex items-center justify-between">
+                <span className="text-amber-400 font-bold">Regular (L3):</span>
+                <span className="text-white font-extrabold bg-amber-950 px-1 rounded">45m</span>
+              </div>
+              <div className="bg-orange-950/30 border border-orange-900/40 p-1.5 rounded flex items-center justify-between">
+                <span className="text-orange-400 font-bold">Desfavorable (L4):</span>
+                <span className="text-white font-extrabold bg-orange-950 px-1 rounded">30m</span>
+              </div>
+              <div className="bg-rose-950/30 border border-rose-900/40 p-1.5 rounded flex items-center justify-between">
+                <span className="text-rose-400 font-bold">Muy Desfavorable (L5):</span>
+                <span className="text-white font-extrabold bg-rose-950 px-1 rounded">20m</span>
+              </div>
+              <div className="bg-purple-950/30 border border-purple-900/40 p-1.5 rounded flex items-center justify-between">
+                <span className="text-purple-400 font-bold">Extremo (L6):</span>
+                <span className="text-white font-extrabold bg-purple-950 px-1 rounded">10m</span>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-2.5 mt-1 text-[8.5px]">
-            <div>
-              <span className="text-slate-400 font-bold block mb-1">Contexto del Boletín para cada Estado (Plantillas):</span>
-              <p className="text-[7.5px] text-slate-500 leading-normal mb-2">
-                Utiliza variables dinámicas: <code className="text-sky-400 font-mono font-bold">{'{aqi}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{label}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{pm25}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{pm10}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{co}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{no2}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{o3}'}</code>, <code className="text-sky-400 font-mono font-bold">{'{station}'}</code>. Se guarda automáticamente al hacer clic fuera del campo.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+              <div>
+                <span className="text-slate-200 font-extrabold uppercase font-mono text-[9px] block">
+                  Edición Personalizada de Boletines por Nivel ICA & Recomendaciones de Salud
+                </span>
+                <p className="text-[7.5px] text-slate-400 leading-normal mt-0.5">
+                  Personalice el texto del boletín enviado por red APRS para cada nivel de calidad de aire. Incluya la recomendación sanitaria dinámica con <code className="text-emerald-400 font-mono font-bold">{'{recomendacion}'}</code>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetAllIcaTemplates}
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 rounded text-[7.5px] font-mono font-bold transition-colors flex items-center gap-1 border border-amber-500/20 shadow-sm"
+                title="Restablecer todas las plantillas a las oficiales con recomendaciones de salud"
+              >
+                <span>↺</span> Restablecer Recomendaciones por Defecto (BOE/MITECO)
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex flex-col gap-1">
-                <span className="text-emerald-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Buena (ICA 0 - 50)</span>
+            <div className="bg-slate-950/70 p-2 rounded border border-slate-900/80 text-[7.5px] flex flex-wrap items-center gap-1.5 font-mono">
+              <span className="text-slate-400 font-bold">Variables dinámicas disponibles:</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Valor numérico AQI (ej. 46)">{'{aqi}'}</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Etiqueta del estado (ej. Buena, Regular)">{'{label}'}</span>
+              <span className="bg-amber-950/60 text-amber-300 border border-amber-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Contaminante predominante (ej. PM2.5, NO2)">{'{mainPollutant}'}</span>
+              <span className="bg-emerald-950/60 text-emerald-300 border border-emerald-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Recomendación sanitaria oficial">{'{recomendacion}'}</span>
+              <span className="bg-slate-900 text-slate-300 border border-slate-800 px-1 py-0.5 rounded">{'{station}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{pm25}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{pm10}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{co}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{no2}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{o3}'}</span>
+            </div>
+
+            <div className="space-y-3">
+              {/* ESTADO 1: BUENA */}
+              <div className="flex flex-col gap-1 bg-slate-950/40 p-2 rounded-lg border border-emerald-900/30">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-emerald-400 font-extrabold uppercase font-mono text-[8px] tracking-wider">
+                      💚 Estado: Buena (ICA 0 - 50)
+                    </span>
+                    <span className="text-[7px] text-emerald-300/80 bg-emerald-950/80 border border-emerald-800/40 px-1 rounded font-mono font-bold">
+                      Intervalo: 60m
+                    </span>
+                  </div>
+                  <span className="text-[7.5px] text-emerald-400 font-sans italic">
+                    Recomendación: "Sin riesgo. Disfrute de actividades al aire libre."
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={icaTemplateBuena}
@@ -1952,12 +2682,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                     icaTemplateMuyDesfavorable,
                     icaTemplateExtremadamente
                   )}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-emerald-500/30"
+                  className="w-full bg-slate-950 border border-emerald-900/50 rounded px-2 py-1.5 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-emerald-500/60 shadow-inner"
                 />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud actual: {icaTemplateBuena.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIcaTemplateBuena(DEFAULT_ICA_TEMPLATES.buena);
+                      handleSaveAllIcaSettings(
+                        aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                        DEFAULT_ICA_TEMPLATES.buena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                      );
+                    }}
+                    className="hover:text-emerald-400 underline"
+                  >
+                    Restablecer por defecto
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-amber-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Regular (ICA 51 - 100)</span>
+              {/* ESTADO 2: REGULAR */}
+              <div className="flex flex-col gap-1 bg-slate-950/40 p-2 rounded-lg border border-amber-900/30">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-amber-400 font-extrabold uppercase font-mono text-[8px] tracking-wider">
+                      💛 Estado: Regular (ICA 51 - 100 / L3)
+                    </span>
+                    <span className="text-[7px] text-amber-300/80 bg-amber-950/80 border border-amber-800/40 px-1 rounded font-mono font-bold">
+                      Intervalo: 45m
+                    </span>
+                  </div>
+                  <span className="text-[7.5px] text-amber-400 font-sans italic">
+                    Recomendación: "Aceptable. Personas sensibles deben evaluar reducir esfuerzos."
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={icaTemplateRegular}
@@ -1972,12 +2731,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                     icaTemplateMuyDesfavorable,
                     icaTemplateExtremadamente
                   )}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-amber-500/30"
+                  className="w-full bg-slate-950 border border-amber-900/50 rounded px-2 py-1.5 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-amber-500/60 shadow-inner"
                 />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud actual: {icaTemplateRegular.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIcaTemplateRegular(DEFAULT_ICA_TEMPLATES.regular);
+                      handleSaveAllIcaSettings(
+                        aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                        icaTemplateBuena, DEFAULT_ICA_TEMPLATES.regular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                      );
+                    }}
+                    className="hover:text-amber-400 underline"
+                  >
+                    Restablecer por defecto
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-orange-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Desfavorable (ICA 101 - 150)</span>
+              {/* ESTADO 3: DESFAVORABLE */}
+              <div className="flex flex-col gap-1 bg-slate-950/40 p-2 rounded-lg border border-orange-900/30">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-orange-400 font-extrabold uppercase font-mono text-[8px] tracking-wider">
+                      🧡 Estado: Desfavorable (ICA 101 - 150 / L4)
+                    </span>
+                    <span className="text-[7px] text-orange-300/80 bg-orange-950/80 border border-orange-800/40 px-1 rounded font-mono font-bold">
+                      Intervalo: 30m
+                    </span>
+                  </div>
+                  <span className="text-[7.5px] text-orange-400 font-sans italic">
+                    Recomendación: "Grupos de riesgo: reduzca actividades intensas en exterior."
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={icaTemplateDesfavorable}
@@ -1992,12 +2780,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                     icaTemplateMuyDesfavorable,
                     icaTemplateExtremadamente
                   )}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-orange-500/30"
+                  className="w-full bg-slate-950 border border-orange-900/50 rounded px-2 py-1.5 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-orange-500/60 shadow-inner"
                 />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud actual: {icaTemplateDesfavorable.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIcaTemplateDesfavorable(DEFAULT_ICA_TEMPLATES.desfavorable);
+                      handleSaveAllIcaSettings(
+                        aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                        icaTemplateBuena, icaTemplateRegular, DEFAULT_ICA_TEMPLATES.desfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
+                      );
+                    }}
+                    className="hover:text-orange-400 underline"
+                  >
+                    Restablecer por defecto
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-rose-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Muy Desfavorable (ICA 151 - 200)</span>
+              {/* ESTADO 4: MUY DESFAVORABLE */}
+              <div className="flex flex-col gap-1 bg-slate-950/40 p-2 rounded-lg border border-rose-900/30">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-rose-400 font-extrabold uppercase font-mono text-[8px] tracking-wider">
+                      🔴 Estado: Muy Desfavorable (ICA 151 - 200 / L5)
+                    </span>
+                    <span className="text-[7px] text-rose-300/80 bg-rose-950/80 border border-rose-800/40 px-1 rounded font-mono font-bold">
+                      Intervalo: 20m
+                    </span>
+                  </div>
+                  <span className="text-[7.5px] text-rose-400 font-sans italic">
+                    Recomendación: "Nocivo. Evite ejercicio prolongado en exterior. Proteja vias respiratorias."
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={icaTemplateMuyDesfavorable}
@@ -2012,12 +2829,41 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                     icaTemplateMuyDesfavorable,
                     icaTemplateExtremadamente
                   )}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-rose-500/30"
+                  className="w-full bg-slate-950 border border-rose-900/50 rounded px-2 py-1.5 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-rose-500/60 shadow-inner"
                 />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud actual: {icaTemplateMuyDesfavorable.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIcaTemplateMuyDesfavorable(DEFAULT_ICA_TEMPLATES.muyDesfavorable);
+                      handleSaveAllIcaSettings(
+                        aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                        icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, DEFAULT_ICA_TEMPLATES.muyDesfavorable, icaTemplateExtremadamente
+                      );
+                    }}
+                    className="hover:text-rose-400 underline"
+                  >
+                    Restablecer por defecto
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-purple-400 font-extrabold uppercase font-mono text-[7px] tracking-wider">Estado: Extremadamente Desfavorable (ICA &gt; 200)</span>
+              {/* ESTADO 5: EXTREMO */}
+              <div className="flex flex-col gap-1 bg-slate-950/40 p-2 rounded-lg border border-purple-900/30">
+                <div className="flex justify-between items-center flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-purple-400 font-extrabold uppercase font-mono text-[8px] tracking-wider">
+                      💜 Estado: Extremo / Extremadamente Desfavorable (ICA &gt; 200 / L6)
+                    </span>
+                    <span className="text-[7px] text-purple-300/80 bg-purple-950/80 border border-purple-800/40 px-1 rounded font-mono font-bold">
+                      Intervalo: 10m
+                    </span>
+                  </div>
+                  <span className="text-[7.5px] text-purple-400 font-sans italic">
+                    Recomendación: "Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2."
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={icaTemplateExtremadamente}
@@ -2032,8 +2878,24 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                     icaTemplateMuyDesfavorable,
                     icaTemplateExtremadamente
                   )}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-purple-500/30"
+                  className="w-full bg-slate-950 border border-purple-900/50 rounded px-2 py-1.5 text-[8.5px] text-slate-100 font-mono focus:outline-none focus:border-purple-500/60 shadow-inner"
                 />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud actual: {icaTemplateExtremadamente.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIcaTemplateExtremadamente(DEFAULT_ICA_TEMPLATES.extremadamente);
+                      handleSaveAllIcaSettings(
+                        aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
+                        icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, DEFAULT_ICA_TEMPLATES.extremadamente
+                      );
+                    }}
+                    className="hover:text-purple-400 underline"
+                  >
+                    Restablecer por defecto
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2245,75 +3107,98 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
 
             {/* Right side: Intervals for Level 3-6 */}
             <div className="flex flex-col gap-1.5 border-t md:border-t-0 md:border-l border-slate-900/60 pt-2 md:pt-0 pl-0 md:pl-3">
-              <span className="text-[7.5px] text-slate-500 uppercase font-black tracking-wider block mb-1">
-                Intervalos de Transmisión por Nivel ICA (segundos)
-              </span>
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className="text-[7.5px] text-slate-400 uppercase font-black tracking-wider font-mono block">
+                  Intervalos de Transmisión por Nivel ICA
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIntervalLevel3(2700);
+                    setIntervalLevel4(1800);
+                    setIntervalLevel5(1200);
+                    setIntervalLevel6(600);
+                  }}
+                  className="text-[7px] font-mono font-bold text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                  title="Fijar tiempos oficiales BOE/MITECO: L3=45m, L4=30m, L5=20m, L6=10m"
+                >
+                  ↺ Restablecer Oficiales (45m/30m/20m/10m)
+                </button>
+              </div>
 
               {/* Level 3: Regular */}
               <div className="flex items-center justify-between text-[7.5px] font-mono">
                 <span className="text-amber-400 font-bold w-[120px] shrink-0">Regular (L3):</span>
-                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                <div className="flex items-center gap-2 w-full max-w-[150px]">
                   <input 
                     type="range" 
-                    min="10" 
-                    max="600" 
-                    step="5"
+                    min="60" 
+                    max="3600" 
+                    step="30"
                     value={intervalLevel3}
                     onChange={(e) => setIntervalLevel3(parseInt(e.target.value))}
                     className="w-full accent-amber-500 h-1 bg-slate-950 rounded cursor-pointer"
                   />
-                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel3}s</span>
+                  <span className="text-amber-300 font-extrabold w-12 text-right shrink-0 bg-amber-950/60 px-1 py-0.5 rounded border border-amber-800/40">
+                    {Math.floor(intervalLevel3 / 60)}m {intervalLevel3 % 60 ? `${intervalLevel3 % 60}s` : ''}
+                  </span>
                 </div>
               </div>
 
               {/* Level 4: Desfavorable */}
               <div className="flex items-center justify-between text-[7.5px] font-mono">
-                <span className="text-rose-400 font-bold w-[120px] shrink-0">Desfavorable (L4):</span>
-                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                <span className="text-orange-400 font-bold w-[120px] shrink-0">Desfavorable (L4):</span>
+                <div className="flex items-center gap-2 w-full max-w-[150px]">
                   <input 
                     type="range" 
-                    min="10" 
-                    max="480" 
-                    step="5"
+                    min="60" 
+                    max="3600" 
+                    step="30"
                     value={intervalLevel4}
                     onChange={(e) => setIntervalLevel4(parseInt(e.target.value))}
-                    className="w-full accent-rose-500 h-1 bg-slate-950 rounded cursor-pointer"
+                    className="w-full accent-orange-500 h-1 bg-slate-950 rounded cursor-pointer"
                   />
-                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel4}s</span>
+                  <span className="text-orange-300 font-extrabold w-12 text-right shrink-0 bg-orange-950/60 px-1 py-0.5 rounded border border-orange-800/40">
+                    {Math.floor(intervalLevel4 / 60)}m {intervalLevel4 % 60 ? `${intervalLevel4 % 60}s` : ''}
+                  </span>
                 </div>
               </div>
 
               {/* Level 5: Muy Desfavorable */}
               <div className="flex items-center justify-between text-[7.5px] font-mono">
-                <span className="text-rose-600 font-bold w-[120px] shrink-0">Muy Desfavorable (L5):</span>
-                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                <span className="text-rose-400 font-bold w-[120px] shrink-0">Muy Desfavorable (L5):</span>
+                <div className="flex items-center gap-2 w-full max-w-[150px]">
                   <input 
                     type="range" 
-                    min="10" 
-                    max="300" 
-                    step="5"
+                    min="60" 
+                    max="3600" 
+                    step="30"
                     value={intervalLevel5}
                     onChange={(e) => setIntervalLevel5(parseInt(e.target.value))}
-                    className="w-full accent-rose-600 h-1 bg-slate-950 rounded cursor-pointer"
+                    className="w-full accent-rose-500 h-1 bg-slate-950 rounded cursor-pointer"
                   />
-                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel5}s</span>
+                  <span className="text-rose-300 font-extrabold w-12 text-right shrink-0 bg-rose-950/60 px-1 py-0.5 rounded border border-rose-800/40">
+                    {Math.floor(intervalLevel5 / 60)}m {intervalLevel5 % 60 ? `${intervalLevel5 % 60}s` : ''}
+                  </span>
                 </div>
               </div>
 
               {/* Level 6: Extremadamente Desfavorable */}
               <div className="flex items-center justify-between text-[7.5px] font-mono">
                 <span className="text-purple-400 font-bold w-[120px] shrink-0">Extremo (L6):</span>
-                <div className="flex items-center gap-2 w-full max-w-[120px]">
+                <div className="flex items-center gap-2 w-full max-w-[150px]">
                   <input 
                     type="range" 
-                    min="5" 
-                    max="180" 
-                    step="5"
+                    min="30" 
+                    max="3600" 
+                    step="30"
                     value={intervalLevel6}
                     onChange={(e) => setIntervalLevel6(parseInt(e.target.value))}
                     className="w-full accent-purple-500 h-1 bg-slate-950 rounded cursor-pointer"
                   />
-                  <span className="text-slate-300 w-10 text-right shrink-0">{intervalLevel6}s</span>
+                  <span className="text-purple-300 font-extrabold w-12 text-right shrink-0 bg-purple-950/60 px-1 py-0.5 rounded border border-purple-800/40">
+                    {Math.floor(intervalLevel6 / 60)}m {intervalLevel6 % 60 ? `${intervalLevel6 % 60}s` : ''}
+                  </span>
                 </div>
               </div>
             </div>
@@ -2334,119 +3219,292 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
 
         {showTemplateConfig && (
           <div className="bg-black/35 border border-slate-900 p-2.5 rounded-lg flex flex-col gap-2.5 text-[8.5px]">
-            <div className="border-b border-slate-900 pb-1.5 flex items-center justify-between flex-wrap gap-2">
-              <span className="uppercase text-amber-500 font-extrabold font-mono flex items-center gap-1">
-                <Settings size={11} />
-                Editor de Plantillas APRS / Walkie
-              </span>
-              <span className="text-[7.5px] text-slate-500 font-sans">
-                Etiquetas dinámicas: <strong className="text-slate-300 font-mono">{"{ica}"}</strong>, <strong className="text-slate-300 font-mono">{"{pm25}"}</strong>, <strong className="text-slate-300 font-mono">{"{pm10}"}</strong>, <strong className="text-slate-300 font-mono">{"{co}"}</strong>, <strong className="text-slate-300 font-mono">{"{o3}"}</strong>, <strong className="text-slate-300 font-mono">{"{station}"}</strong>, <strong className="text-slate-300 font-mono">{"{criterio}"}</strong>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Boletín Principal General (BLN2AQI):</label>
-                  <input 
-                    type="text" 
-                    value={templateBln2Aqi} 
-                    onChange={(e) => setTemplateBln2Aqi(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-emerald-400 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Calima Confirmada (BLN2AQI):</label>
-                  <input 
-                    type="text" 
-                    value={templateCalima} 
-                    onChange={(e) => setTemplateCalima(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-amber-400 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Regular L3 Boletín (BLN1):</label>
-                  <input 
-                    type="text" 
-                    value={templateBln1} 
-                    onChange={(e) => setTemplateBln1(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-amber-500/80 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Desfavorable L4 Boletín (BLN2):</label>
-                  <input 
-                    type="text" 
-                    value={templateBln2} 
-                    onChange={(e) => setTemplateBln2(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-rose-400 focus:outline-none"
-                  />
-                </div>
+            <div className="border-b border-slate-900 pb-2 flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <span className="uppercase text-amber-500 font-extrabold font-mono flex items-center gap-1 text-[9px]">
+                  <Settings size={12} />
+                  Editor Personalizado de Mensajes APRS, Boletines Calima BOE & Alertas
+                </span>
+                <p className="text-[7.5px] text-slate-400 font-sans mt-0.5">
+                  Configure el formato exacto del texto para difusión en la red APRS. Incluya la recomendación médica oficial con <code className="text-emerald-400 font-mono font-bold">{'{recomendacion}'}</code> y el contaminante dominante con <code className="text-amber-400 font-mono font-bold">{'{mainPollutant}'}</code>.
+                </p>
               </div>
-
-              <div className="flex flex-col gap-2">
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Muy Desfavorable L5 Boletín (BLN3):</label>
-                  <input 
-                    type="text" 
-                    value={templateBln3} 
-                    onChange={(e) => setTemplateBln3(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-rose-600 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Extremo L6 Boletín (BLN4):</label>
-                  <input 
-                    type="text" 
-                    value={templateBln4} 
-                    onChange={(e) => setTemplateBln4(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-400 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Walkie L6 - Población General (CQ):</label>
-                  <input 
-                    type="text" 
-                    value={templateWalkieGral} 
-                    onChange={(e) => setTemplateWalkieGral(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-300 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[8px] font-bold text-slate-400 block mb-1 uppercase font-mono">Alerta Walkie L6 - Población Sensible (CQ):</label>
-                  <input 
-                    type="text" 
-                    value={templateWalkieSens} 
-                    onChange={(e) => setTemplateWalkieSens(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 font-mono text-[8px] text-purple-200 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center bg-slate-950/50 p-1.5 rounded text-[7.5px] font-mono text-slate-400 border border-slate-900/60 mt-1">
-              <span>* Los cambios se aplican en tiempo real al generar los boletines automáticos o manuales.</span>
               <button 
                 type="button" 
                 onClick={() => {
-                  setTemplateBln2Aqi('MEDICION CALIDAD AIRE - ICA: {ica} (PM2.5: {pm25}ug, CO: {co}ug, O3: {o3}ug)');
-                  setTemplateCalima('MEDICION CALIDAD AIRE - ALERTA CALIMA BOE CONFIRMADA ({criterio})');
-                  setTemplateBln4('ICA EXTR. DESFAVORABLE: Emergencia publica. Siga recomendaciones de salud.');
-                  setTemplateWalkieGral('ALERTA EMER: ICA Extr Desfavorable. Gral: evite estancia exterior.');
-                  setTemplateWalkieSens('ALERTA EMER: ICA Extr Desfavorable. Sens: permanezca dentro.');
-                  setTemplateBln3('ICA MUY DESFAVORABLE: Gral: reduzca estar fuera. Sens: interiores y plan medico.');
-                  setTemplateBln2('ICA DESFAVORABLE: Gral: reduzca esfuerzo exterior. Sens: quedese en el interior.');
-                  setTemplateBln1('ICA REGULAR: Gral: disfrute exterior. Sens: considere reducir esfuerzo.');
+                  setTemplateBln2Aqi(DEFAULT_BOE_BLN_TEMPLATES.bln2aqi);
+                  setTemplateCalima(DEFAULT_BOE_BLN_TEMPLATES.calima);
+                  setTemplateBln1(DEFAULT_BOE_BLN_TEMPLATES.bln1);
+                  setTemplateBln2(DEFAULT_BOE_BLN_TEMPLATES.bln2);
+                  setTemplateBln3(DEFAULT_BOE_BLN_TEMPLATES.bln3);
+                  setTemplateBln4(DEFAULT_BOE_BLN_TEMPLATES.bln4);
+                  setTemplateWalkieGral(DEFAULT_BOE_BLN_TEMPLATES.walkieGral);
+                  setTemplateWalkieSens(DEFAULT_BOE_BLN_TEMPLATES.walkieSens);
                 }}
-                className="text-amber-500 hover:text-amber-400 font-bold underline cursor-pointer uppercase text-[7px]"
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 rounded text-[7.5px] font-mono font-bold transition-colors flex items-center gap-1 border border-amber-500/20 shadow-sm"
+                title="Restablecer todas las plantillas a las oficiales con recomendaciones de salud"
               >
-                Restaurar Predeterminados
+                <span>↺</span> Restablecer Todo por Defecto (BOE/MITECO)
+              </button>
+            </div>
+
+            <div className="bg-slate-950/70 p-2 rounded border border-slate-900/80 text-[7.5px] flex flex-wrap items-center gap-1.5 font-mono">
+              <span className="text-slate-400 font-bold">Variables dinámicas:</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Valor numérico AQI o ICA">{'{ica}'} / {'{aqi}'}</span>
+              <span className="bg-sky-950/60 text-sky-300 border border-sky-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Etiqueta del estado (ej. Buena, Regular)">{'{label}'}</span>
+              <span className="bg-amber-950/60 text-amber-300 border border-amber-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Contaminante con mayor peso">{'{mainPollutant}'}</span>
+              <span className="bg-emerald-950/60 text-emerald-300 border border-emerald-800/50 px-1 py-0.5 rounded font-bold cursor-help" title="Recomendación sanitaria oficial">{'{recomendacion}'}</span>
+              <span className="bg-slate-900 text-slate-300 border border-slate-800 px-1 py-0.5 rounded">{'{criterio}'}</span>
+              <span className="bg-slate-900 text-slate-300 border border-slate-800 px-1 py-0.5 rounded">{'{station}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{pm25}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{pm10}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{co}'}</span>
+              <span className="bg-slate-900 text-slate-400 border border-slate-800 px-1 py-0.5 rounded">{'{o3}'}</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {/* 1. BLN2AQI General */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-emerald-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-emerald-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    💚 Boletín Principal General (BLN2AQI)
+                  </span>
+                  <span className="text-[7px] text-emerald-300/80 bg-emerald-950/80 border border-emerald-800/40 px-1 rounded font-mono font-bold">
+                    L1/L2 • Intervalo 60m
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateBln2Aqi} 
+                  onChange={(e) => setTemplateBln2Aqi(e.target.value)}
+                  className="w-full bg-slate-950 border border-emerald-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-emerald-300 focus:outline-none focus:border-emerald-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateBln2Aqi.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateBln2Aqi(DEFAULT_BOE_BLN_TEMPLATES.bln2aqi)}
+                    className="hover:text-emerald-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Alerta Calima BOE Confirmada */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-amber-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-amber-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    🏜️ Alerta Calima BOE Confirmada (BLN2AQI)
+                  </span>
+                  <span className="text-[7px] text-amber-300/80 bg-amber-950/80 border border-amber-800/40 px-1 rounded font-mono font-bold">
+                    Filtro Granulométrico
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateCalima} 
+                  onChange={(e) => setTemplateCalima(e.target.value)}
+                  className="w-full bg-slate-950 border border-amber-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-amber-300 focus:outline-none focus:border-amber-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateCalima.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateCalima(DEFAULT_BOE_BLN_TEMPLATES.calima)}
+                    className="hover:text-amber-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Regular L3 (BLN1) */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-yellow-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-yellow-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    💛 Regular L3 Boletín (BLN1)
+                  </span>
+                  <span className="text-[7px] text-yellow-300/80 bg-yellow-950/80 border border-yellow-800/40 px-1 rounded font-mono font-bold">
+                    Intervalo 45m
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateBln1} 
+                  onChange={(e) => setTemplateBln1(e.target.value)}
+                  className="w-full bg-slate-950 border border-yellow-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-yellow-200 focus:outline-none focus:border-yellow-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateBln1.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateBln1(DEFAULT_BOE_BLN_TEMPLATES.bln1)}
+                    className="hover:text-yellow-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Desfavorable L4 (BLN2) */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-orange-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-orange-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    🧡 Desfavorable L4 Boletín (BLN2)
+                  </span>
+                  <span className="text-[7px] text-orange-300/80 bg-orange-950/80 border border-orange-800/40 px-1 rounded font-mono font-bold">
+                    Intervalo 30m
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateBln2} 
+                  onChange={(e) => setTemplateBln2(e.target.value)}
+                  className="w-full bg-slate-950 border border-orange-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-orange-300 focus:outline-none focus:border-orange-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateBln2.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateBln2(DEFAULT_BOE_BLN_TEMPLATES.bln2)}
+                    className="hover:text-orange-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 5. Muy Desfavorable L5 (BLN3) */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-rose-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-rose-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    🔴 Muy Desfavorable L5 Boletín (BLN3)
+                  </span>
+                  <span className="text-[7px] text-rose-300/80 bg-rose-950/80 border border-rose-800/40 px-1 rounded font-mono font-bold">
+                    Intervalo 20m
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateBln3} 
+                  onChange={(e) => setTemplateBln3(e.target.value)}
+                  className="w-full bg-slate-950 border border-rose-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-rose-300 focus:outline-none focus:border-rose-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateBln3.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateBln3(DEFAULT_BOE_BLN_TEMPLATES.bln3)}
+                    className="hover:text-rose-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 6. Extremo L6 (BLN4) */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-purple-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-purple-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    💜 Extremo L6 Boletín (BLN4)
+                  </span>
+                  <span className="text-[7px] text-purple-300/80 bg-purple-950/80 border border-purple-800/40 px-1 rounded font-mono font-bold">
+                    Intervalo 10m
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateBln4} 
+                  onChange={(e) => setTemplateBln4(e.target.value)}
+                  className="w-full bg-slate-950 border border-purple-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-purple-300 focus:outline-none focus:border-purple-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateBln4.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateBln4(DEFAULT_BOE_BLN_TEMPLATES.bln4)}
+                    className="hover:text-purple-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 7. Alerta Walkie L6 General */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-indigo-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-indigo-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    📻 Alerta Walkie L6 - Población General (CQ)
+                  </span>
+                  <span className="text-[7px] text-indigo-300/80 bg-indigo-950/80 border border-indigo-800/40 px-1 rounded font-mono font-bold">
+                    Emisión Colectiva
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateWalkieGral} 
+                  onChange={(e) => setTemplateWalkieGral(e.target.value)}
+                  className="w-full bg-slate-950 border border-indigo-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-indigo-300 focus:outline-none focus:border-indigo-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateWalkieGral.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateWalkieGral(DEFAULT_BOE_BLN_TEMPLATES.walkieGral)}
+                    className="hover:text-indigo-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+
+              {/* 8. Alerta Walkie L6 Sensible */}
+              <div className="flex flex-col gap-1 bg-slate-950/50 p-2 rounded-lg border border-violet-900/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-violet-400 font-extrabold uppercase font-mono text-[8px] flex items-center gap-1">
+                    🏥 Alerta Walkie L6 - Población Sensible (CQ)
+                  </span>
+                  <span className="text-[7px] text-violet-300/80 bg-violet-950/80 border border-violet-800/40 px-1 rounded font-mono font-bold">
+                    Aviso Sanitario Especial
+                  </span>
+                </div>
+                <input 
+                  type="text" 
+                  value={templateWalkieSens} 
+                  onChange={(e) => setTemplateWalkieSens(e.target.value)}
+                  className="w-full bg-slate-950 border border-violet-900/50 rounded px-2 py-1.5 font-mono text-[8px] text-violet-300 focus:outline-none focus:border-violet-500 shadow-inner"
+                />
+                <div className="flex justify-between items-center text-[7px] text-slate-500 font-mono">
+                  <span>Longitud: {templateWalkieSens.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setTemplateWalkieSens(DEFAULT_BOE_BLN_TEMPLATES.walkieSens)}
+                    className="hover:text-violet-400 underline"
+                  >
+                    Restablecer
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center bg-slate-950/50 p-2 rounded text-[7.5px] font-mono text-slate-400 border border-slate-900/60 mt-1">
+              <span>* Los cambios se guardan localmente y se aplican en tiempo real al generar boletines automáticos o inyección manual.</span>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setTemplateBln2Aqi(DEFAULT_BOE_BLN_TEMPLATES.bln2aqi);
+                  setTemplateCalima(DEFAULT_BOE_BLN_TEMPLATES.calima);
+                  setTemplateBln1(DEFAULT_BOE_BLN_TEMPLATES.bln1);
+                  setTemplateBln2(DEFAULT_BOE_BLN_TEMPLATES.bln2);
+                  setTemplateBln3(DEFAULT_BOE_BLN_TEMPLATES.bln3);
+                  setTemplateBln4(DEFAULT_BOE_BLN_TEMPLATES.bln4);
+                  setTemplateWalkieGral(DEFAULT_BOE_BLN_TEMPLATES.walkieGral);
+                  setTemplateWalkieSens(DEFAULT_BOE_BLN_TEMPLATES.walkieSens);
+                }}
+                className="text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer uppercase text-[7.5px]"
+              >
+                Restaurar Todos los Predeterminados (BOE/MITECO)
               </button>
             </div>
           </div>
@@ -3147,6 +4205,8 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
           [Re-calibrar Sensores]
         </button>
       </div>
+      </>
+      )}
 
       {/* Detailed Sidebar Panel Drawer */}
       <AnimatePresence>

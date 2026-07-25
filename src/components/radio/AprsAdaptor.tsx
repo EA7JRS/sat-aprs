@@ -837,10 +837,20 @@ export default function AprsAdaptor({
 
   // APRS Bidirectional Messaging States
   const [chatMessageText, setChatMessageText] = useState('');
-  const [chatSelectedCallsign, setChatSelectedCallsign] = useState('EA4CECOP');
+  const [chatSelectedCallsign, setChatSelectedCallsign] = useState('');
   const [chatViewMode, setChatViewMode] = useState<'chat' | 'inbox' | 'outbox'>('chat');
   const [requireChatAck, setRequireChatAck] = useState(true);
   const [autoAckEnabled, setAutoAckEnabled] = useState(true);
+  
+  // Contactos APRS Frecuentes gestionados por el usuario
+  const [userFrequentContacts, setUserFrequentContacts] = useState<{ call: string; desc?: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('user_aprs_frequent_contacts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   
   // Simulated incoming message states
   const [simulatedSender, setSimulatedSender] = useState('ED4YAK-2');
@@ -946,12 +956,12 @@ export default function AprsAdaptor({
   } | null>(null);
 
   // Form states for manual or automatic APRS parameters
-  const [aprsSource, setAprsSource] = useState('EA4SAT-1');
+  const [aprsSource, setAprsSource] = useState('CALLSING-13');
   const [aprsDest, setAprsDest] = useState('APCE01');
   const [aprsPath, setAprsPath] = useState('WIDE1-1,WIDE2-1');
   const [aprsType, setAprsType] = useState<'BULLETIN' | 'OBJECT' | 'BEACON' | 'MESSAGE'>('OBJECT');
   const [aprsSymbol, setAprsSymbol] = useState('['); // default is human/emergency block
-  const [callsignTarget, setCallsignTarget] = useState('EA4CECOP'); // target for message
+  const [callsignTarget, setCallsignTarget] = useState(''); // target for message
   const [customComment, setCustomComment] = useState('');
   const [isEmergencyAlert, setIsEmergencyAlert] = useState(true);
 
@@ -1500,7 +1510,11 @@ export default function AprsAdaptor({
   // APRS Chat messaging helpers
   const handleSendChatMessage = (textToSubmit?: string, recipientOverride?: string) => {
     const text = (textToSubmit !== undefined ? textToSubmit : chatMessageText).trim();
-    const recipient = (recipientOverride || chatSelectedCallsign || 'EA4CECOP').toUpperCase();
+    const recipient = (recipientOverride || chatSelectedCallsign || '').trim().toUpperCase();
+    if (!recipient) {
+      if (showToast) showToast('⚠️ Especifique un indicativo destinatario para enviar el SMS.');
+      return;
+    }
     if (!text) return;
 
     const msgId = Math.floor(Math.random() * 90) + 10; // 10 to 99
@@ -3632,51 +3646,109 @@ export default function AprsAdaptor({
                 <div className="space-y-3">
                   <div>
                     <label className="text-[10px] font-mono text-slate-400 block mb-1 uppercase">Mi Indicativo Local (TNC)</label>
-                    <div className="bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 font-mono text-xs text-slate-400 flex items-center justify-between">
-                      <span className="text-orange-400 font-bold">{aprsSource}</span>
-                      <span className="text-[8px] bg-orange-950/50 text-orange-400 border border-orange-900/40 px-1.5 py-0.5 rounded uppercase font-black font-sans">Activo</span>
+                    <div className="bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 font-mono text-xs text-slate-400 flex items-center justify-between gap-2">
+                      <input
+                        type="text"
+                        value={aprsSource}
+                        onChange={(e) => setAprsSource(e.target.value.toUpperCase())}
+                        className="bg-transparent text-orange-400 font-bold focus:outline-none uppercase w-full"
+                        placeholder="CALLSING-13"
+                      />
+                      <span className="text-[8px] bg-orange-950/50 text-orange-400 border border-orange-900/40 px-1.5 py-0.5 rounded uppercase font-black font-sans shrink-0">Activo</span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-mono text-slate-400 block mb-1 uppercase">Indicativo Destinatario</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] font-mono text-slate-400 uppercase">Indicativo Destinatario</label>
+                      {chatSelectedCallsign.trim() && !userFrequentContacts.some(c => c.call.toUpperCase() === chatSelectedCallsign.trim().toUpperCase()) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCall = chatSelectedCallsign.trim().toUpperCase();
+                            if (newCall) {
+                              const updated = [...userFrequentContacts, { call: newCall, desc: 'Usuario' }];
+                              setUserFrequentContacts(updated);
+                              localStorage.setItem('user_aprs_frequent_contacts', JSON.stringify(updated));
+                              if (showToast) showToast(`✓ ${newCall} añadido a contactos frecuentes.`);
+                            }
+                          }}
+                          className="text-[8px] font-mono font-bold text-orange-400 hover:text-orange-300 underline cursor-pointer"
+                        >
+                          + Guardar Contacto
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={chatSelectedCallsign}
                       onChange={(e) => setChatSelectedCallsign(e.target.value.toUpperCase())}
-                      placeholder="P.EJ. EA4CECOP"
-                      className="w-full bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 font-mono text-xs text-orange-300 focus:border-orange-500 outline-none uppercase"
+                      placeholder="INTRODUCIR INDICATIVO..."
+                      className="w-full bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 font-mono text-xs text-orange-300 focus:border-orange-500 outline-none uppercase placeholder:text-slate-600"
                     />
                   </div>
 
-                  {/* QUICK SELECT CONTACTS */}
+                  {/* QUICK SELECT CONTACTS (CONTACTOS FRECUENTES DEL USUARIO) */}
                   <div>
-                    <label className="text-[9px] font-mono text-slate-500 block mb-1 uppercase">Contactos APRS Frecuentes</label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {[
-                        { call: 'EA4CECOP', desc: 'CECOP Central' },
-                        { call: 'ED4YAK-2', desc: 'Radioclub UPM' },
-                        { call: 'EA4SAT-3', desc: 'Móvil GPS' },
-                        { call: 'EA1MNT', desc: 'Refugio Montaña' }
-                      ].map((c) => (
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[9px] font-mono text-slate-500 uppercase">Contactos APRS Frecuentes</label>
+                      {userFrequentContacts.length > 0 && (
                         <button
-                          key={c.call}
                           type="button"
                           onClick={() => {
-                            setChatSelectedCallsign(c.call);
-                            setChatViewMode('chat');
+                            setUserFrequentContacts([]);
+                            localStorage.removeItem('user_aprs_frequent_contacts');
+                            if (showToast) showToast('Contactos frecuentes limpiados.');
                           }}
-                          className={`p-1.5 rounded border text-left font-mono transition-all cursor-pointer ${
-                            chatSelectedCallsign === c.call
-                              ? 'bg-orange-500/10 border-orange-500 text-orange-300 font-bold'
-                              : 'bg-slate-950 border-slate-900 hover:border-slate-800 text-slate-400'
-                          }`}
+                          className="text-[7.5px] text-slate-500 hover:text-rose-400 underline font-mono"
                         >
-                          <div className="text-[10px] leading-tight">{c.call}</div>
-                          <div className="text-[8px] text-slate-500 font-sans truncate">{c.desc}</div>
+                          Limpiar
                         </button>
-                      ))}
+                      )}
                     </div>
+
+                    {userFrequentContacts.length === 0 ? (
+                      <div className="bg-slate-950/60 p-2 rounded border border-slate-900 text-[8px] font-sans text-slate-500 text-center italic">
+                        No hay contactos guardados. Escriba un indicativo destinatario y pulse &quot;+ Guardar Contacto&quot;.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {userFrequentContacts.map((c) => (
+                          <div
+                            key={c.call}
+                            className={`p-1.5 rounded border font-mono transition-all flex justify-between items-center gap-1 ${
+                              chatSelectedCallsign === c.call
+                                ? 'bg-orange-500/10 border-orange-500 text-orange-300 font-bold'
+                                : 'bg-slate-950 border-slate-900 hover:border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatSelectedCallsign(c.call);
+                                setChatViewMode('chat');
+                              }}
+                              className="text-left flex-1 truncate cursor-pointer"
+                            >
+                              <div className="text-[10px] leading-tight">{c.call}</div>
+                              <div className="text-[8px] text-slate-500 font-sans truncate">{c.desc || 'Frecuente'}</div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = userFrequentContacts.filter(x => x.call !== c.call);
+                                setUserFrequentContacts(updated);
+                                localStorage.setItem('user_aprs_frequent_contacts', JSON.stringify(updated));
+                              }}
+                              className="text-slate-600 hover:text-rose-400 p-0.5 text-[10px] shrink-0"
+                              title="Eliminar contacto"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* PROTOCOL OPTIONS */}

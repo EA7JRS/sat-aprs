@@ -152,6 +152,34 @@
           "description": "User email or callsign who modified the configurations"
         }
       }
+    },
+    "IcaTemplatesConfig": {
+      "title": "IcaTemplatesConfig",
+      "description": "Custom APRS ICA level bulletin message templates and health recommendations",
+      "type": "object",
+      "properties": {
+        "icaTemplateBuena": {
+          "type": "string"
+        },
+        "icaTemplateRegular": {
+          "type": "string"
+        },
+        "icaTemplateDesfavorable": {
+          "type": "string"
+        },
+        "icaTemplateMuyDesfavorable": {
+          "type": "string"
+        },
+        "icaTemplateExtremadamente": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "updatedBy": {
+          "type": "string"
+        }
+      }
     }
   },
   "firestore": {
@@ -170,6 +198,10 @@
     "/system/sos_config": {
       "schema": "SOSConfig",
       "description": "Shared SOS alert sound and map configuration"
+    },
+    "/system/ica_templates": {
+      "schema": "IcaTemplatesConfig",
+      "description": "Global custom APRS bulletin templates for ICA air quality levels"
     }
   }
 }

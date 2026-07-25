@@ -29,5 +29,11 @@ service cloud.firestore {
       allow write: if isCreator() || (request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isRemer == true);
     }
+
+    // System ICA bulletin templates
+    match /system/ica_templates {
+      allow read: if true;
+      allow write: if isCreator() || request.auth != null;
+    }
   }
 }

@@ -947,6 +947,49 @@ export default function IgnEarthquakeIndicators({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* COL 1: SEISMIC DETECTOR & EARTHQUAKES (7 COLS) */}
           <div className="lg:col-span-7 flex flex-col gap-4 animate-fade-in">
+            {/* APRS SEISMO BEACON STATUS CARD */}
+            <div className="bg-slate-950 border border-slate-900 rounded-xl p-3.5 flex flex-col gap-2 shadow-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Radio className="text-rose-400 animate-pulse" size={15} />
+                  <span className="font-sans font-extrabold text-xs text-slate-200 tracking-tight uppercase">
+                    Baliza de Posición APRS para Sismo Más Reciente (SEISMO)
+                  </span>
+                </div>
+                <span className="text-[9px] bg-rose-950/60 border border-rose-900/50 text-rose-300 font-bold font-mono px-2 py-0.5 rounded">
+                  SÍMBOLO: \Q
+                </span>
+              </div>
+              
+              <p className="text-[10.5px] text-slate-400 leading-relaxed font-sans">
+                Transmisión de baliza APRS de objeto <strong className="text-slate-200 font-mono">SEISMO</strong> para el terremoto más reciente. Incluye el icono sísmico <strong className="text-rose-400 font-mono font-bold">\Q</strong> (Ciencia y Geofísica) e identifica en el comentario la magnitud y lugar de la localización oficial IGN.
+              </p>
+
+              {processedEarthquakes.length > 0 ? (() => {
+                const latestEq = processedEarthquakes[0];
+                const aprsLat = (latestEq.latitude >= 0 ? latestEq.latitude.toFixed(2) + 'N' : Math.abs(latestEq.latitude).toFixed(2) + 'S');
+                const aprsLon = (latestEq.longitude >= 0 ? latestEq.longitude.toFixed(2) + 'E' : Math.abs(latestEq.longitude).toFixed(2) + 'W');
+                const rawPacket = latestEq.aprsPacket || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;SEISMO   *${new Date(latestEq.time).getUTCHours().toString().padStart(2, '0')}${new Date(latestEq.time).getUTCMinutes().toString().padStart(2, '0')}00z${aprsLat}\\${aprsLon}QSISMO Magnitud:${latestEq.magnitud.toFixed(1)}, Lugar:${latestEq.localizacion} (Prof:${latestEq.depthKm}km) - Fuente: IGN`;
+                
+                return (
+                  <div className="bg-slate-900/90 border border-slate-850 rounded-lg p-2.5 font-mono text-[9.5px] select-all relative overflow-x-auto flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[8px] font-bold uppercase text-slate-500">
+                      <span>Última Trama Transmitida</span>
+                      <span className="text-rose-400">Magnitud: M{latestEq.magnitud.toFixed(1)} • {latestEq.localizacion}</span>
+                    </div>
+                    <div className="text-slate-200 font-mono whitespace-pre break-all">
+                      <span className="text-amber-400 font-bold">TX: </span>
+                      <span className="text-emerald-300">{rawPacket}</span>
+                    </div>
+                  </div>
+                );
+              })() : (
+                <div className="bg-slate-900/60 p-2 rounded text-[9px] text-slate-500 italic font-mono">
+                  Sin sismos detectados actualmente para radiodifundir la baliza SEISMO.
+                </div>
+              )}
+            </div>
+
             {/* List of Earthquakes currently within configured Max Radio */}
             <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-900 pb-2">

@@ -79,6 +79,8 @@ interface WildfireMonitorResponse {
   regionalRisks: RegionalFireRisk[];
   copernicusAlerts: CopernicusAlert[];
   incendiosEspanaFeed: IncendiosEspanaFeedItem[];
+  aprsBeaconPacket?: string;
+  beaconFire?: WildfireHotspot;
 }
 
 interface WildfireMonitorProps {
@@ -95,8 +97,10 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
   const [autoUpdate, setAutoUpdate] = useState(true);
 
   // Filters & Selected hot spots
-  const [selectedPeriod, setSelectedPeriod] = useState<'1' | '2' | '3'>('1');
-  const [selectedConfidence, setSelectedConfidence] = useState<'all' | 'med' | 'high'>('all');
+  const [selectedPeriod, setSelectedPeriod] = useState<'1' | '2' | '3' | 'all'>('1');
+  const [selectedConfidence, setSelectedConfidence] = useState<'all' | 'high' | 'nominal' | 'low'>('all');
+  const [onlyNearbyOperator, setOnlyNearbyOperator] = useState<boolean>(false);
+  const [operatorRadiusKm, setOperatorRadiusKm] = useState<number>(100);
   const [searchQuery, setSearchQuery] = useState('');
   const [mapLayer, setMapLayer] = useState<'termico' | 'topografico' | 'satelite'>('termico');
   const [selectedHotspot, setSelectedHotspot] = useState<WildfireHotspot | null>(null);
@@ -511,6 +515,25 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     }
   };
 
+  const [transmittingBeacon, setTransmittingBeacon] = useState(false);
+
+  const handleTransmitBeacon = async () => {
+    setTransmittingBeacon(true);
+    try {
+      const res = await customFetch('/api/wildfires/beacon/transmit', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setSuccessMsg('✓ Baliza APRS FOCO-INC (/:) transmitida a la red con éxito.');
+        setTimeout(() => setSuccessMsg(null), 3000);
+        await fetchWildfireData(true);
+      }
+    } catch (err) {
+      console.error('Error transmitting wildfire beacon:', err);
+    } finally {
+      setTransmittingBeacon(false);
+    }
+  };
+
   // Map viewport Dimensions & Scaling Math
   const mapWidth = 500;
   const mapHeight = 380;
@@ -577,34 +600,63 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     return `Sinc: hace ${mins} min${autoStr}`;
   };
 
-  // Compile hotspots and filter based on Period, Confidence level, and search box
+  // Compile hotspots and filter based on Period, Confidence level, Operator scope, FRP, Proximity, and search box
   const filteredHotspots = useMemo(() => {
     if (!data?.hotspots) return [];
     return data.hotspots.filter(h => {
-      // 1. Period filter
-      if (selectedPeriod === '1') {
-        // past 24h
-      } else if (selectedPeriod === '2') {
-        // simulated 48h (just keep all, as NASA feed contains the past 24 hours)
-      } else if (selectedPeriod === '3') {
-        // simulated 72h
+      // 1. Time Range / Period filter (24h, 48h, 72h, or all)
+      if (selectedPeriod !== 'all') {
+        const nowMs = Date.now();
+        let hotspotMs = 0;
+        if (h.date) {
+          const dStr = h.date.includes('T') ? h.date : `${h.date}T${h.time || '12:00:00'}`;
+          const parsed = Date.parse(dStr);
+          if (!isNaN(parsed)) {
+            hotspotMs = parsed;
+          }
+        }
+
+        if (hotspotMs > 0) {
+          const diffHours = (nowMs - hotspotMs) / (1000 * 3600);
+          if (selectedPeriod === '1') { // 24h
+            if (diffHours > 24) return false;
+          } else if (selectedPeriod === '2') { // 48h
+            if (diffHours > 48) return false;
+          } else if (selectedPeriod === '3') { // 72h
+            if (diffHours > 72) return false;
+          }
+        }
       }
 
-      // 2. Minimum Confidence filter
+      // 2. NASA/Copernicus Confidence level filter
       if (selectedConfidence === 'high') {
-        const isHigh = h.confidence === 'high' || parseInt(h.confidence) >= 80 || h.dangerLevel === 'Extremo';
+        const confVal = parseInt(String(h.confidence));
+        const isHigh = h.confidence === 'high' || h.confidence === 'h' || (!isNaN(confVal) && confVal >= 80) || h.dangerLevel === 'Extremo';
         if (!isHigh) return false;
-      } else if (selectedConfidence === 'med') {
-        const isLow = h.confidence === 'low' || parseInt(h.confidence) < 50;
-        if (isLow) return false;
+      } else if (selectedConfidence === 'nominal') {
+        const confVal = parseInt(String(h.confidence));
+        const isNominal = h.confidence === 'nominal' || h.confidence === 'med' || h.confidence === 'n' || (!isNaN(confVal) && confVal >= 50 && confVal < 80) || h.dangerLevel === 'Alto';
+        if (!isNominal) return false;
+      } else if (selectedConfidence === 'low') {
+        const confVal = parseInt(String(h.confidence));
+        const isLow = h.confidence === 'low' || h.confidence === 'l' || (!isNaN(confVal) && confVal < 50);
+        if (!isLow) return false;
       }
 
-      // 3. Minimum FRP intensity filter (Intensidad del Foco)
+      // 3. Operator Scope filter: Only Nearby Operator Location vs All Spain
+      if (onlyNearbyOperator) {
+        const distKm = calculateDistanceKm(activeLat, activeLon, h.lat, h.lon);
+        if (distKm > operatorRadiusKm) {
+          return false;
+        }
+      }
+
+      // 4. Minimum FRP intensity filter (Intensidad del Foco)
       if (h.frpMw < minFrpFilter) {
         return false;
       }
 
-      // 4. Proximity to Populated Areas filter
+      // 5. Proximity to Populated Areas filter
       if (maxProximityFilter < 999) {
         const closestInfo = getClosestPopulatedArea(h.lat, h.lon);
         if (!closestInfo || closestInfo.distanceKm > maxProximityFilter) {
@@ -612,7 +664,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
         }
       }
 
-      // 5. Search text query
+      // 6. Search text query
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();
         const matches = h.region.toLowerCase().includes(q) || h.id.toLowerCase().includes(q) || h.satellite.toLowerCase().includes(q);
@@ -621,7 +673,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
 
       return true;
     });
-  }, [data, selectedPeriod, selectedConfidence, searchQuery, minFrpFilter, maxProximityFilter, resolvedPopulatedAreas]);
+  }, [data, selectedPeriod, selectedConfidence, onlyNearbyOperator, operatorRadiusKm, activeLat, activeLon, searchQuery, minFrpFilter, maxProximityFilter, resolvedPopulatedAreas]);
 
   // Compute live statistics for summary boxes
   const stats = useMemo(() => {
@@ -1076,44 +1128,108 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
             </div>
           </div>
 
-          {/* DYNAMIC PERÍODO SELECTOR SEGMENT CONTROL */}
-          <div className="filter-group">
-            <div className="filter-label">Período</div>
+          {/* INTERRUPTOR DE ÁMBITO GEOGRÁFICO: TODO ESPAÑA VS SOLO CERCANOS AL OPERADOR */}
+          <div className="filter-group border-b border-[#2a1500]/45 pb-3 mb-2 px-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="filter-label text-[#ff8c42] flex items-center gap-1.5 font-bold uppercase text-[9.5px] font-mono">
+                <Locate size={12} className="text-[#ff4500]" />
+                Ámbito Geográfico
+              </span>
+              <span className="text-[9px] font-mono text-stone-400">
+                {onlyNearbyOperator ? `< ${operatorRadiusKm} km Operador` : 'España Completa'}
+              </span>
+            </div>
+
+            <div className="flex bg-[#0c0500] border border-[#2a1500] p-1 rounded-lg gap-1">
+              <button
+                type="button"
+                onClick={() => setOnlyNearbyOperator(false)}
+                className={`flex-1 text-[10px] font-mono py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  !onlyNearbyOperator
+                    ? 'bg-gradient-to-r from-[#cc3300] to-[#ff4500] text-white font-bold shadow'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <Globe size={11} />
+                <span>Todo España</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOnlyNearbyOperator(true)}
+                className={`flex-1 text-[10px] font-mono py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  onlyNearbyOperator
+                    ? 'bg-gradient-to-r from-[#cc3300] to-[#ff4500] text-white font-bold shadow'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <MapPin size={11} />
+                <span>Solo Operador</span>
+              </button>
+            </div>
+
+            {onlyNearbyOperator && (
+              <div className="mt-2.5 bg-[#120800] border border-[#3d1800] p-2 rounded text-[9.5px] font-mono text-stone-300 space-y-1.5">
+                <div className="flex justify-between items-center text-stone-400">
+                  <span>Ubicación Fija Operador:</span>
+                  <span className="text-[#ff8c42] font-semibold">{activeLat.toFixed(4)}°N, {activeLon.toFixed(4)}°W</span>
+                </div>
+                <div className="flex justify-between items-center text-stone-400">
+                  <span>Radio de Filtrado:</span>
+                  <span className="text-amber-400 font-bold">{operatorRadiusKm} km</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="25" 
+                  max="300" 
+                  step="25" 
+                  value={operatorRadiusKm}
+                  onChange={(e) => setOperatorRadiusKm(Number(e.target.value))}
+                  className="w-full accent-[#ff4500] h-1 bg-[#1a0a00] rounded focus:outline-none cursor-ew-resize"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* DYNAMIC PERÍODO SELECTOR SEGMENT CONTROL (RANGO DE TIEMPO) */}
+          <div className="filter-group px-4 mb-2">
+            <div className="filter-label">Rango de Tiempo</div>
             <div className="seg-ctrl" id="ctrl-days">
-              {(['1', '2', '3'] as const).map(d => (
+              {[
+                { id: '1', label: 'Últimas 24h' },
+                { id: '2', label: 'Últimas 48h' },
+                { id: '3', label: 'Últimas 72h' },
+                { id: 'all', label: 'Todas' }
+              ].map(item => (
                 <button
-                  key={d}
-                  onClick={() => setSelectedPeriod(d)}
-                  className={`seg-btn ${selectedPeriod === d ? 'active' : ''}`}
+                  key={item.id}
+                  onClick={() => setSelectedPeriod(item.id as any)}
+                  className={`seg-btn ${selectedPeriod === item.id ? 'active' : ''}`}
                 >
-                  {d} {d === '1' ? 'día' : 'días'}
+                  {item.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* DYNAMIC CONFIANZA SELECTOR SEGMENT CONTROL */}
-          <div className="filter-group">
-            <div className="filter-label">Confianza mínima</div>
+          {/* DYNAMIC CONFIANZA SELECTOR SEGMENT CONTROL (NASA/COPERNICUS) */}
+          <div className="filter-group px-4 mb-2">
+            <div className="filter-label">Nivel de Confianza (NASA / Copernicus)</div>
             <div className="seg-ctrl" id="ctrl-conf">
-              <button
-                onClick={() => setSelectedConfidence('all')}
-                className={`seg-btn ${selectedConfidence === 'all' ? 'active' : ''}`}
-              >
-                Todas
-              </button>
-              <button
-                onClick={() => setSelectedConfidence('med')}
-                className={`seg-btn ${selectedConfidence === 'med' ? 'active' : ''}`}
-              >
-                ≥ Media
-              </button>
-              <button
-                onClick={() => setSelectedConfidence('high')}
-                className={`seg-btn ${selectedConfidence === 'high' ? 'active' : ''}`}
-              >
-                Solo alta
-              </button>
+              {[
+                { id: 'all', label: 'Todas' },
+                { id: 'high', label: 'Alta (≥80%)' },
+                { id: 'nominal', label: 'Nominal' },
+                { id: 'low', label: 'Baja (<50%)' }
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedConfidence(item.id as any)}
+                  className={`seg-btn ${selectedConfidence === item.id ? 'active' : ''}`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1271,7 +1387,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
         <section id="map">
           
           {/* FLOATING MAP LAYERS OVERLAY */}
-          <div className="absolute top-3 left-3 z-10 flex bg-neutral-950/80 backdrop-blur border border-[#ff4500]/20 rounded-lg p-0.5 shadow-2xl gap-1">
+          <div className="absolute top-3 left-3 z-10 flex bg-neutral-950/80 backdrop-blur border border-[#ff4500]/20 rounded-lg p-0.5 shadow-2xl gap-1 flex-wrap">
             {(['termico', 'topografico', 'satelite'] as const).map(layer => {
               const isSel = mapLayer === layer;
               const labels = {
@@ -1293,6 +1409,21 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
                 </button>
               );
             })}
+
+            {/* Quick Toggle for Operator Scope */}
+            <button
+              type="button"
+              onClick={() => setOnlyNearbyOperator(prev => !prev)}
+              className={`px-2 py-1 rounded text-[10px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ml-1 ${
+                onlyNearbyOperator
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white border-amber-400 shadow'
+                  : 'border-[#3d1800] text-stone-400 hover:text-stone-200 bg-black/60'
+              }`}
+              title="Alternar entre Todo España o Solo Focos Cercanos a la ubicación del Operador"
+            >
+              <MapPin size={10} />
+              <span>{onlyNearbyOperator ? `Solo Operador (<${operatorRadiusKm}km)` : 'Todo España'}</span>
+            </button>
           </div>
 
           {/* REALTIME SPATIAL POSITION COORDINATES */}
@@ -1610,6 +1741,107 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
       {/* DETAILED ACTION WIDGET PANELS GRID */}
       <div className="p-5 bg-[#111111] grid grid-cols-1 md:grid-cols-12 gap-5" id="inspect-widget-view">
         
+        {/* APRS WILDFIRE BEACON STATUS CARD (FOCO-INC /:) */}
+        <div className="md:col-span-12 bg-[#0a0500] border border-[#ff4500]/30 p-4 rounded-xl flex flex-col gap-3 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[#ff4500]/5 rounded-full blur-2xl pointer-events-none"></div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#3d1800] pb-2.5">
+            <div className="flex items-center gap-2">
+              <Radio size={16} className="text-[#ff4500] animate-pulse shrink-0" />
+              <div>
+                <h3 className="font-extrabold text-xs uppercase tracking-tight text-stone-100 font-mono">
+                  Baliza Móvil APRS de Avance de Foco (FOCO-INC)
+                </h3>
+                <p className="text-[10px] text-stone-400">
+                  Difusión móvil APRS con desplazamiento dinámico por viento/orografía cada 20-30 min
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-[9px] bg-[#2a1200] border border-[#ff4500]/50 text-[#ff8c42] font-black font-mono px-2.5 py-1 rounded shadow-sm">
+                SÍMBOLO: /:
+              </span>
+              <button
+                type="button"
+                onClick={handleTransmitBeacon}
+                disabled={transmittingBeacon}
+                className="bg-gradient-to-r from-[#cc3300] to-[#ff4500] hover:from-[#ff4500] hover:to-[#ff6a00] text-white font-bold text-[10px] uppercase font-mono px-3 py-1 rounded flex items-center gap-1.5 transition-all shadow cursor-pointer disabled:opacity-50"
+              >
+                <Send size={10.5} className={transmittingBeacon ? 'animate-spin' : ''} />
+                <span>{transmittingBeacon ? 'Transmitiendo...' : 'Transmitir Baliza'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ACTIVE BEACON DETAILS */}
+          {(() => {
+            const activeBeaconFire = data?.beaconFire || (filteredHotspots.length > 0 ? filteredHotspots[0] : null);
+            if (!activeBeaconFire) {
+              return (
+                <div className="text-[10px] font-mono text-stone-500 italic bg-[#110800] p-3 rounded border border-[#2a1500]">
+                  Sin focos de incendio detectados actualmente para radiodifundir la baliza FOCO-INC.
+                </div>
+              );
+            }
+
+            const getLocProv = (regionStr: string) => {
+              if (!regionStr) return "";
+              const match = regionStr.match(/\(([^)]+)\)/);
+              const inner = match ? match[1] : regionStr;
+              if (inner.includes(' - ')) {
+                const parts = inner.split(' - ').map(s => s.trim());
+                if (parts.length >= 2) {
+                  return `${parts[1]}, ${parts[0]}`;
+                }
+              }
+              return inner.replace(/[()]/g, '').trim();
+            };
+
+            const locProv = getLocProv(activeBeaconFire.region);
+            const cseStr = Math.round(activeBeaconFire.courseDeg || 68).toString().padStart(3, '0');
+            const spdStr = Math.round(activeBeaconFire.speedKts || 18).toString().padStart(3, '0');
+            const cseSpd = `${cseStr}/${spdStr}`;
+
+            const rawPacket = data?.aprsBeaconPacket || activeBeaconFire.rawAprsFire || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;FOCO-INC *251030z${activeBeaconFire.lat >= 0 ? activeBeaconFire.lat.toFixed(2) + 'N' : Math.abs(activeBeaconFire.lat).toFixed(2) + 'S'}/${activeBeaconFire.lon >= 0 ? '0' + activeBeaconFire.lon.toFixed(2) + 'E' : '0' + Math.abs(activeBeaconFire.lon).toFixed(2) + 'W'}:${cseSpd}FRP: ${activeBeaconFire.frpMw.toFixed(0)}MW ${activeBeaconFire.dangerLevel || 'Alto'} ${locProv} Avance:${activeBeaconFire.propagationDir || 'ENE hacia zona boscosa (vel 18kt)'}`;
+
+            return (
+              <div className="flex flex-col gap-2.5 font-mono text-[10px]">
+                <div className="bg-[#140800] border border-[#3d1800] rounded-lg p-2.5">
+                  <div className="flex items-center justify-between text-[8.5px] font-bold text-stone-400 uppercase mb-1">
+                    <span className="text-[#ff8c42]">Trama Objeto Móvil APRS Transmitida (Banda VHF / APRS-IS)</span>
+                    <span className="text-emerald-400 font-extrabold">TRACKING MÓVIL (Cadencia: 20-30 min)</span>
+                  </div>
+                  <div className="text-stone-200 font-mono text-[10.5px] whitespace-pre break-all select-all bg-[#0d0500] p-2 rounded border border-[#3d1800]">
+                    <span className="text-amber-400 font-bold">TX &gt; </span>
+                    <span className="text-emerald-300 font-semibold">{rawPacket}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-[#110800] border border-[#2a1500] p-2.5 rounded-lg text-stone-300 font-sans text-[11px]">
+                  <div>
+                    <span className="text-[8.5px] font-bold uppercase text-stone-500 block mb-0.5">Ubicación / Foco Principal</span>
+                    <span className="font-extrabold text-[#ff8c42]">{activeBeaconFire.region}</span>
+                  </div>
+                  <div>
+                    <span className="text-[8.5px] font-bold uppercase text-stone-500 block mb-0.5">Carga Radiativa FRP</span>
+                    <span className="font-extrabold text-[#ff4500]">{activeBeaconFire.frpMw.toFixed(0)} MW ({activeBeaconFire.dangerLevel || 'Alto'})</span>
+                  </div>
+                  <div>
+                    <span className="text-[8.5px] font-bold uppercase text-stone-500 block mb-0.5">Avance / Vector de Avance</span>
+                    <span className="font-extrabold text-amber-300">{activeBeaconFire.propagationDir || 'ENE hacia zona boscosa (vel 18kt)'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[8.5px] font-bold uppercase text-stone-500 block mb-0.5">Posición Móvil Dinámica</span>
+                    <span className="font-extrabold text-sky-300 font-mono text-[10px]">
+                      {activeBeaconFire.lat.toFixed(4)}°, {activeBeaconFire.lon.toFixed(4)}°
+                      <span className="block text-[9px] text-stone-400">Rumbo {activeBeaconFire.courseDeg || 68}° ({activeBeaconFire.speedKts || 18} kt)</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
         {/* EXPEDIENTE TÉCNICO SATELITAL INSPECTOR */}
         <div className="md:col-span-4 bg-[#0a0500] border border-[#2a1500] p-4.5 rounded-xl flex flex-col justify-between shadow-2xl gap-4">
           <div>

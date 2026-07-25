@@ -398,11 +398,11 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
                 <div className="space-y-1.5 font-mono text-[9px]">
                   <div className="bg-slate-950 p-2 rounded border border-slate-900 flex flex-col gap-0.5">
                     <div className="flex justify-between items-center text-slate-500 text-[8px] font-bold uppercase mb-0.5">
-                      <span>Baliza de Posición APRS (Símbolo 'Q' - Ciencia e Investigación)</span>
+                      <span>Baliza de Posición APRS (Símbolo '&#123;' - Calidad del Aire)</span>
                       <span className="text-slate-500 font-mono">APRS-IS / RF TX</span>
                     </div>
                     <span className="text-sky-400 select-all font-bold tracking-tight whitespace-pre-wrap break-all">
-                      {iqair.rawAprsAqi || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;AIR-QUAL *220000z4025.00N\\00342.00WQ- ICA: ${iqair.aqi} (PM2.5: ${iqair.pm2_5 || 0}ug)`}
+                      {iqair.rawAprsAqi || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;AIR-QUAL *220000z4025.00N\\00342.00W{- ICA: ${iqair.aqi} (PM2.5: ${iqair.pm2_5 || 0}ug)`}
                     </span>
                   </div>
                   <div className="bg-slate-950 p-2 rounded border border-slate-900 flex flex-col gap-0.5">

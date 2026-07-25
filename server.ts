@@ -1602,7 +1602,7 @@ function generateEarthquakePacket(eq: EarthquakeEvent): string {
   const aprsLon = lonToAprs(eq.longitude);
   
   const comment = `SISMO Magnitud:${eq.magnitud.toFixed(1)}, Lugar:${eq.localizacion} (Prof:${eq.depthKm}km) - Fuente: IGN`;
-  return `;${name}*${timestamp}${aprsLat}/${aprsLon}[${comment}`;
+  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
 }
 
 // Generate coastal AIS vessels tracked by the Comar SLR200G dual receiver via local dynamic spawner
@@ -2065,12 +2065,11 @@ function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: numb
   const dominant = pollutants[0];
   const formattedValue = dominant.name === 'CO' ? dominant.value.toFixed(0) : dominant.value.toFixed(1);
 
-  // Símbolo específico para Calidad del Aire: usaremos la tabla alternativa '\' con el símbolo 'Q'
+  // Símbolo específico para Calidad del Aire: usaremos la tabla alternativa '\' con el símbolo '{'
   // El comentario tiene el formato: AQI-ICA: [valor] ([etiqueta]) ([contaminante_principal]: [valor]ug)
-  // Con el símbolo Q delante, formará: QQAQI-ICA: 40... idéntico a la petición del usuario, sin [Estacion S.A.T.]
   const comment = `AQI-ICA: ${aqi} (${label}) (${dominant.name}: ${formattedValue}ug)`;
   
-  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
+  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}{${comment}`;
   
   return { 
     packet, 
@@ -2592,17 +2591,11 @@ async function refreshTsunamis() {
 
 // APRS Specialized Object Beacon Generators
 function getSeismoBeaconPacket(): string | null {
-  // Find the latest earthquake in range
-  const inRange = earthquakes.filter(e => e.enRango);
-  if (inRange.length === 0) return null;
-  const latest = inRange[0];
+  // Find the latest earthquake
+  const target = earthquakes.find(e => e.enRango) || earthquakes[0];
+  if (!target) return null;
 
-  const name = "SEISMO   "; // exactly 9 chars
-  const timestamp = getAprsTimestamp(new Date(latest.time));
-  const aprsLat = latToAprs(latest.latitude);
-  const aprsLon = lonToAprs(latest.longitude);
-  const comment = `SISMO M${latest.magnitud.toFixed(1)} ${latest.localizacion} Prof:${latest.depthKm}km - IGN España`;
-  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}/${aprsLon}[${comment}`;
+  return generateEarthquakePacket(target);
 }
 
 function getRarRanBeaconPacket(): string {
@@ -2671,6 +2664,353 @@ function broadcastRarRanBulletin() {
     const alertMessageStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::CQ       :ALERTA CIVIL CRITICA: Radiacion extrema (${rarRanState.valueUsVh.toFixed(3)} uSv/h) en CSN-${rarRanState.name}. active plan de emergencia civil en el radio de influencia.`;
     addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, alertMessageStr, true, `Mensaje APRS de Alerta de Emergencia Radiológica Civil difundido a la red (CQ).`);
   }
+}
+
+let lastWildfireBeaconTime = 0;
+let currentWildfireBeaconIntervalMs = Math.floor((20 + Math.random() * 10) * 60 * 1000); // 20 to 30 minutes interval
+
+function extractLocalityProvince(region: string): string {
+  if (!region) return "";
+  const match = region.match(/\(([^)]+)\)/);
+  const inner = match ? match[1] : region;
+  if (inner.includes(' - ')) {
+    const parts = inner.split(' - ').map(s => s.trim());
+    if (parts.length >= 2) {
+      return `${parts[1]}, ${parts[0]}`;
+    }
+  }
+  return inner.replace(/[()]/g, '').trim();
+}
+
+const CARDINAL_POINTS_32 = [
+  'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 
+  'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'
+];
+
+const CARDINAL_DEGREES: Record<string, number> = {
+  'N': 0, 'NNE': 22, 'NE': 45, 'ENE': 68, 'E': 90, 'ESE': 112, 'SE': 135, 'SSE': 158,
+  'S': 180, 'SSO': 202, 'SO': 225, 'OSO': 248, 'O': 270, 'ONO': 292, 'NO': 315, 'NNO': 338
+};
+
+const OROGRAPHIC_FEATURES = [
+  'zona boscosa',
+  'pinar denso',
+  'matorral seco',
+  'ladera asc. 22%',
+  'barranco orográfico',
+  'masa arbolada',
+  'cañón y vaguada',
+  'monte bajo y cresta',
+  'sotobosque espeso',
+  'quebrada orográfica'
+];
+
+function getDynamicWildfirePropagation(fire: WildfireHotspot): { directionText: string; courseDeg: number; speedKts: number; cardinal: string } {
+  // Calculate dynamic direction based on time, wind dynamics, and orography
+  const timeStep = Math.floor(Date.now() / (10 * 60 * 1000)); // shift index over time
+  const fireSeed = Math.abs(Math.floor(((fire.baseLat || fire.lat) * 1000) + ((fire.baseLon || fire.lon) * 1000) + (fire.id ? fire.id.charCodeAt(fire.id.length - 1) : 1)));
+  
+  // Base cardinal index determined by region/seed + smooth sine fluctuation representing wind direction shift
+  const windShift = Math.floor(Math.sin((timeStep + (fireSeed % 7)) * 0.8) * 3);
+  
+  let baseIndex = 3; // Default ENE
+  if (fire.region.includes('Galicia') || fire.region.includes('Ourense')) baseIndex = 1; // NNE
+  else if (fire.region.includes('Huelva') || fire.region.includes('Andalucía')) baseIndex = 3; // ENE
+  else if (fire.region.includes('Castellón') || fire.region.includes('Valenciana')) baseIndex = 5; // ESE
+  else if (fire.region.includes('Cáceres') || fire.region.includes('Extremadura')) baseIndex = 14; // NNO
+  else if (fire.region.includes('Canarias') || fire.region.includes('Tenerife')) baseIndex = 9; // SSO
+
+  const cardinalIdx = (baseIndex + windShift + CARDINAL_POINTS_32.length * 10) % CARDINAL_POINTS_32.length;
+  const cardinal = CARDINAL_POINTS_32[cardinalIdx];
+  const courseDeg = CARDINAL_DEGREES[cardinal] ?? 68;
+
+  // Dynamic wind speed (knots) influenced by FRP intensity and wind gusts
+  const baseSpeed = Math.max(8, Math.min(42, Math.round((fire.frpMw / 10) + 10 + Math.cos((timeStep + (fireSeed % 5)) * 0.6) * 7)));
+
+  // Dynamic orographic feature
+  const featureIdx = (fireSeed + Math.floor(timeStep * 0.5)) % OROGRAPHIC_FEATURES.length;
+  const feature = OROGRAPHIC_FEATURES[featureIdx];
+
+  return {
+    directionText: `${cardinal} hacia ${feature} (vel ${baseSpeed}kt)`,
+    courseDeg,
+    speedKts: baseSpeed,
+    cardinal
+  };
+}
+
+function applyMobileDisplacement(fire: WildfireHotspot, courseDeg: number, speedKts: number) {
+  if (fire.baseLat === undefined) fire.baseLat = fire.lat;
+  if (fire.baseLon === undefined) fire.baseLon = fire.lon;
+
+  // Calculate live front displacement based on time progression (mobile advance)
+  const timeHours = (Date.now() / (1000 * 3600)) % 12; // 12-hour continuous movement cycle
+  const bearingRad = (courseDeg * Math.PI) / 180;
+  // Scaled displacement to simulate dynamic mobile fire front advance
+  const kmDisplacement = (speedKts * 0.15) * timeHours;
+
+  const dLat = (kmDisplacement / 111.1) * Math.cos(bearingRad);
+  const dLon = (kmDisplacement / (111.1 * Math.cos(((fire.baseLat || fire.lat) * Math.PI) / 180))) * Math.sin(bearingRad);
+
+  fire.lat = parseFloat((fire.baseLat + dLat).toFixed(4));
+  fire.lon = parseFloat((fire.baseLon + dLon).toFixed(4));
+  fire.courseDeg = courseDeg;
+  fire.speedKts = speedKts;
+  fire.isMobileBeacon = true;
+}
+
+function getWildfireBeaconPacket(): { packet: string; fire: WildfireHotspot } | null {
+  const allFires = [...customSimulatedFires, ...BASE_SIMULATED_SPAIN_FIRES, ...cachedFirmsFires];
+  if (allFires.length === 0) return null;
+
+  const fire = allFires[0];
+  const name = "FOCO-INC "; // exactly 9 chars
+  const timestamp = getAprsTimestamp(new Date());
+
+  // Compute dynamic propagation course & speed and apply mobile coordinate displacement
+  const dyn = getDynamicWildfirePropagation(fire);
+  applyMobileDisplacement(fire, dyn.courseDeg, dyn.speedKts);
+
+  fire.propagationDir = dyn.directionText;
+
+  const aprsLat = latToAprs(fire.lat);
+  const aprsLon = lonToAprs(fire.lon);
+
+  const locProv = extractLocalityProvince(fire.region);
+
+  // Format course and speed (3 digits each for standard APRS mobile object CSE/SPD extension)
+  const cseStr = Math.round(dyn.courseDeg).toString().padStart(3, '0');
+  const spdStr = Math.round(dyn.speedKts).toString().padStart(3, '0');
+  const cseSpd = `${cseStr}/${spdStr}`;
+
+  // APRS mobile position object with symbol /: (Table '/', Symbol ':') and Course/Speed data extension
+  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}/${aprsLon}:${cseSpd}FRP: ${fire.frpMw.toFixed(0)}MW ${fire.dangerLevel || 'Alto'} ${locProv} Avance:${dyn.directionText}`;
+
+  return { packet, fire };
+}
+
+function transmitWildfireBeacon(force: boolean = false) {
+  if (config.systemPower === false) return;
+
+  const beaconData = getWildfireBeaconPacket();
+  if (!beaconData) return; // If no active fires (sofocado), no transmission
+
+  const { packet, fire } = beaconData;
+  const now = Date.now();
+  const timeSinceLast = now - lastWildfireBeaconTime;
+
+  if (force || lastWildfireBeaconTime === 0 || timeSinceLast >= currentWildfireBeaconIntervalMs) {
+    lastWildfireBeaconTime = now;
+    // Set next interval between 20 and 30 minutes
+    currentWildfireBeaconIntervalMs = Math.floor((20 + Math.random() * 10) * 60 * 1000);
+    fire.rawAprsFire = packet;
+
+    const intervalMin = Math.round(currentWildfireBeaconIntervalMs / 60000);
+    const remarks = `Baliza APRS (FOCO-INC) retransmitida a la red (Foco: ${fire.region}, FRP: ${fire.frpMw.toFixed(0)}MW). Próximo intervalo programado: ${intervalMin} min.`;
+
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+  }
+}
+
+// Space Weather & HF Propagation APRS Bulletin Config & State
+let spaceWeatherAprsConfig = {
+  enabled: true,
+  intervalMinutes: 30, // Selectable intervals: 15, 30, 60, 120, 240
+  lastTransmittedTime: 0,
+  addressee: "BLN1SPACE", // 9-char APRS addressee
+  template: "CLIMA ESPACIAL: R{R} S{S} G{G} | SFI:{SFI} Kp:{KP} SSN:{SSN} MUF:{MUF}MHz HF:{STATUS}",
+  includeBands: true,
+
+  // Custom alert thresholds (0=Off/R0, 1=R1/G1/S1, 2=R2/G2/S2, etc.)
+  thresholdG: 1, // Alert if G >= G1
+  thresholdR: 1, // Alert if R >= R1
+  thresholdS: 1, // Alert if S >= S1
+
+  // APRS Dispatch options
+  aprsOnAlertOnly: false, // Send APRS bulletin only when an alert threshold is met
+  autoSendOnChange: true, // Send APRS bulletin immediately when alert level changes
+  minIntervalOnChangeMinutes: 5, // Minimum minutes between auto-sends on change
+
+  // Sound notifications
+  soundGEnabled: true,
+  soundREnabled: true,
+  soundSEnabled: true,
+
+  // Last seen alert levels for detecting changes
+  lastRLevel: 0,
+  lastSLevel: 0,
+  lastGLevel: 0
+};
+
+let spaceWeatherAprsHistory: Array<{
+  timestamp: string;
+  packet: string;
+  rScale: string;
+  sScale: string;
+  gScale: string;
+  sfi: string;
+  kp: number;
+  status: string;
+  remarks: string;
+}> = [];
+
+async function formatSpaceWeatherAprsBulletin() {
+  const prop = await getPropagationData(false);
+  const rScale = prop.noaa?.rScale || "R0";
+  const sScale = prop.noaa?.sScale || "S0";
+  const gScale = prop.noaa?.gScale || "G0";
+  const sfi = prop.noaa?.dia1 || "150";
+  const kp = prop.gfz?.Hp30 !== undefined ? Math.round(prop.gfz.Hp30 * 10) / 10 : 2.0;
+  const ssn = prop.noaa?.ssn || "110";
+  const muf = prop.noaa?.muf ? prop.noaa.muf.toFixed(1) : "28.5";
+
+  let status = "BUENA";
+  const rNivel = parseInt((rScale || "R0").replace("R", "")) || 0;
+  const gNivel = parseInt((gScale || "G0").replace("G", "")) || 0;
+  if (rNivel >= 3) {
+    status = "APAGÓN HF";
+  } else if (gNivel >= 3) {
+    status = "TORMENTA GEOMAG";
+  } else if (kp >= 5) {
+    status = "DEGRADADA";
+  } else if (parseInt(sfi) >= 140 && kp <= 2) {
+    status = "EXCELENTE";
+  }
+
+  const addrRaw = spaceWeatherAprsConfig.addressee || "BLN1SPACE";
+  const addr = addrRaw.padEnd(9, ' ').slice(0, 9);
+
+  let text = (spaceWeatherAprsConfig.template || "CLIMA ESPACIAL: R{R} S{S} G{G} | SFI:{SFI} Kp:{KP} SSN:{SSN} MUF:{MUF}MHz HF:{STATUS}")
+    .replace('{R}', rScale)
+    .replace('{S}', sScale)
+    .replace('{G}', gScale)
+    .replace('{SFI}', String(sfi))
+    .replace('{KP}', String(kp))
+    .replace('{SSN}', String(ssn))
+    .replace('{MUF}', String(muf))
+    .replace('{STATUS}', status);
+
+  const mufNum = parseFloat(muf) || 28.5;
+  let bandaUtil = "20m";
+  if (mufNum >= 28.0) bandaUtil = "10m";
+  else if (mufNum >= 24.89) bandaUtil = "12m";
+  else if (mufNum >= 21.0) bandaUtil = "15m";
+  else if (mufNum >= 18.06) bandaUtil = "17m";
+  else if (mufNum >= 14.0) bandaUtil = "20m";
+  else if (mufNum >= 10.1) bandaUtil = "30m";
+  else if (mufNum >= 7.0) bandaUtil = "40m";
+  else if (mufNum >= 3.5) bandaUtil = "80m";
+  else bandaUtil = "160m";
+
+  const delayL1Num = prop.noaa?.delayL1 ? Math.round(prop.noaa.delayL1) : 45;
+  const delayL1Str = `${delayL1Num}m`;
+
+  text = text
+    .replace('{BANDA}', bandaUtil)
+    .replace('{BANDA_UTIL}', bandaUtil)
+    .replace('{L1}', delayL1Str)
+    .replace('{RETARDO_L1}', delayL1Str);
+
+  if (!text.trim()) {
+    text = `CLIMA ESPACIAL R${rScale} S${sScale} G${gScale} | SFI:${sfi} Kp:${kp} MUF:${muf}MHz HF:${status}`;
+  }
+
+  if (text.length > 67) {
+    text = text.slice(0, 67);
+  }
+
+  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::${addr}:${text}`;
+
+  return {
+    packet,
+    rScale,
+    sScale,
+    gScale,
+    sfi,
+    kp,
+    ssn,
+    muf,
+    status,
+    addr,
+    bandaUtil,
+    delayL1: delayL1Num
+  };
+}
+
+async function transmitSpaceWeatherAprsBulletin(force: boolean = false) {
+  if (config.systemPower === false) return null;
+  if (!force && !spaceWeatherAprsConfig.enabled) return null;
+
+  const now = Date.now();
+  const intervalMs = (spaceWeatherAprsConfig.intervalMinutes || 30) * 60 * 1000;
+  const minChangeIntervalMs = (spaceWeatherAprsConfig.minIntervalOnChangeMinutes || 5) * 60 * 1000;
+  const timeSinceLast = now - spaceWeatherAprsConfig.lastTransmittedTime;
+
+  const data = await formatSpaceWeatherAprsBulletin();
+  const rNivel = parseInt((data.rScale || "R0").replace("R", "")) || 0;
+  const sNivel = parseInt((data.sScale || "S0").replace("S", "")) || 0;
+  const gNivel = parseInt((data.gScale || "G0").replace("G", "")) || 0;
+
+  const isAlertThresholdMet = (
+    rNivel >= spaceWeatherAprsConfig.thresholdR ||
+    sNivel >= spaceWeatherAprsConfig.thresholdS ||
+    gNivel >= spaceWeatherAprsConfig.thresholdG
+  );
+
+  const levelChanged = (
+    rNivel !== spaceWeatherAprsConfig.lastRLevel ||
+    sNivel !== spaceWeatherAprsConfig.lastSLevel ||
+    gNivel !== spaceWeatherAprsConfig.lastGLevel
+  );
+
+  // Determine if transmission should execute
+  let shouldTransmit = false;
+  let reason = '';
+
+  if (force) {
+    shouldTransmit = true;
+    reason = 'Manual forzada por operador';
+  } else if (spaceWeatherAprsConfig.lastTransmittedTime === 0) {
+    shouldTransmit = true;
+    reason = 'Inicialización del servicio';
+  } else if (spaceWeatherAprsConfig.autoSendOnChange && levelChanged && timeSinceLast >= minChangeIntervalMs) {
+    shouldTransmit = true;
+    reason = `Cambio de nivel de alerta detectado (R${spaceWeatherAprsConfig.lastRLevel}->R${rNivel}, S${spaceWeatherAprsConfig.lastSLevel}->S${sNivel}, G${spaceWeatherAprsConfig.lastGLevel}->G${gNivel})`;
+  } else if (timeSinceLast >= intervalMs) {
+    if (!spaceWeatherAprsConfig.aprsOnAlertOnly || isAlertThresholdMet) {
+      shouldTransmit = true;
+      reason = `Cadencia periódica (${spaceWeatherAprsConfig.intervalMinutes} min)`;
+    }
+  }
+
+  // Always update last recorded levels
+  spaceWeatherAprsConfig.lastRLevel = rNivel;
+  spaceWeatherAprsConfig.lastSLevel = sNivel;
+  spaceWeatherAprsConfig.lastGLevel = gNivel;
+
+  if (shouldTransmit) {
+    spaceWeatherAprsConfig.lastTransmittedTime = now;
+
+    const remarks = `Boletín APRS Clima Espacial & Propagación HF retransmitido [${reason}] (${data.rScale} ${data.sScale} ${data.gScale} | SFI:${data.sfi} Kp:${data.kp} HF:${data.status}).`;
+
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, data.packet, true, remarks);
+
+    const historyItem = {
+      timestamp: new Date().toISOString(),
+      packet: data.packet,
+      rScale: data.rScale,
+      sScale: data.sScale,
+      gScale: data.gScale,
+      sfi: String(data.sfi),
+      kp: data.kp,
+      status: data.status,
+      remarks
+    };
+
+    spaceWeatherAprsHistory = [historyItem, ...spaceWeatherAprsHistory].slice(0, 30);
+    return historyItem;
+  }
+  return null;
 }
 
 // Earthquake Spain Feeds - Ingest from real IGN or fallback USGS Spain
@@ -3671,6 +4011,7 @@ let timerNoaa: NodeJS.Timeout;
 let timerTrafficIncidents: NodeJS.Timeout;
 let timerTsunamis: NodeJS.Timeout;
 let timerAgps: NodeJS.Timeout;
+let timerSpaceWeatherAprs: NodeJS.Timeout | null = null;
 
 function checkAndRunAgpsSync() {
   if (config.agpsEnabled === false) return;
@@ -3762,7 +4103,19 @@ function startSchedules() {
 
   // Activate automatic A-GPS sync schedules (checks every 60 seconds)
   timerAgps = setInterval(checkAndRunAgpsSync, 60000);
+
+  // Activate automatic Space Weather APRS Bulletin timer (checks every 60 seconds)
+  if (!timerSpaceWeatherAprs) {
+    timerSpaceWeatherAprs = setInterval(() => {
+      transmitSpaceWeatherAprsBulletin(false);
+    }, 60000);
+  }
   checkAndRunAgpsSync(); // Run once immediately on boot
+
+  // Activate automatic APRS Wildfire Beacon schedule (checks every 60s, transmits every 20-30 min while fire active)
+  setInterval(() => {
+    transmitWildfireBeacon(false);
+  }, 60000);
 }
 
 startSchedules();
@@ -4749,6 +5102,93 @@ app.get('/api/space-weather/forecast-3day', async (req, res) => {
   res.json(result);
 });
 
+// Space Weather APRS Bulletin Endpoints
+app.get('/api/space-weather/aprs-bulletin', async (req, res) => {
+  try {
+    const preview = await formatSpaceWeatherAprsBulletin();
+    res.json({
+      success: true,
+      config: spaceWeatherAprsConfig,
+      currentAlerts: {
+        rScale: preview.rScale,
+        sScale: preview.sScale,
+        gScale: preview.gScale,
+      },
+      metrics: {
+        sfi: preview.sfi,
+        kp: preview.kp,
+        ssn: preview.ssn,
+        muf: preview.muf,
+        hfStatus: preview.status,
+        bandaUtil: preview.bandaUtil,
+        delayL1: preview.delayL1
+      },
+      latestPacket: preview.packet,
+      history: spaceWeatherAprsHistory
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/space-weather/aprs-bulletin/config', (req, res) => {
+  try {
+    const { 
+      enabled, 
+      intervalMinutes, 
+      addressee, 
+      template, 
+      includeBands,
+      thresholdG,
+      thresholdR,
+      thresholdS,
+      aprsOnAlertOnly,
+      autoSendOnChange,
+      minIntervalOnChangeMinutes,
+      soundGEnabled,
+      soundREnabled,
+      soundSEnabled
+    } = req.body;
+
+    if (typeof enabled === 'boolean') spaceWeatherAprsConfig.enabled = enabled;
+    if (typeof intervalMinutes === 'number' && intervalMinutes >= 1) spaceWeatherAprsConfig.intervalMinutes = intervalMinutes;
+    if (typeof addressee === 'string' && addressee.trim()) spaceWeatherAprsConfig.addressee = addressee.trim().toUpperCase();
+    if (typeof template === 'string') spaceWeatherAprsConfig.template = template;
+    if (typeof includeBands === 'boolean') spaceWeatherAprsConfig.includeBands = includeBands;
+
+    if (typeof thresholdG === 'number') spaceWeatherAprsConfig.thresholdG = Math.max(0, Math.min(5, thresholdG));
+    if (typeof thresholdR === 'number') spaceWeatherAprsConfig.thresholdR = Math.max(0, Math.min(5, thresholdR));
+    if (typeof thresholdS === 'number') spaceWeatherAprsConfig.thresholdS = Math.max(0, Math.min(5, thresholdS));
+
+    if (typeof aprsOnAlertOnly === 'boolean') spaceWeatherAprsConfig.aprsOnAlertOnly = aprsOnAlertOnly;
+    if (typeof autoSendOnChange === 'boolean') spaceWeatherAprsConfig.autoSendOnChange = autoSendOnChange;
+    if (typeof minIntervalOnChangeMinutes === 'number' && minIntervalOnChangeMinutes >= 1) {
+      spaceWeatherAprsConfig.minIntervalOnChangeMinutes = minIntervalOnChangeMinutes;
+    }
+
+    if (typeof soundGEnabled === 'boolean') spaceWeatherAprsConfig.soundGEnabled = soundGEnabled;
+    if (typeof soundREnabled === 'boolean') spaceWeatherAprsConfig.soundREnabled = soundREnabled;
+    if (typeof soundSEnabled === 'boolean') spaceWeatherAprsConfig.soundSEnabled = soundSEnabled;
+
+    res.json({ success: true, config: spaceWeatherAprsConfig });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/space-weather/aprs-bulletin/transmit', async (req, res) => {
+  try {
+    const result = await transmitSpaceWeatherAprsBulletin(true);
+    res.json({
+      success: true,
+      message: 'Boletín APRS de Clima Espacial & Propagación HF transmitido con éxito.',
+      item: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 let ICA_STATIONS = [
   { id: 'AQ-01', name: 'Madrid - Plaza de España', lat: 40.4239, lon: -3.7122, province: 'Madrid', pm25: 8, pm10: 14, no2: 24, o3: 42, so2: 3, co: 0.3 },
   { id: 'AQ-02', name: 'Barcelona - Eixample', lat: 41.3851, lon: 2.1734, province: 'Barcelona', pm25: 18, pm10: 32, no2: 45, o3: 56, so2: 8, co: 0.6 },
@@ -5378,7 +5818,8 @@ let BASE_SIMULATED_SPAIN_FIRES: WildfireHotspot[] = [
     time: "11:42",
     region: "Galicia (Ourense - Carballeda de Valdeorras)",
     source: "NASA FIRMS",
-    dangerLevel: "Alto"
+    dangerLevel: "Alto",
+    propagationDir: "NNE hacia masa arbolada (vel 12kt)"
   },
   {
     id: "FIRE-SIM-2",
@@ -5393,7 +5834,8 @@ let BASE_SIMULATED_SPAIN_FIRES: WildfireHotspot[] = [
     time: "14:15",
     region: "Andalucía (Huelva - Almonaster la Real)",
     source: "NASA FIRMS",
-    dangerLevel: "Extremo"
+    dangerLevel: "Extremo",
+    propagationDir: "ENE hacia zona boscosa (vel 18kt)"
   },
   {
     id: "FIRE-SIM-3",
@@ -5408,7 +5850,8 @@ let BASE_SIMULATED_SPAIN_FIRES: WildfireHotspot[] = [
     time: "02:30",
     region: "Extremadura (Cáceres - Las Hurdes)",
     source: "NASA FIRMS",
-    dangerLevel: "Moderado"
+    dangerLevel: "Moderado",
+    propagationDir: "NNO hacia matorral seco (vel 8kt)"
   },
   {
     id: "FIRE-SIM-4",
@@ -5423,7 +5866,8 @@ let BASE_SIMULATED_SPAIN_FIRES: WildfireHotspot[] = [
     time: "10:05",
     region: "Comunidad Valenciana (Castellón - Villanueva de Viver)",
     source: "NASA FIRMS",
-    dangerLevel: "Extremo"
+    dangerLevel: "Extremo",
+    propagationDir: "ESE hacia pinar denso (vel 22kt)"
   },
   {
     id: "FIRE-SIM-5",
@@ -5435,10 +5879,11 @@ let BASE_SIMULATED_SPAIN_FIRES: WildfireHotspot[] = [
     satellite: "VIIRS",
     instrument: "VIIRS-I-Band",
     date: new Date().toISOString().split('T')[0],
-    time: "22:10",
-    region: "Canarias (Tenerife - Arafo/Candelaria)",
+    time: "18:20",
+    region: "Islas Canarias (Tenerife - Arafo/Candelaria)",
     source: "NASA FIRMS",
-    dangerLevel: "Alto"
+    dangerLevel: "Alto",
+    propagationDir: "SSO hacia monte bajo (vel 15kt)"
   }
 ];
 
@@ -5588,7 +6033,12 @@ app.get('/api/wildfires/latest', async (req, res) => {
     }
   });
 
-  const finalFiresList = Array.from(finalFiresMap.values());
+  const finalFiresList = Array.from(finalFiresMap.values()).map(f => {
+    const dyn = getDynamicWildfirePropagation(f);
+    applyMobileDisplacement(f, dyn.courseDeg, dyn.speedKts);
+    f.propagationDir = dyn.directionText;
+    return f;
+  });
 
   // Dynamically count active hotspots for each community based on finalFiresList
   const regionalRisks: RegionalFireRisk[] = regionalRisksState.map(r => {
@@ -5646,6 +6096,8 @@ app.get('/api/wildfires/latest', async (req, res) => {
     }
   ];
 
+  const wildfireBeaconData = getWildfireBeaconPacket();
+
   res.json({
     success: true,
     timestamp: new Date().toISOString(),
@@ -5656,13 +6108,15 @@ app.get('/api/wildfires/latest', async (req, res) => {
     hotspots: finalFiresList,
     regionalRisks,
     copernicusAlerts,
-    incendiosEspanaFeed
+    incendiosEspanaFeed,
+    aprsBeaconPacket: wildfireBeaconData?.packet || null,
+    beaconFire: wildfireBeaconData?.fire || null
   });
 });
 
 // Endpoint Manual Fire Injection
 app.post('/api/wildfires/inject', (req, res) => {
-  const { lat, lon, region, frpMw, dangerLevel } = req.body;
+  const { lat, lon, region, frpMw, dangerLevel, propagationDir } = req.body;
   if (!lat || !lon) {
     return res.status(400).json({ success: false, msg: 'Faltan coordenadas geográficas.' });
   }
@@ -5680,7 +6134,8 @@ app.post('/api/wildfires/inject', (req, res) => {
     time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
     region: region || 'Ubicación Inyectada S.A.T.',
     source: 'IncendiosEspaña',
-    dangerLevel: dangerLevel || 'Alto'
+    dangerLevel: dangerLevel || 'Alto',
+    propagationDir: propagationDir || 'Noreste (Viento 15kt)'
   };
 
   customSimulatedFires.unshift(newFire);
@@ -5698,7 +6153,21 @@ app.post('/api/wildfires/inject', (req, res) => {
     'Socio-inyección manual de anomalía térmica completada de manera simulada.'
   );
 
+  // Transmit APRS beacon for newly injected hotspot immediately
+  transmitWildfireBeacon(true);
+
   res.json({ success: true, fire: newFire });
+});
+
+// Endpoint Transmit Wildfire APRS Beacon
+app.post('/api/wildfires/beacon/transmit', (req, res) => {
+  try {
+    transmitWildfireBeacon(true);
+    const beaconRes = getWildfireBeaconPacket();
+    res.json({ success: true, packet: beaconRes?.packet, fire: beaconRes?.fire });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Endpoint Clear Simulated fires

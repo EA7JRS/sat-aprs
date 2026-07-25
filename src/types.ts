@@ -452,6 +452,11 @@ export interface WildfireHotspot {
   id: string;
   lat: number;
   lon: number;
+  baseLat?: number;
+  baseLon?: number;
+  courseDeg?: number;
+  speedKts?: number;
+  isMobileBeacon?: boolean;
   brightnessK: number;
   frpMw: number;
   confidence: number | string;
@@ -462,6 +467,8 @@ export interface WildfireHotspot {
   region: string;
   source: 'NASA FIRMS' | 'Copernicus EFFIS' | 'IncendiosEspaña';
   dangerLevel: 'Bajo' | 'Moderado' | 'Alto' | 'Extremo';
+  propagationDir?: string;
+  rawAprsFire?: string;
 }
 
 export interface RegionalFireRisk {

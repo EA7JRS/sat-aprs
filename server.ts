@@ -1601,7 +1601,7 @@ function generateEarthquakePacket(eq: EarthquakeEvent): string {
   const aprsLat = latToAprs(eq.latitude);
   const aprsLon = lonToAprs(eq.longitude);
   
-  const comment = `SISMO Magnitud:${eq.magnitud.toFixed(1)}, Lugar:${eq.localizacion} (Prof:${eq.depthKm}km) - Fuente: IGN`;
+  const comment = `MAG:${eq.magnitud.toFixed(1)} ${eq.localizacion} (Prof:${eq.depthKm}km)`;
   return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
 }
 
@@ -2104,17 +2104,52 @@ function getIcaIntervalForLevel(label: string, userInterval: number = 30): numbe
   return userInterval > 0 ? userInterval : 60; // Buena (L1/L2): 60m o predefinido
 }
 
+let lastIcaBulletinTime = 0;
+let lastSeismoBeaconTime = 0;
+let lastSeismoTargetId = '';
+
 function getMainPollutantName(pm25: number, pm10: number, coVal: number, no2: number, o3: number): string {
-  if (iqairState.mainPollutant) return iqairState.mainPollutant;
   const pollutants = [
-    { name: 'PM2.5', score: pm25 / 10.0 },
-    { name: 'PM10', score: pm10 / 20.0 },
-    { name: 'CO', score: coVal / 5000.0 },
-    { name: 'O3', score: o3 / 50.0 },
-    { name: 'NO2', score: no2 / 40.0 }
+    { name: 'PM2.5', value: pm25, unit: 'ug', score: pm25 / 10.0 },
+    { name: 'PM10', value: pm10, unit: 'ug', score: pm10 / 20.0 },
+    { name: 'NO2', value: no2, unit: 'ug', score: no2 / 40.0 },
+    { name: 'O3', value: o3, unit: 'ug', score: o3 / 50.0 },
+    { name: 'CO', value: coVal, unit: 'ug', score: coVal / 5000.0 }
   ];
   pollutants.sort((a, b) => b.score - a.score);
-  return pollutants[0]?.name || 'PM2.5';
+  const top = pollutants[0];
+  if (!top) return `PM2.5: ${pm25.toFixed(1)}ug`;
+  return `${top.name}: ${top.value.toFixed(1)}${top.unit}`;
+}
+
+function transmitSeismoBeacon(force: boolean = false) {
+  if (!force && (config.systemPower === false || config.ignSeismoEnabled === false)) {
+    return;
+  }
+
+  const target = earthquakes.find(e => e.enRango) || earthquakes[0];
+  if (!target) return;
+
+  const now = Date.now();
+  const timeSinceLast = now - lastSeismoBeaconTime;
+  const isNewTarget = target.id !== lastSeismoTargetId;
+  const intervalMin = config.ignSeismoInterval || 30;
+  const intervalMs = intervalMin * 60 * 1000;
+
+  if (force || isNewTarget || lastSeismoBeaconTime === 0 || timeSinceLast >= intervalMs) {
+    lastSeismoBeaconTime = now;
+    lastSeismoTargetId = target.id;
+
+    const packet = generateEarthquakePacket(target);
+    target.aprsPacket = packet;
+
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo M${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km).`);
+
+    if (config.autoGenerarBoletinEmergencia && target.magnitud >= (config.minMagnitudBaliza || 3.0)) {
+      const emergencyBulletin = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1    :EMERGENCIA SISMICA! SEISMO MAG:${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km)`;
+      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.');
+    }
+  }
 }
 
 function transmitAirQualityBeacon(force: boolean = false) {
@@ -2165,7 +2200,7 @@ function transmitAirQualityBeacon(force: boolean = false) {
 
     addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
     
-    // Difundir el boletín APRS para que todo coincida perfectamente
+    // Difundir el boletín APRS respetando la cadencia de emisión
     broadcastAirQualityBulletin(aqi, label, pm25, pm10, co, no2, o3, stationName, force);
   } else {
     console.log(`[APRS ICA] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${label})`);
@@ -2256,12 +2291,25 @@ function broadcastAirQualityBulletin(
   }
   const finalAqi = aqi !== undefined ? aqi : iqairState.aqi;
   const finalLabel = label !== undefined ? label : getIcaLabel(finalAqi);
+  const name = stationName !== undefined ? stationName : iqairState.city;
+
+  const now = Date.now();
+  const timeSinceLast = now - lastIcaBulletinTime;
+  const intervalMin = getIcaIntervalForLevel(finalLabel, config.pollIntervalIca || 30);
+  const intervalMs = intervalMin * 60 * 1000;
+
+  if (!force && lastIcaBulletinTime > 0 && timeSinceLast < intervalMs) {
+    console.log(`[APRS ICA BLN] Boletín BLN2AQI omitido por cadencia de intervalo (${((intervalMs - timeSinceLast)/60000).toFixed(1)} min restantes).`);
+    return;
+  }
+
+  lastIcaBulletinTime = now;
+
   const pm25 = pm25Val !== undefined ? pm25Val : (iqairState.pm2_5 || 0);
   const pm10 = pm10Val !== undefined ? pm10Val : (iqairState.pm10 || 0);
   const co = coVal !== undefined ? coVal : ((iqairState.co || 0) * 1000);
   const no2 = no2Val !== undefined ? no2Val : (iqairState.no2 || 0);
   const o3 = o3Val !== undefined ? o3Val : (iqairState.o3 || 0);
-  const name = stationName !== undefined ? stationName : iqairState.city;
   
   const content = formatIcaBulletinTemplate(finalLabel, finalAqi, pm25, pm10, co, no2, o3, name);
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${content}`;
@@ -3336,9 +3384,7 @@ async function refreshEarthquakes() {
           enRango
         };
 
-        if (enRango && mag >= (config.minMagnitudBaliza || 4.0)) {
-          eqEvent.aprsPacket = generateEarthquakePacket(eqEvent);
-        }
+        eqEvent.aprsPacket = generateEarthquakePacket(eqEvent);
         return eqEvent;
       });
 
@@ -3349,17 +3395,8 @@ async function refreshEarthquakes() {
       
       earthquakes = sorted.length > 0 ? sorted : parsed.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-      const rangeEvents = earthquakes.filter(e => e.enRango && e.magnitud >= (config.minMagnitudBaliza || 4.0));
-      if (rangeEvents.length > 0) {
-        const closest = rangeEvents[0];
-        const packet = generateEarthquakePacket(closest);
-        addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo de M${closest.magnitud.toFixed(1)} a ${closest.distanciaKm}km.`);
-
-        if (config.autoGenerarBoletinEmergencia) {
-          const emergencyBulletin = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1    :EMERGENCIA SISMICA! SEISMO M${closest.magnitud.toFixed(1)} en ${closest.localizacion} (Prof:${closest.depthKm}km) - Fuente: IGN`;
-          addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.');
-        }
-      }
+      // Transmitir baliza SEISMO de forma sincronizada y respetando cadencia
+      transmitSeismoBeacon();
     }
   } catch (err: any) {
     console.error("Error refreshing Earthquakes:", err ? err.message : err);
@@ -5494,6 +5531,27 @@ app.post('/api/ica/beacon/transmit', (req, res) => {
     res.json({
       success: true,
       message: 'Transmisión manual de baliza y boletín ICA (BLN2AQI) completada con éxito.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/seismo/beacon/transmit', (req, res) => {
+  try {
+    transmitSeismoBeacon(true);
+    addLog(
+      'SYS',
+      'SEISMO_TX_MANUAL',
+      'LOCAL',
+      'API',
+      'Transmisión manual de la baliza de posición SEISMO forzada por el operador.',
+      true,
+      'Transmisión Manual'
+    );
+    res.json({
+      success: true,
+      message: 'Transmisión manual de baliza de posición SEISMO completada con éxito.'
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

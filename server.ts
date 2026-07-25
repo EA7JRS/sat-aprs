@@ -2705,6 +2705,95 @@ const OROGRAPHIC_FEATURES = [
   'quebrada orográfica'
 ];
 
+// ROTHERMEL (1972) WILDFIRE RATE OF SPREAD (ROS) MATHEMATICAL ENGINE
+// Formula: R = (I_R * xi * (1 + Phi_w + Phi_s)) / (rho_b * epsilon * Q_i)
+export function calculateRothermelROS(params: {
+  windSpeedKmh: number; // U: Wind velocity (km/h)
+  slopePercent: number; // Pendiente / Slope (%)
+  tempC: number;        // Air Temperature (°C)
+  rhPercent: number;    // Relative Humidity (%)
+  frpMw: number;        // Fire Radiative Power (MW)
+  fuelType?: string;    // matorral_seco | pinar | eucaliptal | pasto | frondosas
+}) {
+  const { windSpeedKmh, slopePercent, tempC, rhPercent, frpMw, fuelType = 'matorral_seco' } = params;
+
+  // 1. "Regla del 30" Check (Wind > 30 km/h, Temp > 30°C, RH < 30%)
+  const ruleOf30 = windSpeedKmh >= 30 && tempC >= 30 && rhPercent <= 30;
+
+  // 2. Fuel Matrix (rho_b * epsilon * Q_i) and Wind/Slope constants
+  // Fine dry fuels (pasto/matorral) have lower density & heat of ignition, reacting instantly to wind.
+  let fuelMatrix = 900; // kJ/m^3 (matorral default)
+  let baseIr = 1800 + Math.min(9000, frpMw * 35); // kJ/m^2/min (Reaction Intensity)
+  let B_exponent = 1.48; // Power-law exponent for wind factor Phi_w = C * U^B
+  let C_factor = 0.032;  // Empirical coefficient
+
+  if (fuelType === 'pasto') {
+    fuelMatrix = 600;  // Fine, low bulk density (pastizal fino agostado)
+    B_exponent = 1.65;
+    C_factor = 0.042;
+  } else if (fuelType === 'matorral_seco') {
+    fuelMatrix = 850;  // Garriga y matorral continental inflamable
+    B_exponent = 1.50;
+    C_factor = 0.035;
+  } else if (fuelType === 'eucaliptal') {
+    fuelMatrix = 1100; // Eucaliptal con tiras de corteza colgante
+    B_exponent = 1.46;
+    C_factor = 0.030;
+  } else if (fuelType === 'pinar') {
+    fuelMatrix = 1350; // Pinar de pino carrasco con pinocha y piñas
+    B_exponent = 1.40;
+    C_factor = 0.026;
+  } else if (fuelType === 'frondosas') {
+    fuelMatrix = 2100; // Bosque húmedo de frondosas (alta retención hídrica)
+    B_exponent = 1.25;
+    C_factor = 0.018;
+  }
+
+  // 3. Optimum Flux Ratio (xi)
+  const xi = 0.12;
+
+  // 4. Wind Factor (Phi_w) - Power-law / exponential response to wind velocity U
+  const U = Math.max(0, windSpeedKmh);
+  const phiW = C_factor * Math.pow(U, B_exponent);
+
+  // 5. Slope Factor (Phi_s) - Efecto chimenea a favor de pendiente
+  const slopeAngleRad = Math.atan(slopePercent / 100);
+  const phiS = 5.275 * Math.pow(Math.tan(slopeAngleRad), 2);
+
+  // 6. Calculate Linear Rate of Spread R (m/min)
+  // R = (I_R * xi * (1 + Phi_w + Phi_s)) / (rho_b * epsilon * Q_i)
+  let rawR = (baseIr * xi * (1 + phiW + phiS)) / fuelMatrix;
+
+  // If Regla del 30 applies, extreme behavior convective chimney amplification
+  if (ruleOf30) {
+    rawR *= 1.45;
+  }
+
+  const rosMmin = Math.round(rawR * 10) / 10;
+  const rosKmh = Math.round((rosMmin * 0.06) * 100) / 100;
+
+  // 7. Shape behavior
+  let spreadShape: 'Concéntrica' | 'Elíptica Alargada' | 'Dominada por Viento / Extrema' = 'Concéntrica';
+  if (U < 5) {
+    spreadShape = 'Concéntrica';
+  } else if (U <= 25 && !ruleOf30) {
+    spreadShape = 'Elíptica Alargada';
+  } else {
+    spreadShape = 'Dominada por Viento / Extrema';
+  }
+
+  return {
+    rosMmin,
+    rosKmh,
+    phiW: Math.round(phiW * 100) / 100,
+    phiS: Math.round(phiS * 100) / 100,
+    reactionIntensityIr: Math.round(baseIr),
+    fuelHeatMatrix: fuelMatrix,
+    ruleOf30,
+    spreadShape
+  };
+}
+
 function getDynamicWildfirePropagation(fire: WildfireHotspot): { directionText: string; courseDeg: number; speedKts: number; cardinal: string } {
   // Calculate dynamic direction based on time, wind dynamics, and orography
   const timeStep = Math.floor(Date.now() / (10 * 60 * 1000)); // shift index over time
@@ -2724,17 +2813,30 @@ function getDynamicWildfirePropagation(fire: WildfireHotspot): { directionText: 
   const cardinal = CARDINAL_POINTS_32[cardinalIdx];
   const courseDeg = CARDINAL_DEGREES[cardinal] ?? 68;
 
-  // Dynamic wind speed (knots) influenced by FRP intensity and wind gusts
-  const baseSpeed = Math.max(8, Math.min(42, Math.round((fire.frpMw / 10) + 10 + Math.cos((timeStep + (fireSeed % 5)) * 0.6) * 7)));
+  // Dynamic wind speed (knots and km/h) influenced by FRP intensity and wind gusts
+  const baseSpeedKts = Math.max(8, Math.min(42, Math.round((fire.frpMw / 10) + 10 + Math.cos((timeStep + (fireSeed % 5)) * 0.6) * 7)));
+  const windKmh = Math.round(baseSpeedKts * 1.852);
+
+  // Apply Rothermel Model formula for exact rate of spread (ROS)
+  const rothermel = calculateRothermelROS({
+    windSpeedKmh: windKmh,
+    slopePercent: 20, // 20% average mountain slope
+    tempC: 34,
+    rhPercent: 24,
+    frpMw: fire.frpMw || 50,
+    fuelType: 'matorral_seco'
+  });
 
   // Dynamic orographic feature
   const featureIdx = (fireSeed + Math.floor(timeStep * 0.5)) % OROGRAPHIC_FEATURES.length;
   const feature = OROGRAPHIC_FEATURES[featureIdx];
 
+  const directionText = `${cardinal} hacia ${feature} (vel ${windKmh}km/h)`;
+
   return {
-    directionText: `${cardinal} hacia ${feature} (vel ${baseSpeed}kt)`,
+    directionText,
     courseDeg,
-    speedKts: baseSpeed,
+    speedKts: baseSpeedKts,
     cardinal
   };
 }
@@ -2759,11 +2861,68 @@ function applyMobileDisplacement(fire: WildfireHotspot, courseDeg: number, speed
   fire.isMobileBeacon = true;
 }
 
+function getFireTimestampMs(fire: WildfireHotspot): number {
+  if (!fire) return 0;
+  try {
+    if (fire.id && fire.id.includes('CUSTOM-')) {
+      const parts = fire.id.split('-');
+      const ts = parseInt(parts[parts.length - 1]);
+      if (!isNaN(ts) && ts > 1000000000000) return ts;
+    }
+    const dateStr = fire.date || new Date().toISOString().split('T')[0];
+    let timeStr = fire.time || '12:00';
+    if (timeStr.length === 4 && !timeStr.includes(':')) {
+      timeStr = `${timeStr.slice(0, 2)}:${timeStr.slice(2)}`;
+    }
+    const combinedStr = `${dateStr}T${timeStr.includes(':') ? timeStr : timeStr + ':00'}`;
+    const d = new Date(combinedStr);
+    if (!isNaN(d.getTime())) return d.getTime();
+  } catch (e) {
+    // fallback
+  }
+  return Date.now() - 3600000;
+}
+
+function selectSyncWildfireForBeacon(fires: WildfireHotspot[]): WildfireHotspot | null {
+  if (!fires || fires.length === 0) return null;
+
+  const stLat = (gpsdState.lat && !isNaN(gpsdState.lat) && gpsdState.lat !== 0) ? gpsdState.lat : 40.416775;
+  const stLon = (gpsdState.lon && !isNaN(gpsdState.lon) && gpsdState.lon !== 0) ? gpsdState.lon : -3.703790;
+  const now = Date.now();
+
+  const scoredFires = fires.map(fire => {
+    const lat = fire.lat;
+    const lon = fire.lon;
+    const distKm = calculateDistance(stLat, stLon, lat, lon);
+    fire.distanceKm = Math.round(distKm * 10) / 10;
+
+    const timeMs = getFireTimestampMs(fire);
+    const ageHours = Math.max(0, (now - timeMs) / (3600 * 1000));
+
+    const isCustom = fire.id && fire.id.includes('CUSTOM');
+
+    // Score metric: Lower score = higher priority
+    // Prioritize proximity to station and recent detection time
+    let score = distKm + (ageHours * 15);
+    if (isCustom && ageHours < 24) {
+      score -= 10000; // Custom operator injections always prioritized
+    }
+
+    return { fire, score, distKm, timeMs, ageHours, isCustom };
+  });
+
+  scoredFires.sort((a, b) => a.score - b.score);
+
+  return scoredFires[0].fire;
+}
+
 function getWildfireBeaconPacket(): { packet: string; fire: WildfireHotspot } | null {
   const allFires = [...customSimulatedFires, ...BASE_SIMULATED_SPAIN_FIRES, ...cachedFirmsFires];
   if (allFires.length === 0) return null;
 
-  const fire = allFires[0];
+  const fire = selectSyncWildfireForBeacon(allFires);
+  if (!fire) return null;
+
   const name = "FOCO-INC "; // exactly 9 chars
   const timestamp = getAprsTimestamp(new Date());
 
@@ -3020,63 +3179,117 @@ async function refreshEarthquakes() {
     return;
   }
   try {
-    // 1. Try IGN Spain visualizadores (tproximos) real-time dataset
     let fetchedSismos: any[] = [];
     const tProximosUrl = 'https://www.ign.es/web/resources/sismologia/tproximos/todos_visualizadores.js';
     
-    addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', 'Consultando sismografía de visualizadores (tproximos) de IGN España...', true, 'Sincronización');
+    addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', 'Consultando sismografía oficial (tproximos) de IGN España...', true, 'Sincronización');
     
     try {
-      const response = await fetch(tProximosUrl, { signal: AbortSignal.timeout(6000) });
+      const response = await fetch(tProximosUrl, { 
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        signal: AbortSignal.timeout(8000) 
+      });
       if (response.ok) {
-        let rawText = await response.text();
-        rawText = rawText.trim();
-        if (rawText.startsWith('var tproximos =')) {
-          rawText = rawText.substring('var tproximos ='.length).trim();
+        const rawText = await response.text();
+        const matches = [...rawText.matchAll(/var\s+([a-zA-Z0-9_]+)\s*=\s*(\{[\s\S]*?\});/g)];
+        const seenEvids = new Set<string>();
+
+        for (const m of matches) {
+          const varName = m[1];
+          try {
+            const parsed = JSON.parse(m[2]);
+            if (parsed.features && Array.isArray(parsed.features)) {
+              for (const f of parsed.features) {
+                const id = f.properties?.evid || f.id;
+                if (id) {
+                  if (!seenEvids.has(id)) {
+                    seenEvids.add(id);
+                    fetchedSismos.push(f);
+                  }
+                } else {
+                  fetchedSismos.push(f);
+                }
+              }
+            }
+          } catch (e: any) {
+            console.error(`[IGN PARSE WARN] Error parseando variable ${varName}:`, e.message);
+          }
         }
-        if (rawText.endsWith(';')) {
-          rawText = rawText.substring(0, rawText.length - 1).trim();
-        }
-        const geo = JSON.parse(rawText);
-        if (geo.features && Array.isArray(geo.features)) {
-          fetchedSismos = geo.features;
-          addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde visualizadores.ign.es/tproximos.`, true, 'Servicios');
+
+        if (fetchedSismos.length > 0) {
+          addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos en tiempo real desde IGN España (Península, Canarias y Mundial).`, true, 'Servicios');
         }
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (e: any) {
-      addLog('SYS', 'IGN_VIS_ERR', 'LOCAL', 'API', `Fallo obteniendo sismos de tproximos (${e.message}). Probando API institucional...`, false, 'Fallback');
+      addLog('SYS', 'IGN_VIS_ERR', 'LOCAL', 'API', `Fallo obteniendo sismos de tproximos (${e.message}). Probando RSS sismos IGN...`, false, 'Fallback');
       
-      const ignUrl = 'https://institucionales.ign.es/fdsnws/event/1/query?format=geojson&limit=150&minmagnitude=1.0';
+      const ignXmlUrl = 'https://www.ign.es/ign/sismologia/sismos/sismos.xml';
       try {
-        const response = await fetch(ignUrl, { signal: AbortSignal.timeout(6000) });
+        const response = await fetch(ignXmlUrl, { 
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(6000) 
+        });
         if (response.ok) {
-          const geo = await response.json();
-          if (geo.features && Array.isArray(geo.features)) {
-            fetchedSismos = geo.features;
-            addLog('SYS', 'IGN', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde la API institucional del IGN.`, true, 'Servicios');
+          const xmlText = await response.text();
+          const itemMatches = [...xmlText.matchAll(/<item>([\s\S]*?)<\/item>/gi)];
+          for (const itemMatch of itemMatches) {
+            const itemContent = itemMatch[1];
+            const titleMatch = itemContent.match(/<title>([\s\S]*?)<\/title>/i);
+            const title = titleMatch ? titleMatch[1].trim() : '';
+            const latMatch = itemContent.match(/<geo:lat>([\s\S]*?)<\/geo:lat>/i) || itemContent.match(/<lat>([\s\S]*?)<\/lat>/i);
+            const lonMatch = itemContent.match(/<geo:long>([\s\S]*?)<\/geo:long>/i) || itemContent.match(/<long>([\s\S]*?)<\/long>/i);
+            const linkMatch = itemContent.match(/<link>([\s\S]*?)<\/link>/i);
+            const pubDateMatch = itemContent.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+
+            let mag = 2.0;
+            let loc = title;
+            if (title.includes('-')) {
+              const parts = title.split('-');
+              loc = parts.slice(1).join('-').trim();
+              const magStr = parts[0].replace(/[^0-9.]/g, '');
+              if (magStr) mag = parseFloat(magStr);
+            }
+
+            if (latMatch && lonMatch) {
+              fetchedSismos.push({
+                id: linkMatch ? linkMatch[1] : `xml_${Date.now()}_${Math.random()}`,
+                properties: {
+                  mag,
+                  loc,
+                  fecha: pubDateMatch ? pubDateMatch[1] : new Date().toISOString()
+                },
+                geometry: {
+                  coordinates: [parseFloat(lonMatch[1]), parseFloat(latMatch[1]), 10]
+                }
+              });
+            }
+          }
+          if (fetchedSismos.length > 0) {
+            addLog('SYS', 'IGN_XML', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde el feed RSS XML de IGN España.`, true, 'Servicios');
           }
         }
-      } catch (err) {
-        addLog('SYS', 'IGN_FALLBACK', 'LOCAL', 'FDSN', 'Fallo conexión directa IGN. Intentando fallback USGS...', false, 'Reintentando');
+      } catch (err: any) {
+        addLog('SYS', 'IGN_FALLBACK', 'LOCAL', 'FDSN', `Fallo conexión RSS IGN (${err.message}). Intentando fallback USGS...`, false, 'Reintentando');
         
-        // Autumn/Winter earthquakes query on USGS for Spain bounding box / region
-        // Spain covers: 35N to 44N, -10W to 4E
-        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=34&maxlatitude=44&minlongitude=-10&maxlongitude=5&limit=100&minmagnitude=1.0`;
-        const resUsgs = await fetch(usgsUrl, { signal: AbortSignal.timeout(5000) });
-        if (resUsgs.ok) {
-          const geoUsgs = await resUsgs.json();
-          if (geoUsgs.features && Array.isArray(geoUsgs.features)) {
-            fetchedSismos = geoUsgs.features;
-            addLog('SYS', 'USGS', 'LOCAL', 'FALLBACKAPI', `Recuperados ${fetchedSismos.length} sismos regionales mediante USGS.`, true, 'Aislado ok');
+        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=27&maxlatitude=44&minlongitude=-18&maxlongitude=5&limit=200&minmagnitude=1.0`;
+        try {
+          const resUsgs = await fetch(usgsUrl, { signal: AbortSignal.timeout(6000) });
+          if (resUsgs.ok) {
+            const geoUsgs = await resUsgs.json();
+            if (geoUsgs.features && Array.isArray(geoUsgs.features)) {
+              fetchedSismos = geoUsgs.features;
+              addLog('SYS', 'USGS', 'LOCAL', 'FALLBACKAPI', `Recuperados ${fetchedSismos.length} sismos regionales mediante USGS.`, true, 'Aislado ok');
+            }
           }
+        } catch (usgsErr: any) {
+          console.error("Fallo definitivo obteniendo sismos USGS:", usgsErr.message);
         }
       }
     }
 
     if (fetchedSismos.length > 0) {
-      // Map structures to our internal EarthquakeEvent
       const parsed: EarthquakeEvent[] = fetchedSismos.map((f: any) => {
         const props = f.properties || {};
         const geom = f.geometry || {};
@@ -3084,25 +3297,30 @@ async function refreshEarthquakes() {
         const lon = coordinates[0];
         const lat = coordinates[1];
         
-        // Extract depth and magnitude supporting string / number types
         const depth = props.depth !== undefined ? parseFloat(props.depth) : (coordinates[2] || 0);
-        const mag = props.mag !== undefined ? parseFloat(props.mag) : (props.magnitud || 2.1);
+        const mag = props.mag !== undefined ? parseFloat(props.mag) : (props.magnitud || 2.0);
         
         let loc = props.loc || props.place || 'Península Ibérica';
-        // Clean place if from USGS (e.g., "10 km SW of Granada, Spain" -> "Granada, ES")
         if (loc.includes('of')) {
           loc = loc.split('of')[1].trim();
         }
 
         const dist = calculateDistance(gpsdState.lat, gpsdState.lon, lat, lon);
-        const enRango = dist <= config.filterRadiusKm;
+        const enRango = dist <= (config.filterRadiusKm || 300);
 
-        let sismoTime: string;
-        if (props.fecha) {
-          const utcStr = props.fecha.includes('T') ? props.fecha : props.fecha.replace(' ', 'T') + 'Z';
-          sismoTime = new Date(utcStr).toISOString();
-        } else {
-          sismoTime = new Date(props.time || Date.now()).toISOString();
+        let sismoTime = new Date().toISOString();
+        const rawFecha = props.fecha || props.fechalocal;
+        if (rawFecha && typeof rawFecha === 'string' && rawFecha.trim().length >= 8) {
+          const clean = rawFecha.trim().replace(/\//g, '-').replace(' ', 'T');
+          const d = new Date(clean.endsWith('Z') ? clean : clean + 'Z');
+          if (!isNaN(d.getTime())) {
+            sismoTime = d.toISOString();
+          }
+        } else if (props.time) {
+          const d = new Date(props.time);
+          if (!isNaN(d.getTime())) {
+            sismoTime = d.toISOString();
+          }
         }
 
         const eqEvent: EarthquakeEvent = {
@@ -3110,38 +3328,33 @@ async function refreshEarthquakes() {
           time: sismoTime,
           latitude: lat,
           longitude: lon,
-          depthKm: depth,
-          magnitud: mag,
+          depthKm: isNaN(depth) ? 0 : depth,
+          magnitud: isNaN(mag) ? 2.0 : mag,
           magType: props.magtype || props.magType || 'mbLg',
           localizacion: loc,
           distanciaKm: dist,
           enRango
         };
 
-        // If in range and is new of significance, log transmit
-        // Generate packet if in range
         if (enRango && mag >= (config.minMagnitudBaliza || 4.0)) {
           eqEvent.aprsPacket = generateEarthquakePacket(eqEvent);
         }
         return eqEvent;
       });
 
-      // Filter by the last 24h (86400000 ms) and sort by recency
-      const limitTime = Date.now() - 24 * 60 * 60 * 1000;
+      const limitTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const sorted = parsed
         .filter(e => new Date(e.time).getTime() >= limitTime)
         .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-      earthquakes = sorted;
+      
+      earthquakes = sorted.length > 0 ? sorted : parsed.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-      // If any earthquake is "in range" and exceeds beacon magnitude threshold, announce transmission
       const rangeEvents = earthquakes.filter(e => e.enRango && e.magnitud >= (config.minMagnitudBaliza || 4.0));
       if (rangeEvents.length > 0) {
-        // Trigger simulated transmitter logs
         const closest = rangeEvents[0];
         const packet = generateEarthquakePacket(closest);
         addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo de M${closest.magnitud.toFixed(1)} a ${closest.distanciaKm}km.`);
 
-        // If enabled, automatically generate an emergency bulletin / message
         if (config.autoGenerarBoletinEmergencia) {
           const emergencyBulletin = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1    :EMERGENCIA SISMICA! SEISMO M${closest.magnitud.toFixed(1)} en ${closest.localizacion} (Prof:${closest.depthKm}km) - Fuente: IGN`;
           addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.');
@@ -4127,6 +4340,15 @@ startSchedules();
 // }, 45000);
 
 // API Endpoints
+app.post('/api/earthquakes/refresh', async (req, res) => {
+  try {
+    await refreshEarthquakes();
+    res.json({ success: true, count: earthquakes.length, earthquakes });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/telemetry', async (req, res) => {
   const isEco = req.query.eco === '1';
   let propagationData = null;
@@ -6033,11 +6255,31 @@ app.get('/api/wildfires/latest', async (req, res) => {
     }
   });
 
+  const stLat = (gpsdState.lat && !isNaN(gpsdState.lat) && gpsdState.lat !== 0) ? gpsdState.lat : 40.416775;
+  const stLon = (gpsdState.lon && !isNaN(gpsdState.lon) && gpsdState.lon !== 0) ? gpsdState.lon : -3.703790;
+  const now = Date.now();
+
   const finalFiresList = Array.from(finalFiresMap.values()).map(f => {
     const dyn = getDynamicWildfirePropagation(f);
     applyMobileDisplacement(f, dyn.courseDeg, dyn.speedKts);
     f.propagationDir = dyn.directionText;
+    f.distanceKm = Math.round(calculateDistance(stLat, stLon, f.lat, f.lon) * 10) / 10;
     return f;
+  });
+
+  // Sort hotspots by priority score (custom injections first, then closest & most recent to station)
+  finalFiresList.sort((a, b) => {
+    const isCustomA = a.id && a.id.includes('CUSTOM') ? 1 : 0;
+    const isCustomB = b.id && b.id.includes('CUSTOM') ? 1 : 0;
+    if (isCustomA !== isCustomB) return isCustomB - isCustomA;
+
+    const ageHoursA = Math.max(0, (now - getFireTimestampMs(a)) / 3600000);
+    const ageHoursB = Math.max(0, (now - getFireTimestampMs(b)) / 3600000);
+
+    const scoreA = (a.distanceKm || 9999) + (ageHoursA * 15);
+    const scoreB = (b.distanceKm || 9999) + (ageHoursB * 15);
+
+    return scoreA - scoreB;
   });
 
   // Dynamically count active hotspots for each community based on finalFiresList

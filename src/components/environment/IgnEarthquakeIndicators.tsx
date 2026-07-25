@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { customFetch } from '../../utils/customFetch';
 import { 
   Activity, Globe, Zap, Compass, AlertTriangle, ArrowUpRight, 
   Clock, MapPin, Layers, Info, ExternalLink, RefreshCw, Map,
@@ -34,10 +35,20 @@ export default function IgnEarthquakeIndicators({
   const [useGps, setUseGps] = useState<boolean>(true);
   const [manualLat, setManualLat] = useState<string>('40.416775');
   const [manualLon, setManualLon] = useState<string>('-3.703790');
-  const [maxRadioKm, setMaxRadioKm] = useState<number>(150.0); // Default 150 km matching Python script
-  const [minMagFilter, setMinMagFilter] = useState<number>(1.5);
+  const [maxRadioKm, setMaxRadioKm] = useState<number>(300.0); // Default 300 km for broad regional coverage
+  const [onlyInRangeFilter, setOnlyInRangeFilter] = useState<boolean>(false); // False = Show all IGN earthquakes; True = filter by coverage radius
+  const [minMagFilter, setMinMagFilter] = useState<number>(1.0);
   const [seismographSensitivity, setSeismographSensitivity] = useState<number>(1.5);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(false);
+
+  const handleManualRefresh = async () => {
+    try {
+      await customFetch('/api/earthquakes/refresh', { method: 'POST' });
+    } catch (e) {
+      console.error('Error triggering manual IGN earthquakes refresh:', e);
+    }
+    onRefresh();
+  };
   
   // Load user threshold magnitude from localStorage (fallback to 3.0)
   const [userThreshold, setUserThreshold] = useState<number>(() => {
@@ -314,20 +325,21 @@ export default function IgnEarthquakeIndicators({
   }, [processedEarthquakes, userThreshold, highPriorityThreshold, maxRadioKm]);
 
   const nearestEarthquake = useMemo(() => {
-    const inRange = processedEarthquakes.filter(e => e.isInRange);
-    if (inRange.length === 0) return null;
-    return inRange.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
+    if (processedEarthquakes.length === 0) return null;
+    return [...processedEarthquakes].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
   }, [processedEarthquakes]);
 
   const visuallyFilteredEarthquakes = useMemo(() => {
-    const inRange = processedEarthquakes.filter(e => e.isInRange);
-    return inRange.filter(eq => {
+    const candidateList = onlyInRangeFilter 
+      ? processedEarthquakes.filter(e => e.isInRange)
+      : processedEarthquakes;
+    return candidateList.filter(eq => {
       const matchMinMag = eq.magnitud >= visualMinMag;
       const matchMaxMag = eq.magnitud <= visualMaxMag;
       const matchRegion = !visualRegion || eq.localizacion.toLowerCase().includes(visualRegion.toLowerCase());
       return matchMinMag && matchMaxMag && matchRegion;
     });
-  }, [processedEarthquakes, visualMinMag, visualMaxMag, visualRegion]);
+  }, [processedEarthquakes, visualMinMag, visualMaxMag, visualRegion, onlyInRangeFilter]);
 
   // Seismograph simulator loop
   useEffect(() => {
@@ -776,7 +788,7 @@ export default function IgnEarthquakeIndicators({
           </button>
 
           <button
-            onClick={onRefresh}
+            onClick={handleManualRefresh}
             disabled={isRefreshing}
             className="p-2 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg flex items-center gap-1.5 transition-all text-[10px] cursor-pointer"
             title="Recargar catálogo sismográfico del IGN"
@@ -990,29 +1002,47 @@ export default function IgnEarthquakeIndicators({
               )}
             </div>
 
-            {/* List of Earthquakes currently within configured Max Radio */}
+            {/* List of Earthquakes */}
             <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 flex flex-col gap-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-900 pb-2 gap-2">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Red Sísmica en Rango</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Red Sísmica en Directo</span>
                   <h3 className="font-sans font-extrabold text-sm text-slate-200">
-                    Sismos en Rango ({visuallyFilteredEarthquakes.length} de {processedEarthquakes.filter(e => e.isInRange).length})
+                    {onlyInRangeFilter 
+                      ? `Sismos en Rango (${visuallyFilteredEarthquakes.length} de ${processedEarthquakes.filter(e => e.isInRange).length})`
+                      : `Sismos Recientes IGN (${visuallyFilteredEarthquakes.length} de ${processedEarthquakes.length})`}
                   </h3>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
-                  className={`px-2.5 py-1.5 rounded text-[10px] font-black uppercase font-mono tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 ${
-                    isAdvancedFiltersOpen 
-                      ? 'bg-rose-950 border-rose-500/30 text-rose-300' 
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <Filter size={11} className={visualMinMag > 1.0 || visualMaxMag < 10.0 || visualRegion ? "text-rose-400 animate-pulse" : ""} />
-                  <span>Filtros</span>
-                  {isAdvancedFiltersOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyInRangeFilter(!onlyInRangeFilter)}
+                    className={`px-2.5 py-1.5 rounded text-[10px] font-mono font-bold tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      onlyInRangeFilter
+                        ? 'bg-amber-950/60 border-amber-500/50 text-amber-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                    title={onlyInRangeFilter ? 'Filtrado por radio de cobertura de estación' : 'Mostrando todos los seismos recientes de España y región'}
+                  >
+                    <Radio size={11} className={onlyInRangeFilter ? 'text-amber-400 animate-pulse' : 'text-slate-400'} />
+                    <span>{onlyInRangeFilter ? 'Solo en Rango' : 'Todos Recientes'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
+                    className={`px-2.5 py-1.5 rounded text-[10px] font-black uppercase font-mono tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      isAdvancedFiltersOpen 
+                        ? 'bg-rose-950 border-rose-500/30 text-rose-300' 
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    <Filter size={11} className={visualMinMag > 1.0 || visualMaxMag < 10.0 || visualRegion ? "text-rose-400 animate-pulse" : ""} />
+                    <span>Filtros</span>
+                    {isAdvancedFiltersOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                  </button>
+                </div>
               </div>
 
               {/* Advanced Filters Panel */}
@@ -1353,12 +1383,12 @@ export default function IgnEarthquakeIndicators({
               {/* Radio Maximo Selector Dropdown */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex justify-between items-center text-[10px] font-mono leading-none">
-                  <span className="text-slate-400">RADIO DE VISUALIZACIÓN:</span>
-                  <span className="font-bold text-rose-400 font-mono">{maxRadioKm.toFixed(0)} km</span>
+                  <span className="text-slate-400">RADIO DE COBERTURA ESTACIÓN:</span>
+                  <span className="font-bold text-rose-400 font-mono">{maxRadioKm >= 2000 ? 'Sin Límite' : `${maxRadioKm.toFixed(0)} km`}</span>
                 </div>
                 
                 <select
-                  value={[50, 100, 150, 200, 300, 500].includes(maxRadioKm) ? maxRadioKm.toString() : 'custom'}
+                  value={[50, 100, 150, 200, 300, 500, 1000, 2000].includes(maxRadioKm) ? maxRadioKm.toString() : 'custom'}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val !== 'custom') {
@@ -1370,10 +1400,12 @@ export default function IgnEarthquakeIndicators({
                 >
                   <option value="50">🟢 50 km (Urbano / Muy Próximo)</option>
                   <option value="100">🟡 100 km (Regional / Corto Alcance)</option>
-                  <option value="150">🟠 150 km (Estándar RSN / Recomendado)</option>
+                  <option value="150">🟠 150 km (Estándar RSN / Local)</option>
                   <option value="200">🔴 200 km (Medio / Media Distancia)</option>
-                  <option value="300">🚨 300 km (Amplio / Cobertura Extendida)</option>
-                  <option value="500">🌌 500 km (Máximo / Península Completa)</option>
+                  <option value="300">🚨 300 km (Amplio / Recomendado)</option>
+                  <option value="500">🌌 500 km (Regional Peninsular)</option>
+                  <option value="1000">🇪🇸 1.000 km (Toda Península Ibérica)</option>
+                  <option value="2000">🏝️ 2.000 km (Toda España, Canarias y Baleares)</option>
                   <option value="custom">⚙️ Ajuste Fino (Usar barra abajo)...</option>
                 </select>
 
@@ -1381,8 +1413,8 @@ export default function IgnEarthquakeIndicators({
                   <input
                     type="range"
                     min="10"
-                    max="500"
-                    step="5"
+                    max="2000"
+                    step="10"
                     value={maxRadioKm}
                     onChange={(e) => setMaxRadioKm(parseInt(e.target.value))}
                     className="w-full accent-rose-500 h-1 bg-slate-900 rounded cursor-pointer"
@@ -1390,7 +1422,7 @@ export default function IgnEarthquakeIndicators({
                   />
                   <div className="flex justify-between text-[8px] text-slate-500 font-mono mt-0.5">
                     <span>Min: 10 km</span>
-                    <span>Max: 500 km</span>
+                    <span>Max: 2.000 km</span>
                   </div>
                 </div>
               </div>

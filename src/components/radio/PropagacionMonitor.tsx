@@ -2453,138 +2453,164 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
           )}
 
           {/* Telemetría Actual NOAA (R / S / G / SFI / Kp / MUF / Banda Útil / Retardo L1) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            {/* Escala R */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Escala R (Apagón)
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className={`text-xl font-extrabold font-mono ${
-                  aprsBlnAlerts.rScale === 'R0' ? 'text-emerald-400' :
-                  aprsBlnAlerts.rScale === 'R1' || aprsBlnAlerts.rScale === 'R2' ? 'text-amber-400' : 'text-rose-400'
-                }`}>
-                  {aprsBlnAlerts.rScale}
-                </span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                  aprsBlnAlerts.rScale === 'R0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}>
-                  {aprsBlnAlerts.rScale === 'R0' ? 'Normal' : 'Alerta R'}
-                </span>
-              </div>
-            </div>
+          {(() => {
+            const activeRScale = (noaa.rScale ? parseNoaaScale(noaa.rScale, "R0 (Normal)").value : null) || aprsBlnAlerts.rScale || "R0";
+            const activeSScale = (noaa.sScale ? parseNoaaScale(noaa.sScale, "S0 (Normal)").value : null) || aprsBlnAlerts.sScale || "S0";
+            const activeGScale = (noaa.gScale ? parseNoaaScale(noaa.gScale, "G0 (Normal)").value : null) || aprsBlnAlerts.gScale || "G0";
+            const activeSfiVal = parseInt(noaa.dia1) || (aprsBlnMetrics?.sfi ? parseInt(aprsBlnMetrics.sfi) : 150);
+            const activeKpVal = gfz.Hp60 !== undefined ? gfz.Hp60 : (gfz.Hp30 !== undefined ? gfz.Hp30 : (typeof aprsBlnMetrics?.kp === 'number' ? aprsBlnMetrics.kp : 2.10));
+            const activeMufVal = noaa.muf !== undefined ? noaa.muf : (aprsBlnMetrics?.muf ? parseFloat(aprsBlnMetrics.muf) : 14.50);
 
-            {/* Escala S */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Escala S (Solar)
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className={`text-xl font-extrabold font-mono ${
-                  aprsBlnAlerts.sScale === 'S0' ? 'text-emerald-400' :
-                  aprsBlnAlerts.sScale === 'S1' || aprsBlnAlerts.sScale === 'S2' ? 'text-amber-400' : 'text-rose-400'
-                }`}>
-                  {aprsBlnAlerts.sScale}
-                </span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                  aprsBlnAlerts.sScale === 'S0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}>
-                  {aprsBlnAlerts.sScale === 'S0' ? 'Normal' : 'Alerta S'}
-                </span>
-              </div>
-            </div>
+            let activeBandaOptima = aprsBlnMetrics?.bandaUtil || "20m";
+            if (!aprsBlnMetrics?.bandaUtil) {
+              if (activeMufVal >= 28.0) activeBandaOptima = "10m";
+              else if (activeMufVal >= 24.89) activeBandaOptima = "12m";
+              else if (activeMufVal >= 21.0) activeBandaOptima = "15m";
+              else if (activeMufVal >= 18.06) activeBandaOptima = "17m";
+              else if (activeMufVal >= 14.0) activeBandaOptima = "20m";
+              else if (activeMufVal >= 10.1) activeBandaOptima = "30m";
+              else if (activeMufVal >= 7.0) activeBandaOptima = "40m";
+              else if (activeMufVal >= 3.5) activeBandaOptima = "80m";
+              else activeBandaOptima = "160m";
+            }
 
-            {/* Escala G */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Escala G (Geomag)
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className={`text-xl font-extrabold font-mono ${
-                  aprsBlnAlerts.gScale === 'G0' ? 'text-emerald-400' :
-                  aprsBlnAlerts.gScale === 'G1' || aprsBlnAlerts.gScale === 'G2' ? 'text-amber-400' : 'text-rose-400'
-                }`}>
-                  {aprsBlnAlerts.gScale}
-                </span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                  aprsBlnAlerts.gScale === 'G0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}>
-                  {aprsBlnAlerts.gScale === 'G0' ? 'Normal' : 'Alerta G'}
-                </span>
-              </div>
-            </div>
+            const activeDelayL1 = rtsw.speed ? Math.round((1500000.0 / rtsw.speed) / 60.0) : (noaa?.delayL1 ? Math.round(noaa.delayL1) : (aprsBlnMetrics?.delayL1 || 45));
 
-            {/* Flujo Solar SFI */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Flujo Solar SFI
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-xl font-extrabold font-mono text-amber-400">
-                  {aprsBlnMetrics?.sfi || noaa.dia1 || '150'}
-                </span>
-                <span className="text-[9px] text-slate-500 font-mono">SFU</span>
-              </div>
-            </div>
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                {/* Escala R */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Escala R (Apagón)
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className={`text-xl font-extrabold font-mono ${
+                      activeRScale === 'R0' ? 'text-emerald-400' :
+                      activeRScale === 'R1' || activeRScale === 'R2' ? 'text-amber-400' : 'text-rose-400'
+                    }`}>
+                      {activeRScale}
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      activeRScale === 'R0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    }`}>
+                      {activeRScale === 'R0' ? 'Normal' : 'Alerta R'}
+                    </span>
+                  </div>
+                </div>
 
-            {/* Índice Kp */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Índice Kp
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className={`text-xl font-extrabold font-mono ${
-                  (aprsBlnMetrics?.kp || 2) >= 5 ? 'text-rose-400' :
-                  (aprsBlnMetrics?.kp || 2) >= 4 ? 'text-amber-400' : 'text-cyan-400'
-                }`}>
-                  {aprsBlnMetrics?.kp !== undefined ? (typeof aprsBlnMetrics.kp === 'number' ? aprsBlnMetrics.kp.toFixed(1) : aprsBlnMetrics.kp) : '2.0'}
-                </span>
-                <span className="text-[9px] text-slate-500 font-mono">Hp30</span>
-              </div>
-            </div>
+                {/* Escala S */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Escala S (Solar)
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className={`text-xl font-extrabold font-mono ${
+                      activeSScale === 'S0' ? 'text-emerald-400' :
+                      activeSScale === 'S1' || activeSScale === 'S2' ? 'text-amber-400' : 'text-rose-400'
+                    }`}>
+                      {activeSScale}
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      activeSScale === 'S0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    }`}>
+                      {activeSScale === 'S0' ? 'Normal' : 'Alerta S'}
+                    </span>
+                  </div>
+                </div>
 
-            {/* MUF Estimada */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                MUF Estimada
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-xl font-extrabold font-mono text-indigo-300">
-                  {aprsBlnMetrics?.muf || (noaa.muf ? noaa.muf.toFixed(1) : '28.5')}
-                </span>
-                <span className="text-[9px] text-slate-500 font-mono">MHz</span>
-              </div>
-            </div>
+                {/* Escala G */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Escala G (Geomag)
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className={`text-xl font-extrabold font-mono ${
+                      activeGScale === 'G0' ? 'text-emerald-400' :
+                      activeGScale === 'G1' || activeGScale === 'G2' ? 'text-amber-400' : 'text-rose-400'
+                    }`}>
+                      {activeGScale}
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      activeGScale === 'G0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    }`}>
+                      {activeGScale === 'G0' ? 'Normal' : 'Alerta G'}
+                    </span>
+                  </div>
+                </div>
 
-            {/* Banda Útil HF */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Banda Útil
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-xl font-extrabold font-mono text-emerald-300">
-                  {aprsBlnMetrics?.bandaUtil || (parseFloat(noaa.muf || '28.5') >= 28 ? '10m' : parseFloat(noaa.muf || '28.5') >= 21 ? '15m' : '20m')}
-                </span>
-                <span className="text-[9px] text-emerald-500 font-mono font-bold uppercase">Óptima</span>
-              </div>
-            </div>
+                {/* Flujo Solar SFI */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Flujo Solar SFI
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-extrabold font-mono text-amber-400">
+                      {activeSfiVal}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-mono">SFU</span>
+                  </div>
+                </div>
 
-            {/* Retardo L1 (DSCOVR/ACE) */}
-            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
-              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
-                Retardo L1 Viento
-              </span>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-xl font-extrabold font-mono text-violet-300">
-                  {aprsBlnMetrics?.delayL1 ? `${aprsBlnMetrics.delayL1}m` : (noaa?.delayL1 ? `${Math.round(noaa.delayL1)}m` : '45m')}
-                </span>
-                <span className="text-[9px] text-violet-400 font-mono font-bold">L1-Earth</span>
+                {/* Índice Kp */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Índice Kp
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className={`text-xl font-extrabold font-mono ${
+                      activeKpVal >= 5 ? 'text-rose-400' :
+                      activeKpVal >= 4 ? 'text-amber-400' : 'text-cyan-400'
+                    }`}>
+                      {activeKpVal.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-mono">Hp60</span>
+                  </div>
+                </div>
+
+                {/* MUF Estimada */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    MUF Estimada
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-extrabold font-mono text-indigo-300">
+                      {activeMufVal.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-mono">MHz</span>
+                  </div>
+                </div>
+
+                {/* Banda Útil HF */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Banda Útil
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-extrabold font-mono text-emerald-300">
+                      {activeBandaOptima}
+                    </span>
+                    <span className="text-[9px] text-emerald-500 font-mono font-bold uppercase">Óptima</span>
+                  </div>
+                </div>
+
+                {/* Retardo L1 (DSCOVR/ACE) */}
+                <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                    Retardo L1 Viento
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-extrabold font-mono text-violet-300">
+                      {activeDelayL1}m
+                    </span>
+                    <span className="text-[9px] text-violet-400 font-mono font-bold">L1-Earth</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* SECCIÓN 1: UMBRALES DE ALERTA Y NOTIFICACIONES SONORAS */}
           <div className="space-y-3">

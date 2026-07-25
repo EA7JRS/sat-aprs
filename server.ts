@@ -2860,9 +2860,9 @@ async function formatSpaceWeatherAprsBulletin() {
   const sScale = prop.noaa?.sScale || "S0";
   const gScale = prop.noaa?.gScale || "G0";
   const sfi = prop.noaa?.dia1 || "150";
-  const kp = prop.gfz?.Hp30 !== undefined ? Math.round(prop.gfz.Hp30 * 10) / 10 : 2.0;
-  const ssn = prop.noaa?.ssn || "110";
-  const muf = prop.noaa?.muf ? prop.noaa.muf.toFixed(1) : "28.5";
+  const kp = prop.gfz?.Hp60 !== undefined ? Math.round(prop.gfz.Hp60 * 10) / 10 : (prop.gfz?.Hp30 !== undefined ? Math.round(prop.gfz.Hp30 * 10) / 10 : 2.1);
+  const ssn = prop.noaa?.ssn || String(Math.max(0, Math.round((parseInt(sfi) - 64) * 0.9))) || "110";
+  const muf = prop.noaa?.muf ? prop.noaa.muf.toFixed(1) : "14.5";
 
   let status = "BUENA";
   const rNivel = parseInt((rScale || "R0").replace("R", "")) || 0;

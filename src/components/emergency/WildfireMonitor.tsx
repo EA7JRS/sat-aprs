@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Flame, Globe, ShieldAlert, Radio, AlertTriangle, RefreshCw, 
-  MapPin, Activity, Plus, Search, Megaphone, ExternalLink, FileText, Send, Check, Trash2, ShieldCheck, Cpu, Locate, Settings
+  MapPin, Activity, Plus, Search, Megaphone, ExternalLink, FileText, Send, Check, Trash2, ShieldCheck, Cpu, Locate, Settings, Wind
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell 
@@ -120,6 +120,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
   const [calcTemp, setCalcTemp] = useState<number>(34);
   const [calcHum, setCalcHum] = useState<number>(22);
   const [calcWind, setCalcWind] = useState<number>(25);
+  const [calcSlope, setCalcSlope] = useState<number>(20); // Pendiente %
   const [calcRainlessDays, setCalcRainlessDays] = useState<number>(12);
   const [calcFuelType, setCalcFuelType] = useState<string>('matorral_seco');
 
@@ -132,21 +133,69 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     // Adjust spread based on fuel type factor
     let fuelFactor = 1.0;
     let fuelLabel = 'Matorral mediterráneo inflamable';
-    if (calcFuelType === 'pinar') { fuelFactor = 1.25; fuelLabel = 'Pinar de pino carrasco (alta carga de piñas)'; }
-    else if (calcFuelType === 'matorral_seco') { fuelFactor = 1.4; fuelLabel = 'Garriga y matorral seco continental'; }
-    else if (calcFuelType === 'eucaliptal') { fuelFactor = 1.35; fuelLabel = 'Eucaliptal racheado (desprendimiento de cortezas)'; }
-    else if (calcFuelType === 'pasto') { fuelFactor = 1.5; fuelLabel = 'Pastizal agostado fino'; }
-    else if (calcFuelType === 'frondosas') { fuelFactor = 0.7; fuelLabel = 'Bosque húmedo de frondosas (menor inflamabilidad)'; }
+    let fuelMatrix = 850; // rho_b * epsilon * Q_i (kJ/m^3)
+    let B_exponent = 1.50;
+    let C_factor = 0.035;
+
+    if (calcFuelType === 'pinar') { 
+      fuelFactor = 1.25; fuelLabel = 'Pinar de pino carrasco (alta carga de piñas)'; fuelMatrix = 1350; B_exponent = 1.40; C_factor = 0.026; 
+    } else if (calcFuelType === 'matorral_seco') { 
+      fuelFactor = 1.4; fuelLabel = 'Garriga y matorral seco continental'; fuelMatrix = 850; B_exponent = 1.50; C_factor = 0.035; 
+    } else if (calcFuelType === 'eucaliptal') { 
+      fuelFactor = 1.35; fuelLabel = 'Eucaliptal racheado (desprendimiento de cortezas)'; fuelMatrix = 1100; B_exponent = 1.46; C_factor = 0.030; 
+    } else if (calcFuelType === 'pasto') { 
+      fuelFactor = 1.5; fuelLabel = 'Pastizal agostado fino (reacción instantánea al viento)'; fuelMatrix = 600; B_exponent = 1.65; C_factor = 0.042; 
+    } else if (calcFuelType === 'frondosas') { 
+      fuelFactor = 0.7; fuelLabel = 'Bosque húmedo de frondosas (menor inflamabilidad)'; fuelMatrix = 2100; B_exponent = 1.25; C_factor = 0.018; 
+    }
 
     const rawFwi = (isi * 1.3 + (calcTemp * 0.9) + (calcRainlessDays * 1.2)) * 0.55 * fuelFactor;
     const fwi = Math.max(1, Math.min(100, Math.round(rawFwi)));
+
+    // --- ROTHERMEL (1972) FORMULA ENGINE ---
+    // Formula: R = (I_R * xi * (1 + Phi_w + Phi_s)) / (rho_b * epsilon * Q_i)
+    const ruleOf30 = calcWind >= 30 && calcTemp >= 30 && calcHum <= 30;
+    const xi = 0.12; // Flux ratio
+    const baseIr = 1800 + Math.min(8000, fwi * 120); // Reaction intensity I_R (kJ/m^2/min)
+
+    // Wind factor Phi_w = C * U^B * (beta/beta_op)^-E
+    const U = Math.max(0, calcWind);
+    const phiW = C_factor * Math.pow(U, B_exponent);
+
+    // Slope factor Phi_s (Efecto chimenea cuesta arriba)
+    const slopeAngleRad = Math.atan(calcSlope / 100);
+    const phiS = 5.275 * Math.pow(Math.tan(slopeAngleRad), 2);
+
+    // Structural Rothermel Rate of Spread R (m/min)
+    let rawR = (baseIr * xi * (1 + phiW + phiS)) / fuelMatrix;
+    if (ruleOf30) {
+      rawR *= 1.45; // Extreme convective chimney multiplier under Regla del 30
+    }
+
+    const rosMmin = Math.round(rawR * 10) / 10;
+    const rosKmh = Math.round((rosMmin * 0.06) * 100) / 100;
+
+    // Wind regime behavior description
+    let windRegimeText = '';
+    let spreadShape: 'Concéntrica' | 'Elíptica Alargada' | 'Dominada por Viento / Extrema' = 'Concéntrica';
+
+    if (calcWind < 5) {
+      spreadShape = 'Concéntrica';
+      windRegimeText = 'Viento en calma (<5 km/h): Propagación lenta por radiación concéntrica.';
+    } else if (calcWind <= 20) {
+      spreadShape = 'Elíptica Alargada';
+      windRegimeText = 'Viento moderado (10-20 km/h): Avance se duplica/triplica. Geometría elíptica alargada.';
+    } else {
+      spreadShape = 'Dominada por Viento / Extrema';
+      windRegimeText = 'Viento fuerte (>30 km/h): Viento domina la dinámica (ROS > 3-5 km/h) con posible desprendimiento de pavesas.';
+    }
 
     let riskLabel: 'Bajo' | 'Moderado' | 'Alto' | 'Muy Alto' | 'Extremo' = 'Bajo';
     let riskColor = '#10b981'; // Green
     let riskBg = 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400';
     let recommendations = 'Vigilancia ordinaria. No se prevén dificultades severas de control en caso de ignición espontánea.';
 
-    if (fwi >= 65) {
+    if (fwi >= 65 || ruleOf30) {
       riskLabel = 'Extremo';
       riskColor = '#ef4444'; // Red
       riskBg = 'bg-red-950/45 border-red-500/60 text-red-200 animate-pulse';
@@ -168,8 +217,12 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
       recommendations = 'Propagación de intensidad media controlable con medios terrestres convencionales y líneas de defensa estándar.';
     }
 
-    return { fwi, ffmc: Math.round(ffmc), isi, riskLabel, riskColor, riskBg, recommendations, fuelLabel };
-  }, [calcTemp, calcHum, calcWind, calcRainlessDays, calcFuelType]);
+    return { 
+      fwi, ffmc: Math.round(ffmc), isi, riskLabel, riskColor, riskBg, recommendations, fuelLabel,
+      rosMmin, rosKmh, phiW: Math.round(phiW * 100) / 100, phiS: Math.round(phiS * 100) / 100,
+      baseIr: Math.round(baseIr), fuelMatrix, ruleOf30, spreadShape, windRegimeText
+    };
+  }, [calcTemp, calcHum, calcWind, calcSlope, calcRainlessDays, calcFuelType]);
 
   // Gemini & alert broadcast states
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -2568,20 +2621,20 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           </div>
         </div>
 
-        {/* INTERACTIVE FWI RISK ESTIMATOR & SIMULATION BRIDGE */}
-        <div className="bg-[#111111] border border-[#2a1500] rounded-xl p-4.5 shadow-2xl flex flex-col justify-between space-y-3.5">
+        {/* INTERACTIVE FWI & ROTHERMEL (1972) WILDFIRE SPREAD ENGINE */}
+        <div className="bg-[#111111] border border-[#2a1500] rounded-xl p-4.5 shadow-2xl flex flex-col justify-between space-y-3.5 lg:col-span-1">
           <div>
             <div className="border-b border-[#2a1500] pb-2 flex items-center justify-between">
               <h3 className="font-bold text-xs uppercase tracking-wider text-[#ff8c42] flex items-center gap-1.5 font-mono">
                 <Flame size={14} className="text-[#ff4500] animate-pulse" />
-                Simulador de Riesgo e Índice FWI
+                Modelo Rothermel (1972) e Índice FWI
               </h3>
-              <span className="text-[8.5px] bg-[#1a0a00] border border-[#3d1800] text-[#ff8c42] px-1.5 rounded font-mono font-bold">ESTIMADOR INTERACTIVO</span>
+              <span className="text-[8.5px] bg-[#1a0a00] border border-[#3d1800] text-[#ff8c42] px-1.5 rounded font-mono font-bold">MATEMÁTICA ROTHERMEL</span>
             </div>
 
             {/* Inputs sliders */}
-            <div className="mt-3.5 space-y-2 text-[10px] font-mono">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="mt-3 space-y-2 text-[10px] font-mono">
+              <div className="grid grid-cols-2 gap-2.5">
                 {/* Temp */}
                 <div>
                   <div className="flex justify-between items-center text-stone-400 mb-0.5">
@@ -2614,11 +2667,11 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-1">
+              <div className="grid grid-cols-3 gap-2 mt-1">
                 {/* Viento */}
                 <div>
                   <div className="flex justify-between items-center text-stone-400 mb-0.5">
-                    <span>Viento Racha:</span>
+                    <span>Viento U:</span>
                     <span className="text-white font-bold">{calcWind} km/h</span>
                   </div>
                   <input
@@ -2630,10 +2683,25 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
                     className="w-full h-1 bg-[#1a0a00] accent-[#ff4500] rounded focus:outline-none cursor-ew-resize"
                   />
                 </div>
+                {/* Pendiente / Slope */}
+                <div>
+                  <div className="flex justify-between items-center text-stone-400 mb-0.5">
+                    <span>Pendiente:</span>
+                    <span className="text-amber-400 font-bold">{calcSlope}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    value={calcSlope}
+                    onChange={(e) => setCalcSlope(Number(e.target.value))}
+                    className="w-full h-1 bg-[#1a0a00] accent-amber-500 rounded focus:outline-none cursor-ew-resize"
+                  />
+                </div>
                 {/* Sin lluvia */}
                 <div>
                   <div className="flex justify-between items-center text-stone-400 mb-0.5">
-                    <span>Días sin Lluvia:</span>
+                    <span>Sin Lluvia:</span>
                     <span className="text-white font-bold">{calcRainlessDays}d</span>
                   </div>
                   <input
@@ -2649,31 +2717,87 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
 
               {/* Combustible select */}
               <div className="mt-1">
-                <label className="text-stone-400 block mb-0.5 text-[8.5px] uppercase tracking-wider">Modelo de Combustible Forestal:</label>
+                <label className="text-stone-400 block mb-0.5 text-[8.5px] uppercase tracking-wider">Modelo de Combustible (Matriz ρb·ε·Qi):</label>
                 <select
                   value={calcFuelType}
                   onChange={(e) => setCalcFuelType(e.target.value)}
                   className="w-full bg-[#0a0500] border border-[#2a1500]/60 focus:border-[#ff4500]/50 text-stone-300 rounded px-2 py-1 text-[10px] cursor-pointer focus:outline-none font-sans"
                 >
-                  <option value="matorral_seco">Garriga / Matorral Seco Continental</option>
-                  <option value="pinar">Pinar denso de pino carrasco / resinero</option>
-                  <option value="eucaliptal">Eucaliptal racheado (combustibles colgantes)</option>
-                  <option value="pasto">Pastizal fino agostado estival</option>
-                  <option value="frondosas">Dehesas de robledal o encinar (humedad retenida)</option>
+                  <option value="matorral_seco">Garriga / Matorral Seco Continental (850 kJ/m³)</option>
+                  <option value="pinar">Pinar denso de pino carrasco con piñas (1350 kJ/m³)</option>
+                  <option value="eucaliptal">Eucaliptal racheado / cortezas (1100 kJ/m³)</option>
+                  <option value="pasto">Pastizal fino agostado (Reacción instantánea - 600 kJ/m³)</option>
+                  <option value="frondosas">Dehesas de robledal o encinar (Bosque denso - 2100 kJ/m³)</option>
                 </select>
               </div>
             </div>
 
+            {/* "Regla del 30" Special Badge */}
+            {computedRisk.ruleOf30 && (
+              <div className="mt-2.5 p-2 rounded bg-red-950/80 border border-red-500 text-red-200 text-[10px] font-mono flex items-center gap-1.5 animate-pulse shadow-lg">
+                <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                <div>
+                  <span className="font-extrabold uppercase">🚨 REGLA DEL 30 ACTIVA:</span> Viento &gt; 30 km/h ({calcWind} km/h), Temp &gt; 30 °C ({calcTemp} °C) y Humedad &lt; 30% ({calcHum}%). Comportamiento de propagación extrema e incontrolable.
+                </div>
+              </div>
+            )}
+
+            {/* Rothermel Model Rate of Spread (R) Output Card */}
+            <div className="mt-2.5 bg-[#0a0500] border border-[#ff4500]/30 rounded-lg p-2.5 font-mono text-[10px] space-y-2 shadow-inner">
+              <div className="flex items-center justify-between border-b border-[#2a1505] pb-1.5">
+                <span className="text-stone-300 font-sans font-bold flex items-center gap-1">
+                  <Wind size={12} className="text-[#ff8c42]" /> VELOCIDAD DE AVANCE (R):
+                </span>
+                <span className="text-[#ff8c42] font-black text-xs">
+                  {computedRisk.rosMmin} m/min <span className="text-stone-400 font-normal">({computedRisk.rosKmh} km/h)</span>
+                </span>
+              </div>
+
+              {/* Equation breakdown */}
+              <div className="bg-black/80 p-1.5 rounded border border-stone-850 text-[9px] text-stone-300 font-mono space-y-1">
+                <div className="text-center font-bold text-amber-400 border-b border-stone-800 pb-0.5">
+                  Fórmula Structural: R = [ I_R · ξ · (1 + Φ_w + Φ_s) ] / [ ρ_b · ε · Q_i ]
+                </div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[8.5px]">
+                  <div>Factor Viento Φ_w: <span className="text-emerald-400 font-bold">+{computedRisk.phiW}</span></div>
+                  <div>Factor Pendiente Φ_s: <span className="text-amber-400 font-bold">+{computedRisk.phiS}</span></div>
+                  <div>Intensidad Reacción I_R: <span className="text-stone-200">{computedRisk.baseIr} kJ/m²min</span></div>
+                  <div>Matriz Combustible: <span className="text-stone-200">{computedRisk.fuelMatrix} kJ/m³</span></div>
+                </div>
+              </div>
+
+              {/* Shape and Wind regime description */}
+              <div className="text-[9px] space-y-0.5">
+                <div className="flex justify-between text-stone-300">
+                  <span>Geometría Frente de Fuego:</span>
+                  <span className="text-white font-bold">{computedRisk.spreadShape}</span>
+                </div>
+                <p className="text-[8.5px] text-stone-400 leading-snug italic">{computedRisk.windRegimeText}</p>
+              </div>
+            </div>
+
             {/* Calculated Risk Output display card */}
-            <div className={`mt-3 p-2.5 rounded-lg border text-xs font-mono space-y-1.5 ${computedRisk.riskBg}`}>
+            <div className={`mt-2.5 p-2 rounded-lg border text-xs font-mono space-y-1 ${computedRisk.riskBg}`}>
               <div className="flex justify-between items-center">
-                <span className="font-sans font-bold">PELIGRO ESTIMADO FWI:</span>
+                <span className="font-sans font-bold text-[10.5px]">PELIGRO FWI INTEGRADO:</span>
                 <span className="font-black px-2 py-0.5 rounded text-[10px] bg-black/60 border border-current">
                   {computedRisk.riskLabel} (FWI {computedRisk.fwi})
                 </span>
               </div>
-              <p className="text-[9.5px] leading-relaxed text-stone-300">{computedRisk.recommendations}</p>
-              <p className="text-[8.5px] text-stone-500 italic">Combustible: {computedRisk.fuelLabel}</p>
+              <p className="text-[9px] leading-relaxed text-stone-300">{computedRisk.recommendations}</p>
+              <p className="text-[8px] text-stone-500 italic">Combustible: {computedRisk.fuelLabel}</p>
+            </div>
+
+            {/* Rothermel Model Limitations Disclosure Box */}
+            <div className="mt-2.5 bg-black/60 border border-stone-800 p-2 rounded-lg text-[8.5px] font-sans text-stone-400 space-y-1">
+              <span className="font-mono font-bold text-stone-300 uppercase tracking-wider block text-[8px] text-amber-500/90">
+                ⚠️ Restricciones del Modelo de Rothermel (1972):
+              </span>
+              <ul className="list-disc list-inside space-y-0.5 leading-tight">
+                <li><strong className="text-stone-300">Fuegos de superficie:</strong> Modela exclusivamente propagación en suelo (matorral, hojarasca, pasto). No cuantifica directamente fuegos de copas.</li>
+                <li><strong className="text-stone-300">Combustible homogéneo:</strong> Presupone continuidad y homogeneidad en vegetación y topografía.</li>
+                <li><strong className="text-stone-300">Focos secundarios:</strong> No evalúa matemáticamente la ignición por salto de pavesas a larga distancia.</li>
+              </ul>
             </div>
           </div>
 

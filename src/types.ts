@@ -469,6 +469,7 @@ export interface WildfireHotspot {
   dangerLevel: 'Bajo' | 'Moderado' | 'Alto' | 'Extremo';
   propagationDir?: string;
   rawAprsFire?: string;
+  distanceKm?: number;
 }
 
 export interface RegionalFireRisk {

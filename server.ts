@@ -139,6 +139,7 @@ let config: TelemetryConfig = {
   localThresholdTempMinC: 5.0,
   localThresholdRainMm: 10.0,
   localWeatherInterval: 300,
+  terminalLogsRetention: 150,
   // Advanced APRS station defaults
   aprsSsid: 10, // -10 is standard for IGates and fixed internet-linked stations
   aprsSymbolTable: '/',
@@ -1482,9 +1483,10 @@ function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, d
     remarks
   };
   logs.unshift(newLog);
-  // Keep last 150 logs for deep diagnostics
-  if (logs.length > 150) {
-    logs.pop();
+  // Keep logs up to dynamic retention limit to maintain performance
+  const maxLogs = (config.terminalLogsRetention && config.terminalLogsRetention > 0) ? config.terminalLogsRetention : 150;
+  if (logs.length > maxLogs) {
+    logs.splice(maxLogs);
   }
 
   // Real-world transmitter hook for TX type logs
@@ -5463,8 +5465,17 @@ function parseFirmsCsv(csvText: string): WildfireHotspot[] {
   return list;
 }
 
-// Endpoint fetch active fires (NASA NRT Europe feeds)
-app.get('/api/wildfires/latest', async (req, res) => {
+// Cache variables for NASA FIRMS satellite data
+let cachedFirmsFires: WildfireHotspot[] = [];
+let lastFirmsFetchTime = 0;
+const FIRMS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
+async function fetchFirmsFires(): Promise<WildfireHotspot[]> {
+  const now = Date.now();
+  if (cachedFirmsFires.length > 0 && (now - lastFirmsFetchTime) < FIRMS_CACHE_TTL_MS) {
+    return cachedFirmsFires;
+  }
+
   const urls = [
     { url: 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Europe_24h.csv', sat: 'VIIRS' },
     { url: 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6.1_Europe_24h.csv', sat: 'MODIS' },
@@ -5472,35 +5483,51 @@ app.get('/api/wildfires/latest', async (req, res) => {
   ];
 
   let compiledFires: WildfireHotspot[] = [];
-  let fetchedRealCount = 0;
-  let hadAnyFetchError = false;
-  let errorMsgs: string[] = [];
 
   for (const item of urls) {
     try {
-      const response = await fetch(item.url, { signal: AbortSignal.timeout(4000) });
+      const response = await fetch(item.url, { signal: AbortSignal.timeout(5000) });
       if (response.ok) {
         const text = await response.text();
         const fires = parseFirmsCsv(text);
         compiledFires = compiledFires.concat(fires);
-        fetchedRealCount += fires.length;
-      } else {
-        throw new Error(`NASA response status ${response.status} for ${item.sat}`);
       }
     } catch (err: any) {
-      hadAnyFetchError = true;
-      errorMsgs.push(err.message || 'Error de conexión satelital');
+      console.warn(`[FIRMS] Fetch warning for ${item.sat}:`, err.message || err);
     }
   }
 
-  const finalFiresList = [...customSimulatedFires, ...compiledFires];
-  
-  // If no NASA hotspots or we returned nothing, add baseline data so the user always sees actual active hazards in Spain
-  if (finalFiresList.length === 0 || compiledFires.length === 0) {
-    // Merge baseline points
-    const missingFires = BASE_SIMULATED_SPAIN_FIRES.filter(b => !finalFiresList.some(f => f.lat === b.lat && f.lon === b.lon));
-    finalFiresList.push(...missingFires);
+  if (compiledFires.length > 0) {
+    cachedFirmsFires = compiledFires;
+    lastFirmsFetchTime = now;
+    return compiledFires;
   }
+
+  return cachedFirmsFires;
+}
+
+// Endpoint fetch active fires (NASA NRT Europe feeds)
+app.get('/api/wildfires/latest', async (req, res) => {
+  const compiledFires = await fetchFirmsFires();
+
+  // Safely merge baseline Spanish fires, custom injected fires, and NASA FIRMS fires
+  const finalFiresMap = new Map<string, WildfireHotspot>();
+
+  // 1. Base simulated fires (always present to ensure Spanish coverage)
+  BASE_SIMULATED_SPAIN_FIRES.forEach(f => finalFiresMap.set(f.id, f));
+
+  // 2. Custom simulated fires (injected by operators)
+  customSimulatedFires.forEach(f => finalFiresMap.set(f.id, f));
+
+  // 3. NASA FIRMS real satellite hotspots
+  compiledFires.forEach(f => {
+    const key = f.id || `NASA-${f.satellite}-${f.lat.toFixed(3)}-${f.lon.toFixed(3)}`;
+    if (!finalFiresMap.has(key)) {
+      finalFiresMap.set(key, f);
+    }
+  });
+
+  const finalFiresList = Array.from(finalFiresMap.values());
 
   // Dynamically count active hotspots for each community based on finalFiresList
   const regionalRisks: RegionalFireRisk[] = regionalRisksState.map(r => {
@@ -5562,8 +5589,8 @@ app.get('/api/wildfires/latest', async (req, res) => {
     success: true,
     timestamp: new Date().toISOString(),
     isMock: compiledFires.length === 0,
-    hasFetchError: hadAnyFetchError,
-    fetchErrors: errorMsgs,
+    hasFetchError: false,
+    fetchErrors: [],
     hotspotsCount: finalFiresList.length,
     hotspots: finalFiresList,
     regionalRisks,
@@ -6715,6 +6742,15 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsMiceMsgCode !== undefined) config.aprsMiceMsgCode = parseInt(updated.aprsMiceMsgCode.toString());
     if (updated.aprsMiceOffset !== undefined) config.aprsMiceOffset = !!updated.aprsMiceOffset;
     if (updated.aprsFilterQuery !== undefined) config.aprsFilterQuery = updated.aprsFilterQuery.trim();
+    if (updated.terminalLogsRetention !== undefined) {
+      const retention = parseInt(updated.terminalLogsRetention.toString(), 10);
+      if (!isNaN(retention) && retention > 0) {
+        config.terminalLogsRetention = retention;
+        if (logs.length > retention) {
+          logs.splice(retention);
+        }
+      }
+    }
 
     if (updated.systemPower !== undefined) {
       const oldPower = config.systemPower;

@@ -2886,6 +2886,7 @@ export default function App() {
                   onTriggerSismoTest={handleTriggerSismoTest}
                   onTriggerNoaaTest={handleTriggerNoaaTest}
                   onClearLogs={handleClearLogs}
+                  retentionLimit={data.config?.terminalLogsRetention || 150}
                 />
               </div>
             </div>

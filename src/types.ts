@@ -183,6 +183,7 @@ export interface TelemetryConfig {
   localThresholdTempMinC?: number;
   localThresholdRainMm?: number;
   localWeatherInterval?: number;
+  terminalLogsRetention?: number;
   // Advanced APRS station configuration options
   aprsSsid?: number;
   aprsSymbolTable?: string;

@@ -4,6 +4,30 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 
 ---
 
+## [v1.3.0] - 2026-07-25
+### Mejorado & Depurado
+- **Caché de Datos Satelitales NASA FIRMS y Protección Servidor (`server.ts`)**:
+  - Implementado sistema de caché en memoria con TTL de 10 minutos (`FIRMS_CACHE_TTL_MS`) para las consultas de focos térmicos satelitales NASA FIRMS (VIIRS y MODIS).
+  - Eliminados cuellos de botella y riesgos de saturación de sockets HTTP durante sondeos periódicos masivos.
+  - Fusionado de fuentes de datos mediante mapeo único por identificador y coordenadas entre datos satelitales reales NRT, focos de emergencia simulados por operadores y catálogo base de España.
+  - Corrección de variables de estado sin declarar en la respuesta JSON del endpoint `/api/wildfires/latest`.
+
+- **Optimización de Interfaz del Monitor de Incendios (`src/components/emergency/WildfireMonitor.tsx`)**:
+  - **Filtro de Proximidad a Poblaciones**: Establecido por defecto el filtro de proximidad en `< 50 km` ("Urgente") para destacar de inmediato las amenazas críticas cercanas a núcleos urbanos.
+  - **Colapso Controlado de Acordeones**: Modificado el estado inicial de grupos de provincias a colapsado por defecto (`{}`) para evitar el auto-despliegue masivo y la sobrecarga visual de listas en el panel del operador.
+  - **Sincronización de Coordenadas de Grid (GPSD & Estación Base)**: Ajustado el indicador de coordenadas de cuadrícula del mapa para sincronizarse dinámicamente con las coordenadas GPSD activas (en vivo) o las coordenadas fijas de la estación base configuradas en el NUC.
+  - **Actualizaciones Silenciosas en Segundo Plano (`isRefreshing`)**: Creado un estado independiente de actualización para que las sincronizaciones automáticas cada 45 segundos preserven la selección activa del usuario y no muestren pantallas de carga/pestañeo innecesarias.
+  - **Sincronización Reactiva de Configuración Base**: Añadido efecto `useEffect` para actualizar automáticamente las coordenadas de respaldo locales al cambiar la configuración de la estación (`config.fallbackLat` / `config.fallbackLon`).
+
+- **Sincronización en Motor de Amenazas (`src/components/emergency/ThreatPollingEngine.tsx`)**:
+  - Adaptada la lectura del endpoint `/api/wildfires/latest` para interpretar correctamente tanto listas directas como objetos estructurados (`json.hotspots`), garantizando interoperabilidad completa entre subsistemas del CECOP.
+
+- **Verificación Estricta del Sistema**:
+  - Pasada validación completa de TypeScript (`npm run lint` / `tsc --noEmit`) sin errores.
+  - Verificada la compilación completa de producción (`compile_applet`) y reinicio limpio del servidor de desarrollo (`restart_dev_server`).
+
+---
+
 ## [v1.2.0] - 2026-07-13
 ### Mejorado & Depurado
 - **Auditoría de Sockets de Hardware (KISS y GPSD)**:

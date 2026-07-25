@@ -20,7 +20,14 @@ import {
   WifiOff,
   Search,
   Filter,
-  Check
+  Check,
+  Send,
+  Volume2,
+  VolumeX,
+  BellRing,
+  Settings,
+  Sliders,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -441,6 +448,179 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
   const [bandTab, setBandTab] = useState<'all' | 'low' | 'medium' | 'high' | 'vhf'>('all');
   const [bandSearch, setBandSearch] = useState('');
   const lastAlertTimeRef = useRef<Record<string, number>>({});
+
+  // Space Weather & HF Propagation APRS Bulletin & Alert Threshold states
+  const [aprsBlnConfig, setAprsBlnConfig] = useState<{
+    enabled: boolean;
+    intervalMinutes: number;
+    addressee: string;
+    template: string;
+    includeBands: boolean;
+    thresholdG: number;
+    thresholdR: number;
+    thresholdS: number;
+    aprsOnAlertOnly: boolean;
+    autoSendOnChange: boolean;
+    minIntervalOnChangeMinutes: number;
+    soundGEnabled: boolean;
+    soundREnabled: boolean;
+    soundSEnabled: boolean;
+  }>({
+    enabled: true,
+    intervalMinutes: 30,
+    addressee: "BLN1SPACE",
+    template: "CLIMA ESPACIAL: R{R} S{S} G{G} | SFI:{SFI} Kp:{KP} SSN:{SSN} MUF:{MUF}MHz HF:{STATUS}",
+    includeBands: true,
+    thresholdG: 1,
+    thresholdR: 1,
+    thresholdS: 1,
+    aprsOnAlertOnly: false,
+    autoSendOnChange: true,
+    minIntervalOnChangeMinutes: 5,
+    soundGEnabled: true,
+    soundREnabled: true,
+    soundSEnabled: true
+  });
+
+  const [aprsBlnPreview, setAprsBlnPreview] = useState<string>('');
+  const [aprsBlnAlerts, setAprsBlnAlerts] = useState<{ rScale: string; sScale: string; gScale: string }>({ rScale: 'R0', sScale: 'S0', gScale: 'G0' });
+  const [aprsBlnMetrics, setAprsBlnMetrics] = useState<any>(null);
+  const [aprsBlnHistory, setAprsBlnHistory] = useState<any[]>([]);
+  const [isTransmittingBln, setIsTransmittingBln] = useState<boolean>(false);
+  const [blnTxMessage, setBlnTxMessage] = useState<string | null>(null);
+
+  const lastSoundAlertRef = useRef<{ r: string; s: string; g: string }>({ r: 'R0', s: 'S0', g: 'G0' });
+
+  const playSpaceWeatherAlarm = (type: 'G' | 'R' | 'S', scaleValue: string) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'R') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.35);
+      } else if (type === 'G') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.3);
+      } else {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1046.5, ctx.currentTime);
+        osc.frequency.setValueAtTime(1318.51, ctx.currentTime + 0.2);
+      }
+
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const typeName = type === 'R' ? 'Apagón de Radio' : type === 'G' ? 'Tormenta Geomagnética' : 'Tormenta de Radiación Solar';
+        const msg = new SpeechSynthesisUtterance(
+          `Atención. Alerta de Clima Espacial: Nivel ${typeName} ${scaleValue} detectado.`
+        );
+        msg.lang = 'es-ES';
+        msg.rate = 1.0;
+        window.speechSynthesis.speak(msg);
+      }
+    } catch (e) {
+      console.error("Audio playback error:", e);
+    }
+  };
+
+  const checkSoundTriggers = (alerts: { rScale: string; sScale: string; gScale: string }, cfg: typeof aprsBlnConfig) => {
+    const rNivel = parseInt((alerts.rScale || 'R0').replace('R', '')) || 0;
+    const sNivel = parseInt((alerts.sScale || 'S0').replace('S', '')) || 0;
+    const gNivel = parseInt((alerts.gScale || 'G0').replace('G', '')) || 0;
+
+    if (cfg.soundREnabled && rNivel >= cfg.thresholdR && rNivel > 0 && lastSoundAlertRef.current.r !== alerts.rScale) {
+      playSpaceWeatherAlarm('R', alerts.rScale);
+      lastSoundAlertRef.current.r = alerts.rScale;
+    }
+    if (cfg.soundSEnabled && sNivel >= cfg.thresholdS && sNivel > 0 && lastSoundAlertRef.current.s !== alerts.sScale) {
+      playSpaceWeatherAlarm('S', alerts.sScale);
+      lastSoundAlertRef.current.s = alerts.sScale;
+    }
+    if (cfg.soundGEnabled && gNivel >= cfg.thresholdG && gNivel > 0 && lastSoundAlertRef.current.g !== alerts.gScale) {
+      playSpaceWeatherAlarm('G', alerts.gScale);
+      lastSoundAlertRef.current.g = alerts.gScale;
+    }
+  };
+
+  const fetchAprsBlnData = async () => {
+    try {
+      const res = await fetch('/api/space-weather/aprs-bulletin');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.config) {
+            setAprsBlnConfig(data.config);
+            if (data.currentAlerts) {
+              checkSoundTriggers(data.currentAlerts, data.config);
+            }
+          }
+          if (data.latestPacket) setAprsBlnPreview(data.latestPacket);
+          if (data.currentAlerts) setAprsBlnAlerts(data.currentAlerts);
+          if (data.metrics) setAprsBlnMetrics(data.metrics);
+          if (data.history) setAprsBlnHistory(data.history || []);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching space weather APRS bulletin:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAprsBlnData();
+    const interval = setInterval(fetchAprsBlnData, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSaveAprsBlnConfig = async (newCfg: Partial<typeof aprsBlnConfig>) => {
+    const updated = { ...aprsBlnConfig, ...newCfg };
+    setAprsBlnConfig(updated);
+    try {
+      const res = await fetch('/api/space-weather/aprs-bulletin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      if (res.ok) {
+        fetchAprsBlnData();
+      }
+    } catch (err) {
+      console.error("Error updating APRS bulletin config:", err);
+    }
+  };
+
+  const handleManualTransmitBln = async () => {
+    setIsTransmittingBln(true);
+    setBlnTxMessage(null);
+    try {
+      const res = await fetch('/api/space-weather/aprs-bulletin/transmit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        setBlnTxMessage("¡Boletín APRS difundido a la red con éxito!");
+        fetchAprsBlnData();
+      }
+    } catch (err) {
+      setBlnTxMessage("Error al transmitir boletín APRS.");
+    } finally {
+      setIsTransmittingBln(false);
+      setTimeout(() => setBlnTxMessage(null), 4000);
+    }
+  };
 
   // ITU-R P.372-15 Noise Spectrometer & SNR Calculator states
   const [ituFreq, setItuFreq] = useState<number>(14.0);
@@ -2216,6 +2396,583 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
               </span>
             )}
           </div>
+        </div>
+
+        {/* Tarjeta de Configuración de Clima Espacial & Boletín APRS */}
+        <div className="lg:col-span-12 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white space-y-6" id="seccion-configuracion-clima-espacial">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400 shrink-0">
+                <Sliders size={22} className="animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-sans font-bold text-base text-slate-100 flex items-center gap-2">
+                  Configuración de Clima Espacial &amp; Boletines APRS
+                  <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold uppercase">
+                    {aprsBlnConfig.addressee || "BLN1SPACE"}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Define umbrales de alerta personalizados (G, R, S), notificaciones sonoras independientes y reglas de transmisión automática por cambio de nivel o cadencia.
+                </p>
+              </div>
+            </div>
+
+            {/* Toggle Switch & Transmit Button */}
+            <div className="flex items-center gap-3 shrink-0">
+              <label className="flex items-center gap-2 cursor-pointer bg-slate-800/90 hover:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700/80 text-xs text-slate-200 font-medium transition-colors">
+                <span>Boletín Automático</span>
+                <input 
+                  type="checkbox" 
+                  checked={aprsBlnConfig.enabled}
+                  onChange={(e) => handleSaveAprsBlnConfig({ enabled: e.target.checked })}
+                  className="rounded text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer w-4 h-4"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={handleManualTransmitBln}
+                disabled={isTransmittingBln}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg text-xs font-semibold font-sans transition-all cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+              >
+                <Send size={14} className={isTransmittingBln ? "animate-spin" : ""} />
+                <span>{isTransmittingBln ? "Emitiendo..." : "Emitir Ahora"}</span>
+              </button>
+            </div>
+          </div>
+
+          {blnTxMessage && (
+            <div className="bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 px-3.5 py-2 rounded-lg text-xs font-sans font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+                <span>{blnTxMessage}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Telemetría Actual NOAA (R / S / G / SFI / Kp / MUF / Banda Útil / Retardo L1) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {/* Escala R */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Escala R (Apagón)
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-xl font-extrabold font-mono ${
+                  aprsBlnAlerts.rScale === 'R0' ? 'text-emerald-400' :
+                  aprsBlnAlerts.rScale === 'R1' || aprsBlnAlerts.rScale === 'R2' ? 'text-amber-400' : 'text-rose-400'
+                }`}>
+                  {aprsBlnAlerts.rScale}
+                </span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                  aprsBlnAlerts.rScale === 'R0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {aprsBlnAlerts.rScale === 'R0' ? 'Normal' : 'Alerta R'}
+                </span>
+              </div>
+            </div>
+
+            {/* Escala S */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Escala S (Solar)
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-xl font-extrabold font-mono ${
+                  aprsBlnAlerts.sScale === 'S0' ? 'text-emerald-400' :
+                  aprsBlnAlerts.sScale === 'S1' || aprsBlnAlerts.sScale === 'S2' ? 'text-amber-400' : 'text-rose-400'
+                }`}>
+                  {aprsBlnAlerts.sScale}
+                </span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                  aprsBlnAlerts.sScale === 'S0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {aprsBlnAlerts.sScale === 'S0' ? 'Normal' : 'Alerta S'}
+                </span>
+              </div>
+            </div>
+
+            {/* Escala G */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Escala G (Geomag)
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-xl font-extrabold font-mono ${
+                  aprsBlnAlerts.gScale === 'G0' ? 'text-emerald-400' :
+                  aprsBlnAlerts.gScale === 'G1' || aprsBlnAlerts.gScale === 'G2' ? 'text-amber-400' : 'text-rose-400'
+                }`}>
+                  {aprsBlnAlerts.gScale}
+                </span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                  aprsBlnAlerts.gScale === 'G0' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                  'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {aprsBlnAlerts.gScale === 'G0' ? 'Normal' : 'Alerta G'}
+                </span>
+              </div>
+            </div>
+
+            {/* Flujo Solar SFI */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Flujo Solar SFI
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-xl font-extrabold font-mono text-amber-400">
+                  {aprsBlnMetrics?.sfi || noaa.dia1 || '150'}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono">SFU</span>
+              </div>
+            </div>
+
+            {/* Índice Kp */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Índice Kp
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className={`text-xl font-extrabold font-mono ${
+                  (aprsBlnMetrics?.kp || 2) >= 5 ? 'text-rose-400' :
+                  (aprsBlnMetrics?.kp || 2) >= 4 ? 'text-amber-400' : 'text-cyan-400'
+                }`}>
+                  {aprsBlnMetrics?.kp !== undefined ? (typeof aprsBlnMetrics.kp === 'number' ? aprsBlnMetrics.kp.toFixed(1) : aprsBlnMetrics.kp) : '2.0'}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono">Hp30</span>
+              </div>
+            </div>
+
+            {/* MUF Estimada */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                MUF Estimada
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-xl font-extrabold font-mono text-indigo-300">
+                  {aprsBlnMetrics?.muf || (noaa.muf ? noaa.muf.toFixed(1) : '28.5')}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono">MHz</span>
+              </div>
+            </div>
+
+            {/* Banda Útil HF */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Banda Útil
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-xl font-extrabold font-mono text-emerald-300">
+                  {aprsBlnMetrics?.bandaUtil || (parseFloat(noaa.muf || '28.5') >= 28 ? '10m' : parseFloat(noaa.muf || '28.5') >= 21 ? '15m' : '20m')}
+                </span>
+                <span className="text-[9px] text-emerald-500 font-mono font-bold uppercase">Óptima</span>
+              </div>
+            </div>
+
+            {/* Retardo L1 (DSCOVR/ACE) */}
+            <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-xl flex flex-col justify-between">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">
+                Retardo L1 Viento
+              </span>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-xl font-extrabold font-mono text-violet-300">
+                  {aprsBlnMetrics?.delayL1 ? `${aprsBlnMetrics.delayL1}m` : (noaa?.delayL1 ? `${Math.round(noaa.delayL1)}m` : '45m')}
+                </span>
+                <span className="text-[9px] text-violet-400 font-mono font-bold">L1-Earth</span>
+              </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN 1: UMBRALES DE ALERTA Y NOTIFICACIONES SONORAS */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                <ShieldAlert size={15} className="text-amber-400" />
+                1. Umbrales de Alerta Personalizados &amp; Notificaciones Sonoras (R / S / G)
+              </h4>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Alarma audible mediante Síntesis de Voz &amp; Tonos RF
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Tarjeta Umbral Escala R */}
+              <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    Escala R (Apagón Radio HF)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAprsBlnConfig({ soundREnabled: !aprsBlnConfig.soundREnabled })}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                      aprsBlnConfig.soundREnabled 
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                        : 'bg-slate-800 text-slate-500 border-slate-700'
+                    }`}
+                  >
+                    {aprsBlnConfig.soundREnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+                    <span>{aprsBlnConfig.soundREnabled ? "Audio ON" : "Audio OFF"}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400 block font-medium">
+                    Umbral de Alerta R:
+                  </label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {[0, 1, 2, 3, 4, 5].map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => handleSaveAprsBlnConfig({ thresholdR: level })}
+                        className={`py-1 rounded text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                          aprsBlnConfig.thresholdR === level
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-xs'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        {level === 0 ? 'OFF' : `R${level}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 border-t border-slate-800/60 font-mono">
+                  <span>Actual: <strong className="text-amber-400">{aprsBlnAlerts.rScale}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => playSpaceWeatherAlarm('R', 'R2')}
+                    className="text-amber-400 hover:text-amber-300 underline font-semibold cursor-pointer"
+                  >
+                    Probar Alarma Audio
+                  </button>
+                </div>
+              </div>
+
+              {/* Tarjeta Umbral Escala S */}
+              <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+                    Escala S (Tormenta Radiación)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAprsBlnConfig({ soundSEnabled: !aprsBlnConfig.soundSEnabled })}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                      aprsBlnConfig.soundSEnabled 
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' 
+                        : 'bg-slate-800 text-slate-500 border-slate-700'
+                    }`}
+                  >
+                    {aprsBlnConfig.soundSEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+                    <span>{aprsBlnConfig.soundSEnabled ? "Audio ON" : "Audio OFF"}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400 block font-medium">
+                    Umbral de Alerta S:
+                  </label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {[0, 1, 2, 3, 4, 5].map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => handleSaveAprsBlnConfig({ thresholdS: level })}
+                        className={`py-1 rounded text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                          aprsBlnConfig.thresholdS === level
+                            ? 'bg-rose-500 text-slate-950 border-rose-400 shadow-xs'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        {level === 0 ? 'OFF' : `S${level}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 border-t border-slate-800/60 font-mono">
+                  <span>Actual: <strong className="text-rose-400">{aprsBlnAlerts.sScale}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => playSpaceWeatherAlarm('S', 'S2')}
+                    className="text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer"
+                  >
+                    Probar Alarma Audio
+                  </button>
+                </div>
+              </div>
+
+              {/* Tarjeta Umbral Escala G */}
+              <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                    Escala G (Geomagnetismo Kp)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveAprsBlnConfig({ soundGEnabled: !aprsBlnConfig.soundGEnabled })}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                      aprsBlnConfig.soundGEnabled 
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' 
+                        : 'bg-slate-800 text-slate-500 border-slate-700'
+                    }`}
+                  >
+                    {aprsBlnConfig.soundGEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+                    <span>{aprsBlnConfig.soundGEnabled ? "Audio ON" : "Audio OFF"}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400 block font-medium">
+                    Umbral de Alerta G:
+                  </label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {[0, 1, 2, 3, 4, 5].map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => handleSaveAprsBlnConfig({ thresholdG: level })}
+                        className={`py-1 rounded text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                          aprsBlnConfig.thresholdG === level
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-xs'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        {level === 0 ? 'OFF' : `G${level}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400 border-t border-slate-800/60 font-mono">
+                  <span>Actual: <strong className="text-cyan-400">{aprsBlnAlerts.gScale}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => playSpaceWeatherAlarm('G', 'G2')}
+                    className="text-cyan-400 hover:text-cyan-300 underline font-semibold cursor-pointer"
+                  >
+                    Probar Alarma Audio
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN 2: MODO AUTOMÁTICO Y REGLAS DE EMISIÓN APRS */}
+          <div className="space-y-3 pt-2 border-t border-slate-800">
+            <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+              <Zap size={15} className="text-indigo-400" />
+              2. Reglas de Emisión Automática de Boletín por Cambio de Estado o Intervalo
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+              {/* Emisión Inmediata por Cambio de Nivel */}
+              <div className="lg:col-span-6 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input 
+                    type="checkbox"
+                    checked={aprsBlnConfig.autoSendOnChange}
+                    onChange={(e) => handleSaveAprsBlnConfig({ autoSendOnChange: e.target.checked })}
+                    className="mt-0.5 rounded text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer w-4 h-4"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-200 block">
+                      Envío Automático por Cambio en Nivel de Alerta
+                    </span>
+                    <span className="text-[11px] text-slate-400 block leading-normal mt-0.5">
+                      Transmite de inmediato un boletín a la red APRS en cuanto se detecte una variación en las escalas R, S o G.
+                    </span>
+                  </div>
+                </label>
+
+                {aprsBlnConfig.autoSendOnChange && (
+                  <div className="pl-6 pt-1 flex items-center gap-2">
+                    <span className="text-[11px] text-slate-400 font-medium">Intervalo mín. anti-spam:</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 3, 5, 10, 15].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => handleSaveAprsBlnConfig({ minIntervalOnChangeMinutes: m })}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border cursor-pointer ${
+                            aprsBlnConfig.minIntervalOnChangeMinutes === m
+                              ? 'bg-indigo-600 text-white border-indigo-500'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                          }`}
+                        >
+                          {m}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Filtro 'Solo en Alerta' */}
+              <div className="lg:col-span-6 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input 
+                    type="checkbox"
+                    checked={aprsBlnConfig.aprsOnAlertOnly}
+                    onChange={(e) => handleSaveAprsBlnConfig({ aprsOnAlertOnly: e.target.checked })}
+                    className="mt-0.5 rounded text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer w-4 h-4"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-200 block">
+                      Restringir Cadencia Regular 'Solo en Estado de Alerta'
+                    </span>
+                    <span className="text-[11px] text-slate-400 block leading-normal mt-0.5">
+                      Emite boletines periódicos únicamente si el nivel actual alcanza o supera al menos uno de los umbrales configurados.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Cadencia Periódica Estándar */}
+              <div className="lg:col-span-12 space-y-2 pt-2 border-t border-slate-800/80">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Cadencia de Transmisión Periódica Estándar:</span>
+                  <span className="font-mono text-[11px] text-indigo-400 font-bold">
+                    {aprsBlnConfig.intervalMinutes === 0 ? 'Sólo Manual / Evento' : `${aprsBlnConfig.intervalMinutes} minutos`}
+                  </span>
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {[15, 30, 60, 120, 240, 0].map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => handleSaveAprsBlnConfig({ intervalMinutes: mins || 30 })}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-bold font-mono border transition-all cursor-pointer ${
+                        aprsBlnConfig.intervalMinutes === mins
+                          ? 'bg-indigo-600 text-white border-indigo-500 shadow-xs'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {mins === 0 ? 'Manual / Eventos' : mins >= 60 ? `${mins / 60} horas` : `${mins} min`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN 3: PLANTILLA, OBJETO ADDRESSEE Y PREVIEW TRAMA */}
+          <div className="space-y-3 pt-2 border-t border-slate-800">
+            <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+              <Radio size={15} className="text-indigo-400" />
+              3. Configuración del Formato del Mensaje APRS &amp; Preview
+            </h4>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+              {/* Objeto Addressee */}
+              <div className="lg:col-span-4 space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  Objeto APRS (Addressee):
+                </label>
+                <input 
+                  type="text"
+                  maxLength={9}
+                  value={aprsBlnConfig.addressee}
+                  onChange={(e) => handleSaveAprsBlnConfig({ addressee: e.target.value.toUpperCase() })}
+                  placeholder="BLN1SPACE"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 font-mono text-xs text-indigo-300 focus:outline-none focus:border-indigo-500 font-bold tracking-wider uppercase"
+                />
+                <span className="text-[10px] text-slate-500 font-sans block">
+                  Identificador de 9 caracteres para boletines (ej: BLN1SPACE, BLN2RADIO)
+                </span>
+              </div>
+
+              {/* Trama Preview */}
+              <div className="lg:col-span-8 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                  <span>Trama APRS Saliente en Tiempo Real:</span>
+                  <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    aprsBlnPreview.length <= 80 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800'
+                  }`}>
+                    {aprsBlnPreview.length} / 67 caracteres útiles
+                  </span>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 font-mono text-[11px] text-emerald-400 break-all leading-tight min-h-[38px]">
+                  {aprsBlnPreview || 'Generando trama APRS...'}
+                </div>
+              </div>
+
+              {/* Plantilla de Texto */}
+              <div className="lg:col-span-12 space-y-2 pt-2 border-t border-slate-800/80">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-slate-300 block">
+                    Plantilla de Formateo de Texto:
+                  </label>
+                  <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                    <span className="text-slate-400 font-medium mr-1">Insertar Etiqueta:</span>
+                    {['{R}', '{S}', '{G}', '{SFI}', '{KP}', '{SSN}', '{MUF}', '{BANDA}', '{RETARDO_L1}', '{STATUS}'].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          const newTpl = (aprsBlnConfig.template || '') + ' ' + tag;
+                          handleSaveAprsBlnConfig({ template: newTpl });
+                        }}
+                        className="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 px-1.5 py-0.5 rounded font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        + {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input 
+                  type="text"
+                  value={aprsBlnConfig.template}
+                  onChange={(e) => handleSaveAprsBlnConfig({ template: e.target.value })}
+                  placeholder="CLIMA ESPACIAL: R{R} S{S} G{G} | SFI:{SFI} Kp:{KP} MUF:{MUF}MHz BANDA:{BANDA} L1:{RETARDO_L1} HF:{STATUS}"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400 font-sans pt-1">
+                  <span><strong>{"{BANDA}"}</strong>: Banda útil estimada (ej: 20m, 15m, 10m)</span>
+                  <span><strong>{"{RETARDO_L1}"}</strong>: Retardo de llegada del viento solar desde L1 (ej: 45m)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Histórico de Transmisiones */}
+          {aprsBlnHistory.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <span className="text-xs font-bold text-slate-300 block uppercase tracking-wider">
+                Histórico Reciente de Transmisiones del Boletín
+              </span>
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 font-mono text-[11px]">
+                {aprsBlnHistory.map((item, idx) => (
+                  <div key={idx} className="bg-slate-950/80 border border-slate-800 rounded-lg p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <span className="text-slate-400 shrink-0 text-[10px]">
+                        {new Date(item.timestamp).toLocaleTimeString('es-ES')}
+                      </span>
+                      <span className="text-emerald-400 truncate font-semibold">
+                        {item.packet}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 text-[10px]">
+                      <span className="text-indigo-300 bg-indigo-950 px-1.5 py-0.5 rounded border border-indigo-800">
+                        {item.rScale} {item.sScale} {item.gScale}
+                      </span>
+                      <span className="text-amber-400 bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">
+                        HF: {item.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

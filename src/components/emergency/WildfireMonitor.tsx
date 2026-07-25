@@ -89,6 +89,7 @@ interface WildfireMonitorProps {
 export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps = {}) {
   const [data, setData] = useState<WildfireMonitorResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
   const [autoUpdate, setAutoUpdate] = useState(true);
@@ -100,17 +101,8 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
   const [mapLayer, setMapLayer] = useState<'termico' | 'topografico' | 'satelite'>('termico');
   const [selectedHotspot, setSelectedHotspot] = useState<WildfireHotspot | null>(null);
 
-  // Accordion state for provinces
-  const [openGroups, setOpenGroups] = useState<{ [key: string]: boolean }>({
-    'Andalucía': true,
-    'Galicia': true,
-    'Canarias': true,
-    'Comunidad Valenciana': true,
-    'Castilla y León': true,
-    'Cataluña': true,
-    'Extremadura': true,
-    'Otras Regiones': false
-  });
+  // Accordion state for provinces (collapsed by default to prevent auto-expansion)
+  const [openGroups, setOpenGroups] = useState<{ [key: string]: boolean }>({});
 
   // Custom simulation injector states
   const [injLat, setInjLat] = useState('40.4168');
@@ -183,7 +175,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
 
   // --- CIVIL PROTECTION & POPULATION THREAT INTELLIGENCE (PILAR I) ---
   const [minFrpFilter, setMinFrpFilter] = useState<number>(0);
-  const [maxProximityFilter, setMaxProximityFilter] = useState<number>(999); // 999 = No filter
+  const [maxProximityFilter, setMaxProximityFilter] = useState<number>(50); // Predefinido: 50 km (Urgente)
   const [selectedAreaForConnection, setSelectedAreaForConnection] = useState<string | null>(null);
 
   // Load populated areas from localStorage, or defaults
@@ -211,6 +203,16 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     if (stored !== null) return stored;
     return String(config?.fallbackLon ?? -3.703790);
   });
+
+  // Sync latitudBase/longitudBase with config when config props update
+  useEffect(() => {
+    if (config?.fallbackLat !== undefined && config.fallbackLat !== null) {
+      setLatitudBase(String(config.fallbackLat));
+    }
+    if (config?.fallbackLon !== undefined && config.fallbackLon !== null) {
+      setLongitudBase(String(config.fallbackLon));
+    }
+  }, [config?.fallbackLat, config?.fallbackLon]);
 
   // Persist "latitudBase" and "longitudBase" to localStorage on change
   useEffect(() => {
@@ -326,9 +328,13 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     return () => clearInterval(ticker);
   }, []);
 
-  // Fetch wildfires data
-  const fetchWildfireData = async () => {
-    setLoading(true);
+  // Fetch wildfires data silently or with full loading state
+  const fetchWildfireData = async (silent = false) => {
+    if (!data && !silent) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setError(null);
     try {
       const response = await customFetch('/api/wildfires/latest');
@@ -339,19 +345,30 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
       if (json.success) {
         setData(json);
         setSecondsSinceUpdate(0);
-        // Default select the first hotspot
-        if (json.hotspots && json.hotspots.length > 0) {
-          const matched = json.hotspots.find(h => h.dangerLevel === 'Extremo' || h.dangerLevel === 'Alto') || json.hotspots[0];
-          setSelectedHotspot(matched);
-        }
+        
+        // Preserve user's currently selected hotspot if it exists in new data, or pick default
+        setSelectedHotspot(prev => {
+          if (prev && json.hotspots && json.hotspots.length > 0) {
+            const matched = json.hotspots.find(h => h.id === prev.id || (h.lat === prev.lat && h.lon === prev.lon));
+            if (matched) return matched;
+          }
+          if (json.hotspots && json.hotspots.length > 0) {
+            return json.hotspots.find(h => h.dangerLevel === 'Extremo' || h.dangerLevel === 'Alto') || json.hotspots[0];
+          }
+          return null;
+        });
+
       } else {
         throw new Error('No se pudo establecer conexión satelital.');
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error de conexión con la interfaz NASA FIRMS.');
+      if (!data) {
+        setError(err.message || 'Error de conexión con la interfaz NASA FIRMS.');
+      }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -359,12 +376,12 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
     fetchWildfireData();
   }, []);
 
-  // Intervalo de actualización automática en tiempo real (cada 5 segundos)
+  // Intervalo de actualización automática en tiempo real (cada 45 segundos, silencioso sin alterar el UI)
   useEffect(() => {
     if (!autoUpdate) return;
     const autoInterval = setInterval(() => {
-      fetchWildfireData();
-    }, 5000);
+      fetchWildfireData(true);
+    }, 45000);
     return () => clearInterval(autoInterval);
   }, [autoUpdate]);
 
@@ -551,7 +568,8 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
 
   // Get active cached / last modified text
   const getCacheLabel = () => {
-    if (loading) return 'Actualizando...';
+    if (isRefreshing) return 'Sincronizando satélite...';
+    if (loading && !data) return 'Cargando datos...';
     const autoStr = autoUpdate ? ' [En Vivo - 45s]' : ' [Manual]';
     if (secondsSinceUpdate < 10) return `Sincronizado ahora${autoStr}`;
     if (secondsSinceUpdate < 60) return `Hace ${secondsSinceUpdate} s${autoStr}`;
@@ -996,11 +1014,11 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           
           <button 
             type="button"
-            onClick={fetchWildfireData}
-            disabled={loading}
+            onClick={() => fetchWildfireData(false)}
+            disabled={loading || isRefreshing}
             className="bg-gradient-to-r from-[#cc3300] to-[#ff4500] hover:from-[#ff4500] hover:to-[#ff6a00] hover:shadow-[0_4px_12px_rgba(255,69,0,0.5)] active:translate-y-0.5 text-white text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw size={11.5} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={11.5} className={isRefreshing || (loading && !data) ? 'animate-spin' : ''} />
             <span>Actualizar</span>
           </button>
         </div>
@@ -1018,19 +1036,19 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           {/* DYNAMIC METRIC CARDS */}
           <div className="stats">
             <div className="stat-box">
-              <div className="num" id="stat-total">{loading ? '...' : stats.total}</div>
+              <div className="num" id="stat-total">{loading && !data ? '...' : stats.total}</div>
               <div className="lbl">Focos detectados</div>
             </div>
             <div className="stat-box">
-              <div className="num" id="stat-high" style={{ color: '#ff1a1a' }}>{loading ? '...' : stats.high}</div>
+              <div className="num" id="stat-high" style={{ color: '#ff1a1a' }}>{loading && !data ? '...' : stats.high}</div>
               <div className="lbl">Confianza alta</div>
             </div>
             <div className="stat-box">
-              <div className="num" id="stat-frp" style={{ color: '#ff8c00' }}>{loading ? '...' : stats.maxFrp}</div>
+              <div className="num" id="stat-frp" style={{ color: '#ff8c00' }}>{loading && !data ? '...' : stats.maxFrp}</div>
               <div className="lbl">FRP máx. (MW)</div>
             </div>
             <div className="stat-box">
-              <div className="num" id="stat-updated" style={{ fontSize: '0.9rem', color: '#ffcc00' }}>{loading ? '...' : stats.lastTime}</div>
+              <div className="num" id="stat-updated" style={{ fontSize: '0.9rem', color: '#ffcc00' }}>{loading && !data ? '...' : stats.lastTime}</div>
               <div className="lbl">Última detección</div>
             </div>
           </div>
@@ -1178,7 +1196,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
               </div>
             </div>
 
-            {loading ? (
+            {loading && !data ? (
               <p className="p-4 text-xs text-stone-500 font-mono animate-pulse">Cargando datos satelitales...</p>
             ) : filteredHotspots.length === 0 ? (
               <p className="p-4 text-xs text-stone-600 font-mono text-center">Ninguna anomalía coincide con el criterio.</p>
@@ -1244,7 +1262,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           <div id="status-bar">
             <div className="pulse"></div>
             <span id="status-text" className="font-mono text-[10px] tracking-wide text-stone-400 uppercase">
-              {loading ? 'Sincronizando...' : 'Sonda satelital activa · NASA FIRMS'}
+              {isRefreshing ? 'Actualizando satélite...' : (loading && !data ? 'Sincronizando...' : 'Sonda satelital activa · NASA FIRMS')}
             </span>
           </div>
         </aside>
@@ -1278,10 +1296,15 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           </div>
 
           {/* REALTIME SPATIAL POSITION COORDINATES */}
-          <div className="absolute top-3 right-3 z-10 bg-neutral-950/90 backdrop-blur border border-[#ff4500]/20 px-3 py-1 rounded-lg text-[9.5px] font-mono text-[#ff8c42] shadow-xl flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
-            <span className="text-stone-300 font-sans font-bold">GRID:</span> 
-            {selectedHotspot ? `${selectedHotspot.lat.toFixed(4)}°N, ${selectedHotspot.lon.toFixed(4)}°W` : 'Capturando mapa...'}
+          <div className="absolute top-3 right-3 z-10 bg-neutral-950/90 backdrop-blur border border-[#ff4500]/20 px-3 py-1 rounded-lg text-[9.5px] font-mono text-[#ff8c42] shadow-xl flex items-center gap-1.5 flex-wrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+            <span className="text-stone-300 font-sans font-bold">GRID ({isUsingGpsd ? 'GPSD' : 'ESTACIÓN'}):</span> 
+            <span className="text-white font-semibold">{activeLat.toFixed(4)}°N, {activeLon.toFixed(4)}°W</span>
+            {selectedHotspot && (
+              <span className="text-stone-400 border-l border-stone-800 pl-1.5 ml-0.5">
+                FOCO: <span className="text-[#ff8c42] font-semibold">{selectedHotspot.lat.toFixed(4)}°N, {selectedHotspot.lon.toFixed(4)}°W</span>
+              </span>
+            )}
           </div>
 
           {/* VECTOR MAP ENGINE */}
@@ -2249,7 +2272,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[200px] overflow-y-auto scrollbar-thin">
-            {loading ? (
+            {loading && !data ? (
               <div className="col-span-3 py-10 text-center text-stone-600 text-xs font-mono">
                 Cargando FWI EFFIS...
               </div>
@@ -2458,7 +2481,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
             </div>
 
             <div className="mt-3.5 space-y-2.5 max-h-[145px] overflow-y-auto scrollbar-thin text-[10px] font-mono text-stone-400">
-              {loading ? (
+              {loading && !data ? (
                 <p className="p-3 text-stone-600">Sincronizando feed de mandos terrestres...</p>
               ) : data?.incendiosEspanaFeed.map((item, idx) => (
                 <div key={idx} className="bg-black/40 border border-[#2a1500]/50 p-2.5 rounded-lg space-y-1 my-0.5">
@@ -2493,7 +2516,7 @@ export default function WildfireMonitor({ gpsd, config }: WildfireMonitorProps =
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {loading ? (
+          {loading && !data ? (
             <p className="text-stone-600 text-[11px] font-mono p-4 col-span-3 text-center">Iniciando conexión síncrona con EFFIS Bruselas...</p>
           ) : data?.copernicusAlerts.map((a, i) => (
             <div key={i} className="bg-gradient-to-b from-[#1a1005] to-[#111111] border border-[#2a1520]/40 p-3 rounded-lg text-xs leading-relaxed text-stone-400 space-y-1 hover:border-[#ff4500]/20 transition-all">

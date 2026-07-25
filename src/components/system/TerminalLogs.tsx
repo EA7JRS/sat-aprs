@@ -8,9 +8,10 @@ interface TerminalProps {
   onTriggerSismoTest: (magnitude: number) => Promise<void>;
   onTriggerNoaaTest: (scale: 'G' | 'R' | 'S', level: number) => Promise<void>;
   onClearLogs?: () => Promise<void>;
+  retentionLimit?: number;
 }
 
-export default function TerminalLogs({ logs, onInjectRaw, onTriggerSismoTest, onTriggerNoaaTest, onClearLogs }: TerminalProps) {
+export default function TerminalLogs({ logs, onInjectRaw, onTriggerSismoTest, onTriggerNoaaTest, onClearLogs, retentionLimit = 150 }: TerminalProps) {
   const [rawPacket, setRawPacket] = useState('');
   const [testMagnitude, setTestMagnitude] = useState(4.5);
   const [testNoaaScale, setTestNoaaScale] = useState<'G' | 'R' | 'S'>('G');
@@ -50,7 +51,12 @@ export default function TerminalLogs({ logs, onInjectRaw, onTriggerSismoTest, on
         <div className="lg:col-span-9 flex flex-col bg-slate-950 border-2 border-slate-900 rounded-lg overflow-hidden h-[330px]">
           {/* Terminal Title Belt */}
           <div className="bg-slate-900 px-3 py-1.5 flex items-center justify-between text-[10px] font-mono border-b border-slate-950 text-slate-400">
-            <span>PACKET MONITOR [9600 BAUD / KISS MODE]</span>
+            <div className="flex items-center gap-2">
+              <span>PACKET MONITOR [9600 BAUD / KISS MODE]</span>
+              <span className="text-[9px] bg-slate-950 border border-slate-800 text-amber-400 font-bold px-1.5 py-0.5 rounded">
+                BÚFER: {logs.length}/{retentionLimit} MSGS
+              </span>
+            </div>
             <div className="flex items-center gap-3">
               {onClearLogs && (
                 <button
@@ -74,7 +80,7 @@ export default function TerminalLogs({ logs, onInjectRaw, onTriggerSismoTest, on
           {/* Terminal Screen screen */}
           <div className="p-3 overflow-y-auto flex-1 font-mono text-[11px] leading-relaxed select-text space-y-1.5 bg-[#020804] text-emerald-500 shadow-inner scrollbar-thin scrollbar-thumb-slate-800">
             {logs.length > 0 ? (
-              logs.map((log) => {
+              logs.slice(0, retentionLimit).map((log) => {
                 let badgeColor = 'text-blue-400 border border-blue-500/20 bg-blue-950/20';
                 let directionMarker = '⚡';
                 if (log.type === 'TX') {

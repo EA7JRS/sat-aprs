@@ -676,6 +676,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
   const [aprscPort, setAprscPort] = useState(config.aprscPort || 14580);
   const [kissTcpPort, setKissTcpPort] = useState(config.kissTcpPort || 8001);
   const [frequencyLocalMhz, setFrequencyLocalMhz] = useState(config.frequencyLocalMhz || 144.800);
+  const [terminalLogsRetention, setTerminalLogsRetention] = useState<number>(config.terminalLogsRetention !== undefined ? config.terminalLogsRetention : 150);
 
   // Tab 2: Direwolf specific inputs
   const [direwolfAdevice, setDirewolfAdevice] = useState('plughw:1,0');
@@ -1187,7 +1188,8 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       aprsStatusComment: aprsStatusComment.trim(),
       aprsMiceMsgCode: Number(aprsMiceMsgCode),
       aprsMiceOffset: Boolean(aprsMiceOffset),
-      aprsFilterQuery: aprsFilterQuery.trim()
+      aprsFilterQuery: aprsFilterQuery.trim(),
+      terminalLogsRetention: Number(terminalLogsRetention) || 150
     };
 
     const success = await onSaveConfig(updated);
@@ -1230,7 +1232,8 @@ export default function Configurator({ config, onSaveConfig, gpsd, currentUser }
       aprsStatusComment: aprsStatusComment.trim(),
       aprsMiceMsgCode: Number(aprsMiceMsgCode),
       aprsMiceOffset: Boolean(aprsMiceOffset),
-      aprsFilterQuery: aprsFilterQuery.trim()
+      aprsFilterQuery: aprsFilterQuery.trim(),
+      terminalLogsRetention: Number(terminalLogsRetention) || 150
     };
 
     const success = await onSaveConfig(updated);
@@ -2913,6 +2916,57 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                     onChange={(e) => setFrequencyLocalMhz(parseFloat(e.target.value) || 144.800)}
                     className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-amber-500/30 focus:outline-none"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* TerminalLogs Buffer Retention Configuration Card */}
+            <div className="bg-slate-900/30 border border-slate-900 p-4 rounded-xl font-mono text-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[9.5px] text-amber-500 uppercase font-black tracking-widest block">4. Retención y Memoria del Búfer del Terminal (TerminalLogs)</span>
+                <span className="text-[9px] text-slate-400 bg-slate-950 border border-slate-800 px-2 py-0.5 rounded font-mono">
+                  Límite Actual: <strong className="text-amber-400">{terminalLogsRetention} mensajes</strong>
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div className="space-y-1.5">
+                  <label htmlFor="input-terminal-logs-retention" className="text-[10px] text-slate-400 font-bold block font-mono">
+                    Capacidad Máxima de Mensajes (Límite Búfer):
+                  </label>
+                  <input
+                    type="number"
+                    id="input-terminal-logs-retention"
+                    min={20}
+                    max={1000}
+                    step={10}
+                    value={terminalLogsRetention}
+                    onChange={(e) => setTerminalLogsRetention(Math.max(10, Math.min(2000, Number(e.target.value) || 150)))}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2.5 text-slate-100 text-xs font-mono font-bold focus:border-amber-500/30 focus:outline-none"
+                  />
+                  <p className="text-[8.5px] text-slate-500 leading-relaxed font-mono">
+                    Límite máximo de tramas y mensajes retenidos en memoria para mantener el rendimiento fluido del navegador en sesiones de monitorización prolongadas.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-[9.5px] text-slate-400 block font-bold font-mono">Ajustes Rápidos de Retención:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {[50, 100, 150, 300, 500].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        id={`btn-preset-retention-${preset}`}
+                        onClick={() => setTerminalLogsRetention(preset)}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                          terminalLogsRetention === preset
+                            ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                            : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        {preset} msgs
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

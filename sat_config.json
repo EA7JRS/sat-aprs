@@ -34,7 +34,7 @@
   "agpsEnabled": true,
   "agpsServer": "supl.google.com",
   "agpsInterval": "daily",
-  "agpsLastSync": "2026-07-18T20:02:43.671Z",
+  "agpsLastSync": "2026-07-24T19:19:43.737Z",
   "agpsTtff": 3.2,
   "agpsConstellations": [
     "GPS",
@@ -57,6 +57,7 @@
   "localThresholdTempMinC": 5,
   "localThresholdRainMm": 10,
   "localWeatherInterval": 300,
+  "terminalLogsRetention": 150,
   "aprsSsid": 10,
   "aprsSymbolTable": "/",
   "aprsSymbolCode": "&",

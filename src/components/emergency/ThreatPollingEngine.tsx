@@ -162,11 +162,10 @@ export default function ThreatPollingEngine({
     try {
       const res = await fetch('/api/wildfires/latest');
       if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setWildfires(data);
-          return data;
-        }
+        const json = await res.json();
+        const list = Array.isArray(json) ? json : (json.hotspots || []);
+        setWildfires(list);
+        return list;
       }
     } catch (e) {
       console.error("Error loading wildfires in ThreatPollingEngine:", e);

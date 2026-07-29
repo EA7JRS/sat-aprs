@@ -126,6 +126,7 @@ let config: TelemetryConfig = {
   suplPort: 7275,
   suplVersion: '2.0',
   ignSeismoEnabled: true,
+  ignSeismoInterval: 30,
   tsunamiMonitorEnabled: true,
   systemPower: true,
   weatherApiKey: '',
@@ -2368,7 +2369,6 @@ async function refreshIQAir() {
       
       // Broadcast APRS Bulletin and Transmit Beacon
       transmitAirQualityBeacon();
-      broadcastAirQualityBulletin();
       return;
     }
 
@@ -2403,7 +2403,6 @@ async function refreshIQAir() {
           addLog('SYS', 'IQAIR', 'LOCAL', 'API', `Calidad del aire actualizada desde IQAir para ${d.city}, ${d.state}. AQI: ${d.current.pollution.aqius}`, true, 'Correcto');
           
           transmitAirQualityBeacon();
-          broadcastAirQualityBulletin();
           return;
         } else {
           throw new Error(json.data?.message || 'Fallo respuesta IQAir');
@@ -2447,7 +2446,6 @@ async function refreshIQAir() {
       };
 
       transmitAirQualityBeacon();
-      broadcastAirQualityBulletin();
     }
   } catch (err: any) {
     addLog('SYS', 'IQAIR_ERR', 'LOCAL', 'HARDWARE', `Error conectando con API de calidad del aire: ${err.message}. Operando con simulador local.`, false, 'Simulado activo');

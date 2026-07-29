@@ -170,6 +170,7 @@ export interface TelemetryConfig {
   suplPort?: number;
   suplVersion?: string;
   ignSeismoEnabled?: boolean;
+  ignSeismoInterval?: number;
   tsunamiMonitorEnabled?: boolean;
   systemPower?: boolean;
   weatherApiKey?: string;

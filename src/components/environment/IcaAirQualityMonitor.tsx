@@ -709,14 +709,15 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     const station = iqair?.city || 'MADRID';
 
     const pollutants = [
-      { name: 'PM2.5', score: pm25 / 10.0 },
-      { name: 'PM10', score: pm10 / 20.0 },
-      { name: 'CO', score: co / 5000.0 },
-      { name: 'O3', score: o3 / 50.0 },
-      { name: 'NO2', score: no2 / 40.0 }
+      { name: 'PM2.5', value: pm25, unit: 'ug', score: pm25 / 10.0 },
+      { name: 'PM10', value: pm10, unit: 'ug', score: pm10 / 20.0 },
+      { name: 'CO', value: co, unit: 'ug', score: co / 5000.0 },
+      { name: 'O3', value: o3, unit: 'ug', score: o3 / 50.0 },
+      { name: 'NO2', value: no2, unit: 'ug', score: no2 / 40.0 }
     ];
     pollutants.sort((a, b) => b.score - a.score);
-    const mainPollutant = iqair?.mainPollutant || pollutants[0]?.name || 'PM2.5';
+    const topPol = pollutants[0];
+    const mainPollutant = topPol ? `${topPol.name}: ${topPol.value.toFixed(1)}${topPol.unit}` : `PM2.5: ${pm25.toFixed(1)}ug`;
 
     let template = icaTemplateBuena;
     const l = label.toLowerCase();

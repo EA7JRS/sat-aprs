@@ -411,7 +411,7 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
                       <span className="text-slate-500 font-mono">Boletín VHF</span>
                     </div>
                     <span className="text-amber-400 select-all font-bold tracking-tight whitespace-pre-wrap break-all">
-                      {`EA4SAT>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${iqair.aqi} (PM2.5: ${(iqair.pm2_5 || 8).toFixed(1)}ug, CO: ${(iqair.co || 120).toFixed(0)}ug, O3: ${(iqair.o3 || 45).toFixed(1)}ug)`}
+                      {`EA4SAT>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${iqair.aqi} (PM2.5: ${(iqair.pm2_5 || 8).toFixed(1)}ug)`}
                     </span>
                   </div>
                 </div>

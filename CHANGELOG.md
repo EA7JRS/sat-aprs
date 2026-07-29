@@ -4,6 +4,29 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 
 ---
 
+## [v1.4.0] - 2026-07-29
+### Mejorado, Refinado & Depurado
+- **Sincronización y Refinado de Baliza Sísmica APRS (`SEISMO`)**:
+  - Transmisión automatizada y sincronizada de la baliza de posición APRS de objeto `SEISMO` desde el servidor (`server.ts`) respetando la cadencia del intervalo configurado (`config.ignSeismoInterval`).
+  - Selección dinámica inteligente del terremoto más relevante (priorizando sismos en rango de cobertura y más próximos a la estación).
+  - Formato del comentario de la trama SEISMO normalizado a la sintaxis limpia de APRS: `MAG:<magnitud> <localizacion> (Prof:<depth>km)`, eliminando palabras redundantes ("sismo", "Magnitud:", "Lugar:", "Fuente: IGN").
+  - Incorporado un control de emisión manual en la interfaz `IgnEarthquakeIndicators.tsx` para forzar el disparo inmediato de la baliza `SEISMO` mediante el endpoint `/api/seismo/beacon/transmit`.
+
+- **Visualización y Filtrado Sísmico Orientado a la Estación**:
+  - Implementado sistema de ordenación multimodatario con el modo predeterminado **"Recientes y Próximos"**, que prioriza los terremotos registrados recientemente y más cercanos a la estación.
+  - Incorporados selectores rápidos para ordenar por **Proximidad ("Cercanos")**, **Fecha/Hora** o **Magnitud**.
+  - Paginación predeterminada a los 25 sismos más relevantes con botón de despliegue completo ("Ver todos los sismos") para evitar la sobrecarga de datos en la pantalla del operador.
+
+- **Regulación de Cadencia de Boletines ICA (`BLN2AQI`) y Contaminante Predominante**:
+  - Corregida la frecuencia de emisión del boletín público `BLN2AQI` en `refreshIQAir()`, asegurando que sólo se difunda respetando los intervalos definidos por nivel de gravedad o cambio de estado y eliminando la saturación del canal APRS.
+  - Formato del boletín adaptado para mostrar **únicamente el contaminante predominante** con su valor numérico y unidad (ej. `(PM2.5: 10.2ug)`), sustituyendo el volcado anterior de múltiples contaminantes.
+
+- **Mantenimiento y Calidad de Código**:
+  - Actualización de tipos e interfaces en `src/types.ts` (`TelemetryConfig`, `ignSeismoInterval`).
+  - Verificación exitosa del linter TypeScript (`npm run lint`) y compilación limpia del proyecto.
+
+---
+
 ## [v1.3.1] - 2026-07-25
 ### Mejorado & Depurado
 - **Intervalos Dinámicos de Transmisión por Nivel ICA (`server.ts` & `IcaAirQualityMonitor.tsx`)**:

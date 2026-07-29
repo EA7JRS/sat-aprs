@@ -41,6 +41,30 @@ export default function IgnEarthquakeIndicators({
   const [seismographSensitivity, setSeismographSensitivity] = useState<number>(1.5);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(false);
 
+  const [sortMode, setSortMode] = useState<'recent_nearest' | 'distance' | 'time' | 'magnitude'>('recent_nearest');
+  const [showAllEqs, setShowAllEqs] = useState<boolean>(false);
+  const [isTransmittingSeismo, setIsTransmittingSeismo] = useState<boolean>(false);
+  const [seismoTxMsg, setSeismoTxMsg] = useState<string | null>(null);
+
+  const handleTransmitSeismoBeacon = async () => {
+    setIsTransmittingSeismo(true);
+    setSeismoTxMsg(null);
+    try {
+      const res = await customFetch('/api/seismo/beacon/transmit', { method: 'POST' });
+      const msg = (res as any)?.message;
+      if (msg) {
+        setSeismoTxMsg(msg);
+      } else {
+        setSeismoTxMsg('Baliza SEISMO transmitida con éxito.');
+      }
+    } catch (err: any) {
+      setSeismoTxMsg('Error transmitiendo baliza SEISMO: ' + (err?.message || err));
+    } finally {
+      setIsTransmittingSeismo(false);
+      setTimeout(() => setSeismoTxMsg(null), 6000);
+    }
+  };
+
   const handleManualRefresh = async () => {
     try {
       await customFetch('/api/earthquakes/refresh', { method: 'POST' });
@@ -333,13 +357,34 @@ export default function IgnEarthquakeIndicators({
     const candidateList = onlyInRangeFilter 
       ? processedEarthquakes.filter(e => e.isInRange)
       : processedEarthquakes;
-    return candidateList.filter(eq => {
+    const filtered = candidateList.filter(eq => {
       const matchMinMag = eq.magnitud >= visualMinMag;
       const matchMaxMag = eq.magnitud <= visualMaxMag;
       const matchRegion = !visualRegion || eq.localizacion.toLowerCase().includes(visualRegion.toLowerCase());
       return matchMinMag && matchMaxMag && matchRegion;
     });
-  }, [processedEarthquakes, visualMinMag, visualMaxMag, visualRegion, onlyInRangeFilter]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'distance') {
+        return a.calculatedDist - b.calculatedDist;
+      }
+      if (sortMode === 'time') {
+        return new Date(b.time).getTime() - new Date(a.time).getTime();
+      }
+      if (sortMode === 'magnitude') {
+        return b.magnitud - a.magnitud;
+      }
+      // 'recent_nearest' (default): Combine recency and distance
+      const timeA = new Date(a.time).getTime();
+      const timeB = new Date(b.time).getTime();
+      const ageHoursA = (Date.now() - timeA) / (1000 * 3600);
+      const ageHoursB = (Date.now() - timeB) / (1000 * 3600);
+
+      const scoreA = ageHoursA + (a.calculatedDist / 5);
+      const scoreB = ageHoursB + (b.calculatedDist / 5);
+      return scoreA - scoreB;
+    });
+  }, [processedEarthquakes, visualMinMag, visualMaxMag, visualRegion, onlyInRangeFilter, sortMode]);
 
   // Seismograph simulator loop
   useEffect(() => {
@@ -965,7 +1010,7 @@ export default function IgnEarthquakeIndicators({
                 <div className="flex items-center gap-2">
                   <Radio className="text-rose-400 animate-pulse" size={15} />
                   <span className="font-sans font-extrabold text-xs text-slate-200 tracking-tight uppercase">
-                    Baliza de Posición APRS para Sismo Más Reciente (SEISMO)
+                    Baliza de Posición APRS para Sismo Relevante (SEISMO)
                   </span>
                 </div>
                 <span className="text-[9px] bg-rose-950/60 border border-rose-900/50 text-rose-300 font-bold font-mono px-2 py-0.5 rounded">
@@ -974,24 +1019,44 @@ export default function IgnEarthquakeIndicators({
               </div>
               
               <p className="text-[10.5px] text-slate-400 leading-relaxed font-sans">
-                Transmisión de baliza APRS de objeto <strong className="text-slate-200 font-mono">SEISMO</strong> para el terremoto más reciente. Incluye el icono sísmico <strong className="text-rose-400 font-mono font-bold">\Q</strong> (Ciencia y Geofísica) e identifica en el comentario la magnitud y lugar de la localización oficial IGN.
+                Transmisión de baliza APRS de objeto <strong className="text-slate-200 font-mono">SEISMO</strong> para el terremoto más reciente y próximo en rango. Incluye el icono sísmico <strong className="text-rose-400 font-mono font-bold">\Q</strong> (Ciencia y Geofísica) e identifica la magnitud y localización IGN.
               </p>
 
               {processedEarthquakes.length > 0 ? (() => {
-                const latestEq = processedEarthquakes[0];
+                const inRangeEqs = processedEarthquakes.filter(e => e.isInRange);
+                const latestEq = inRangeEqs.length > 0 ? inRangeEqs[0] : processedEarthquakes[0];
                 const aprsLat = (latestEq.latitude >= 0 ? latestEq.latitude.toFixed(2) + 'N' : Math.abs(latestEq.latitude).toFixed(2) + 'S');
                 const aprsLon = (latestEq.longitude >= 0 ? latestEq.longitude.toFixed(2) + 'E' : Math.abs(latestEq.longitude).toFixed(2) + 'W');
-                const rawPacket = latestEq.aprsPacket || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;SEISMO   *${new Date(latestEq.time).getUTCHours().toString().padStart(2, '0')}${new Date(latestEq.time).getUTCMinutes().toString().padStart(2, '0')}00z${aprsLat}\\${aprsLon}QSISMO Magnitud:${latestEq.magnitud.toFixed(1)}, Lugar:${latestEq.localizacion} (Prof:${latestEq.depthKm}km) - Fuente: IGN`;
+                const rawPacket = latestEq.aprsPacket || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;SEISMO   *${new Date(latestEq.time).getUTCHours().toString().padStart(2, '0')}${new Date(latestEq.time).getUTCMinutes().toString().padStart(2, '0')}00z${aprsLat}\\${aprsLon}QMAG:${latestEq.magnitud.toFixed(1)} ${latestEq.localizacion} (Prof:${latestEq.depthKm}km)`;
                 
                 return (
-                  <div className="bg-slate-900/90 border border-slate-850 rounded-lg p-2.5 font-mono text-[9.5px] select-all relative overflow-x-auto flex flex-col gap-1">
-                    <div className="flex items-center justify-between text-[8px] font-bold uppercase text-slate-500">
-                      <span>Última Trama Transmitida</span>
-                      <span className="text-rose-400">Magnitud: M{latestEq.magnitud.toFixed(1)} • {latestEq.localizacion}</span>
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-slate-900/90 border border-slate-850 rounded-lg p-2.5 font-mono text-[9.5px] select-all relative overflow-x-auto flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-[8px] font-bold uppercase text-slate-500">
+                        <span>Trama SEISMO Activa</span>
+                        <span className="text-rose-400">M{latestEq.magnitud.toFixed(1)} • {latestEq.localizacion} ({latestEq.calculatedDist.toFixed(1)} km)</span>
+                      </div>
+                      <div className="text-slate-200 font-mono whitespace-pre break-all">
+                        <span className="text-amber-400 font-bold">TX: </span>
+                        <span className="text-emerald-300">{rawPacket}</span>
+                      </div>
                     </div>
-                    <div className="text-slate-200 font-mono whitespace-pre break-all">
-                      <span className="text-amber-400 font-bold">TX: </span>
-                      <span className="text-emerald-300">{rawPacket}</span>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTransmitSeismoBeacon}
+                        disabled={isTransmittingSeismo}
+                        className="px-3 py-1.5 bg-rose-900/60 hover:bg-rose-800 border border-rose-600/50 rounded text-rose-200 text-[10px] font-mono font-bold tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <Radio size={12} className={isTransmittingSeismo ? 'animate-spin' : 'animate-pulse'} />
+                        <span>{isTransmittingSeismo ? 'Enviando...' : 'Emitir Baliza SEISMO (APRS)'}</span>
+                      </button>
+                      {seismoTxMsg && (
+                        <span className="text-[10px] text-emerald-400 font-mono font-semibold animate-fade-in">
+                          {seismoTxMsg}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -1010,11 +1075,47 @@ export default function IgnEarthquakeIndicators({
                   <h3 className="font-sans font-extrabold text-sm text-slate-200">
                     {onlyInRangeFilter 
                       ? `Sismos en Rango (${visuallyFilteredEarthquakes.length} de ${processedEarthquakes.filter(e => e.isInRange).length})`
-                      : `Sismos Recientes IGN (${visuallyFilteredEarthquakes.length} de ${processedEarthquakes.length})`}
+                      : `Sismos IGN (${visuallyFilteredEarthquakes.length} de ${processedEarthquakes.length})`}
                   </h3>
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Sorting controls */}
+                  <div className="flex items-center bg-slate-900 rounded p-0.5 border border-slate-800 text-[9.5px] font-mono">
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('recent_nearest')}
+                      className={`px-2 py-1 rounded transition-colors ${sortMode === 'recent_nearest' ? 'bg-rose-900 text-rose-200 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                      title="Ordena priorizando los sismos más recientes y más cercanos a la estación"
+                    >
+                      ⚡ Recientes y Próximos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('distance')}
+                      className={`px-2 py-1 rounded transition-colors ${sortMode === 'distance' ? 'bg-rose-900 text-rose-200 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                      title="Ordena por proximidad a la estación"
+                    >
+                      📍 Cercanos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('time')}
+                      className={`px-2 py-1 rounded transition-colors ${sortMode === 'time' ? 'bg-rose-900 text-rose-200 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                      title="Ordena por fecha y hora"
+                    >
+                      ⏱️ Fecha
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('magnitude')}
+                      className={`px-2 py-1 rounded transition-colors ${sortMode === 'magnitude' ? 'bg-rose-900 text-rose-200 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+                      title="Ordena por mayor magnitud"
+                    >
+                      💥 Magnitud
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => setOnlyInRangeFilter(!onlyInRangeFilter)}
@@ -1026,7 +1127,7 @@ export default function IgnEarthquakeIndicators({
                     title={onlyInRangeFilter ? 'Filtrado por radio de cobertura de estación' : 'Mostrando todos los seismos recientes de España y región'}
                   >
                     <Radio size={11} className={onlyInRangeFilter ? 'text-amber-400 animate-pulse' : 'text-slate-400'} />
-                    <span>{onlyInRangeFilter ? 'Solo en Rango' : 'Todos Recientes'}</span>
+                    <span>{onlyInRangeFilter ? 'Solo en Rango' : 'Todos'}</span>
                   </button>
 
                   <button
@@ -1142,9 +1243,9 @@ export default function IgnEarthquakeIndicators({
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                 <div className={`${selectedEarthquake ? 'md:col-span-7' : 'md:col-span-12'} flex flex-col gap-3 transition-all duration-300`}>
-                  <div className="max-h-[220px] overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent">
+                  <div className="max-h-[320px] overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent pr-1">
                     {visuallyFilteredEarthquakes.length > 0 ? (
-                      visuallyFilteredEarthquakes.map((eq, idx) => {
+                      (showAllEqs ? visuallyFilteredEarthquakes : visuallyFilteredEarthquakes.slice(0, 25)).map((eq, idx) => {
                         const eqKey = eq.id || `${eq.time}-${eq.latitude}-${eq.longitude}`;
                         const isSelected = selectedEarthquakeId === eqKey;
                         const isCritical = eq.magnitud >= userThreshold;
@@ -1225,6 +1326,16 @@ export default function IgnEarthquakeIndicators({
                       </div>
                     )}
                   </div>
+                  {visuallyFilteredEarthquakes.length > 25 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllEqs(!showAllEqs)}
+                      className="w-full py-1.5 bg-slate-900/80 hover:bg-slate-850 border border-slate-800 rounded text-slate-300 font-mono text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 mt-1"
+                    >
+                      <span>{showAllEqs ? 'Mostrar sólo los 25 sismos principales' : `Ver todos los sismos (${visuallyFilteredEarthquakes.length})`}</span>
+                      {showAllEqs ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  )}
                 </div>
 
                 <AnimatePresence>

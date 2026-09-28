@@ -2,6 +2,44 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.4.4] - 2026-09-28
+### Eliminado & Optimizado
+- **Eliminación del Visualizador de Cartografía y Tráfico Táctico S.A.T.**:
+  - Eliminado el contenedor del mapa táctico y gonio-radar (`RadarMap`) del Tier 2 del panel central en `App.tsx`.
+  - Eliminado el archivo de componente completo `RadarMap.tsx` y su exportación en `components/index.ts`.
+  - Reestructurado el Tier 2 del cuadro de mandos para dar ancho completo y prominencia al panel de telemetría meteorológica LCD local (`WeatherStation`).
+  - Depurado el modal emergente de paquetes APRS entrantes ajustando los botones de acción directos a 2 columnas (Cerrar y Responder).
+
+---
+
+## [v1.4.3] - 2026-09-28
+### Eliminado & Optimizado
+- **Eliminación de la Guía de Repetidores y Nodos WIRES-X**:
+  - Eliminada la pestaña y botón de navegación "Guía de Repetidores" (`tab-repetidores-trigger`) en la barra de subpestañas del Pilar I en `App.tsx`.
+  - Eliminado el componente contenedor `RepeaterDatabaseView` y los submódulos asociados `WiresXDatabaseView` y `WiresXRoomsDatabaseView`.
+  - Retiradas las bases de datos locales estáticas de repetidores nacionales (`repeaters.ts`) y nodos/salas de conferencia (`wiresx.ts`).
+  - Limpieza de tipos de navegación interna y exportaciones en `components/index.ts`.
+
+---
+
+## [v1.4.2] - 2026-09-28
+### Eliminado & Optimizado
+- **Eliminación de la Consola Yaesu FTM-400DR**:
+  - Eliminado el simulador del panel frontal y pantalla táctil del transceptor Yaesu FTM-400DR / DE en `AprsAdaptor.tsx`.
+  - Eliminada la pestaña de navegación "Consola FTM-400DR" y sus submódulos (lista de estaciones escuchadas, brújula analógica Compass, simulación de SmartBeaconing / corner-pegging, chat rápido y configuración de slots de texto de memoria).
+  - Eliminados los estados locales, temporizadores de cuenta atrás de baliza, calibración S-Meter VHF y rutinas de cálculo asociadas.
+  - Reducción de más de 1.100 líneas de código superfluo en el componente adaptador APRS, optimizando el rendimiento y simplificando el flujo de trabajo del operador.
+
+---
+
+## [v1.4.1] - 2026-09-28
+### Eliminado & Depurado
+- **Eliminación del Espectrómetro y Calculador de Ruido y SNR (ITU-R P.372-15)**:
+  - Eliminado el módulo de modelado de factores de ruido externo según la recomendación UIT-R P.372-15 en `PropagacionMonitor.tsx`.
+  - Eliminados los controles interactivos de frecuencia, entornos electromagnéticos (ciudad, residencial, rural, rural silencioso), parámetros de enlace y filtros de FI.
+  - Eliminado el gráfico de densidad espectral de ruido y la calculadora de estimación de SNR / S-Meter asociada.
+  - Limpieza de dependencias, reduciendo el bundle de la vista de propagación ionosférica y optimizando el rendimiento general.
+
 ---
 
 ## [v1.4.0] - 2026-07-29

@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
-import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send, Target } from 'lucide-react';
+import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
 import { ServerTelemetryData, TelemetryConfig } from './types';
 
 // Modular Sub-components (Unified Imports)
 import {
   ConsoleHeader,
-  RadarMap,
   TelemetryStatus,
   WeatherStation,
   IcaAirQualityMonitor,
@@ -40,7 +39,6 @@ import {
   PatAx25Console,
   HelpOverlay,
   PropagacionMonitor,
-  RepeaterDatabaseView,
   PrivateLoginGate,
   TwoFactorVerificationGate,
   UserProfileManager
@@ -110,7 +108,7 @@ function getBandStatusText(band: string, sfi: number, kp: number) {
 export default function App() {
   const [data, setData] = useState<ServerTelemetryData | null>(null);
   const [cecopSituacion, setCecopSituacion] = useState<0 | 1 | 2 | 3>(0);
-  const [activeTab, setActiveTab ] = useState<'monitor' | 'radiological' | 'dgt' | 'sismos-ign' | 'aemet-portal' | 'portus' | 'navareas' | 'salud' | 'engineering' | 'incendios' | 'sistema' | 'weewx-pillar' | 'direwolf-pillar' | 'aprx-pillar' | 'cecop-dashboard' | 'aprs-adaptor' | 'pat-pillar' | 'ica' | 'propagacion' | 'repetidores'>('monitor');
+  const [activeTab, setActiveTab ] = useState<'monitor' | 'radiological' | 'dgt' | 'sismos-ign' | 'aemet-portal' | 'portus' | 'navareas' | 'salud' | 'engineering' | 'incendios' | 'sistema' | 'weewx-pillar' | 'direwolf-pillar' | 'aprx-pillar' | 'cecop-dashboard' | 'aprs-adaptor' | 'pat-pillar' | 'ica' | 'propagacion'>('monitor');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -1719,21 +1717,21 @@ export default function App() {
           <button
             onClick={() => setActiveTab('monitor')}
             className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion', 'repetidores'].includes(activeTab)
+              ['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab)
                 ? 'bg-emerald-950/20 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
                 : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
             }`}
           >
             {/* Corner Decorative Accent */}
-            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion', 'repetidores'].includes(activeTab) && (
+            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) && (
               <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-50/5 rounded-bl-full flex items-center justify-center">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
               </div>
             )}
             
             <div className="flex items-center gap-2">
-              <ShieldCheck size={16} className={['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion', 'repetidores'].includes(activeTab) ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion', 'repetidores'].includes(activeTab) ? 'text-emerald-400' : 'text-slate-300'}`}>
+              <ShieldCheck size={16} className={['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
+              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) ? 'text-emerald-400' : 'text-slate-300'}`}>
                 Pilar I: Sondeo y Diagnóstico
               </span>
             </div>
@@ -2062,7 +2060,7 @@ export default function App() {
           <div className="flex items-center flex-wrap gap-1.5">
             
             {/* Pilar I Sub-tabs (Merged with Pilar II and Pilar III NAVTEX/Portus boyas) */}
-            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion', 'repetidores'].includes(activeTab) && (
+            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) && (
               <>
                 <button
                   onClick={() => setActiveTab('monitor')}
@@ -2195,18 +2193,6 @@ export default function App() {
                 >
                   <Waves size={13} />
                   Propagación HF y Clima Espacial
-                </button>
-                <button
-                  onClick={() => setActiveTab('repetidores')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'repetidores'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-repetidores-trigger"
-                >
-                  <Radio size={13} />
-                  Guía de Repetidores
                 </button>
               </>
             )}
@@ -2417,49 +2403,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* TIER 2: CENTRAL BENTO DASHBOARD GRID (Símil OpenHamClock / WRL Grid) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-              
-              {/* COLUMNA IZQUIERDA (Span 4): METEOROLOGÍA LCD LOCAL */}
-              <div className="lg:col-span-4 flex flex-col gap-5">
-                {/* Panel: Meteorología LCD Local */}
-                <div className="flex flex-col gap-4">
-                  <WeatherStation weather={data.weather} iqair={data.iqair} />
-                </div>
-              </div>
-
-              {/* COLUMNA DERECHA (Span 8): MAPA TÁCTICO, ALERTAS Y TENDENCIA DE TRÁFICO */}
-              <div className="lg:col-span-8 flex flex-col gap-5">
-                {/* Mapa de Cobertura de Emergencia */}
-                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col h-[460px] relative">
-                  <div className="p-4 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                      <h3 className="font-mono text-xs font-black uppercase tracking-widest text-slate-200">
-                        Visualizador de Cartografía y Tráfico Táctico S.A.T.
-                      </h3>
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-500 bg-slate-950 border border-slate-850 px-2 py-0.5 rounded">
-                      Radio Cobertura: {data.config.filterRadiusKm} km
-                    </span>
-                  </div>
-                  <div className="flex-1 relative min-h-0">
-                    <RadarMap 
-                      gpsd={data.gpsd} 
-                      earthquakes={data.earthquakes} 
-                      vessels={data.vessels}
-                      aprsPackets={aprsPackets}
-                      filterRadiusKm={data.config.filterRadiusKm}
-                      onRelocate={handleRelocate}
-                      fallbackLat={data.config.fallbackLat}
-                      fallbackLon={data.config.fallbackLon}
-                    />
-                  </div>
-                </div>
-
-                {/* Nota: Tendencia de Tráfico APRS reubicada en el Pilar VII: Direwolf */}
-              </div>
-
+            {/* TIER 2: METEOROLOGÍA LCD LOCAL */}
+            <div className="flex flex-col gap-5">
+              <WeatherStation weather={data.weather} iqair={data.iqair} />
             </div>
 
             {/* TIER 3: WORLD RADIO LEAGUE LIVE STATION LOGBOOK & ALERTS SPLIT */}
@@ -2821,19 +2767,6 @@ export default function App() {
             className="flex flex-col gap-4"
           >
             {data && <PropagacionMonitor data={data.propagation} />}
-          </motion.div>
-        ) : activeTab === 'repetidores' ? (
-          /* VADEMECUM DE REPETIDORES DE ESPAÑA (REMER / PROTECTION CIVIL) */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <RepeaterDatabaseView 
-              onInjectRaw={handleInjectRaw}
-              showToast={showToast}
-              gpsd={data.gpsd}
-            />
           </motion.div>
         ) : activeTab === 'weewx-pillar' ? (
           /* PILAR DE CONTROL WEEWX EXCLUSIVO */
@@ -3580,7 +3513,7 @@ export default function App() {
                   Reconocer y Marcar como Leído
                 </button>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => {
                       setIncomingAprsModal(null);
@@ -3602,24 +3535,6 @@ export default function App() {
                   >
                     <Mail size={12} />
                     {isReplying ? 'Cancelar' : 'Responder'}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      // Navigate to Gonio-Radar or locate station coordinates!
-                      handleRelocate(incomingAprsModal.latitude, incomingAprsModal.longitude, `Estación ${incomingAprsModal.callsign}`);
-                      setIncomingAprsModal(null);
-                      setIsReplying(false);
-                      setAprsReplyText('');
-                      if (showToast) {
-                        showToast(`Centrado gonio-radar en coordenadas de la estación: ${incomingAprsModal.callsign}`);
-                      }
-                    }}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-xs font-mono font-bold cursor-pointer transition-all flex items-center justify-center gap-1 shadow-lg shadow-blue-500/15"
-                    id="aprs-modal-radar-btn"
-                  >
-                    <Target size={12} />
-                    Ver Radar
                   </button>
                 </div>
               </div>

@@ -18,7 +18,6 @@ export { default as WeewxConsole } from './radio/WeewxConsole';
 export { default as PatAx25Console } from './radio/PatAx25Console';
 export { default as NucConsole } from './radio/NucConsole';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
-export { default as RepeaterDatabaseView } from './radio/RepeaterDatabaseView';
 
 // Environmental, Weather & Scientific Monitors
 export { default as AemetOpenDataPortal } from './environment/AemetOpenDataPortal';
@@ -34,7 +33,6 @@ export { default as JrcDataPortal } from './environment/JrcDataPortal';
 
 // Diagnostic, Logs, Layout & Core System Utilities
 export { default as ConsoleHeader } from './system/ConsoleHeader';
-export { default as RadarMap } from './system/RadarMap';
 export { default as TerminalLogs } from './system/TerminalLogs';
 export { default as TransmissionTrafficTrends } from './system/TransmissionTrafficTrends';
 export { default as TelemetryStatus } from './system/TelemetryStatus';

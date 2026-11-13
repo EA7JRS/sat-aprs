@@ -21,3 +21,10 @@ last_gps.json
 scheduled_notifications.json
 weather_alerts_sources.json
 local_weather.json
+
+# Plantillas de servicios que la consola genera en local
+/direwolf.conf
+/aprx.conf
+/weewx.conf
+/pat-config.json
+/axports

@@ -3,6 +3,8 @@
  * Calculates sunrise ("orto") and sunset ("ocaso") using Almanac Equations (NOAA algorithm).
  */
 
+import { sunTimes } from '../../server/formulas/astro';
+
 export interface SolarTimes {
   sunrise: number | null; // decimal hours, local time
   sunset: number | null;  // decimal hours, local time
@@ -17,74 +19,13 @@ export interface SolarTimes {
  * @param date Date object to calculate for (defaults to current date)
  */
 export function getSunriseSunset(lat: number, lon: number, date: Date = new Date()): SolarTimes {
-  // 1. Calculate Day of year
-  const startOfYear = new Date(date.getFullYear(), 0, 1);
-  const diffMs = date.getTime() - startOfYear.getTime();
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const d = Math.floor(diffMs / oneDayMs) + 1;
-
-  // 2. Lon hour conversion
-  const lnHour = lon / 15;
-  const zenith = 90.833; // Offical NOAA standard including refraction correction and sun disc size
-
-  // Timezone offset in hours
-  const timezoneOffsetHrs = -date.getTimezoneOffset() / 60;
-
-  const calculateLimit = (isSunrise: boolean): number | null => {
-    // 3. Keep approximate time
-    const t = d + ((isSunrise ? 6 : 18) - lnHour) / 24;
-
-    // 4. Calculate Mean Anomaly
-    const M = (0.9856 * t) - 3.289;
-
-    // 5. True Longitude L
-    let L = M + (1.916 * Math.sin(M * Math.PI / 180)) + (0.020 * Math.sin(2 * M * Math.PI / 180)) + 282.634;
-    L = (L + 360) % 360;
-
-    // 6. Right Ascension RA
-    let RA = Math.atan(0.91764 * Math.tan(L * Math.PI / 180)) * 180 / Math.PI;
-    RA = (RA + 360) % 360;
-
-    // Adjust RA to be in same quadrant as L
-    const Lquadrant = Math.floor(L / 90) * 90;
-    const RAquadrant = Math.floor(RA / 90) * 90;
-    RA = RA + (Lquadrant - RAquadrant);
-    RA = RA / 15; // convert to hours
-
-    // 7. Declination
-    const sinDec = 0.39782 * Math.sin(L * Math.PI / 180);
-    const cosDec = Math.cos(Math.asin(sinDec));
-
-    // 8. Hour Angle H
-    const cosH = (Math.cos(zenith * Math.PI / 180) - (sinDec * Math.sin(lat * Math.PI / 180))) / (cosDec * Math.cos(lat * Math.PI / 180));
-
-    if (cosH > 1) {
-      return null; // Sun never rises
-    }
-    if (cosH < -1) {
-      return null; // Sun never sets
-    }
-
-    let H = Math.acos(cosH) * 180 / Math.PI;
-    if (isSunrise) {
-      H = 360 - H;
-    }
-    H = H / 15;
-
-    // 9. Local Time UT
-    const T = H + RA - (0.06571 * t) - 6.622;
-    let UT = T - lnHour;
-    UT = (UT + 24) % 24;
-
-    // 10. Local clock offset
-    let localT = UT + timezoneOffsetHrs;
-    localT = (localT + 24) % 24;
-
-    return localT;
-  };
-
-  const sunrise = calculateLimit(true);
-  const sunset = calculateLimit(false);
+  // Orto y ocaso con la fórmula común del ecosistema (server/formulas/astro.ts),
+  // calculados para el día local y pasados a la hora local del navegador.
+  const times = sunTimes(date.getFullYear(), date.getMonth() + 1, date.getDate(), lat, lon, -0.833);
+  const offsetHours = -date.getTimezoneOffset() / 60;
+  const toLocal = (utcMin: number): number => ((((utcMin / 60 + offsetHours) % 24) + 24) % 24);
+  const sunrise = times ? toLocal(times.riseUtcMin) : null;
+  const sunset = times ? toLocal(times.setUtcMin) : null;
 
   const formatDec = (val: number | null): string => {
     if (val === null) return '--:--';

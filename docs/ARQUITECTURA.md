@@ -22,6 +22,50 @@ el GPS, y es el servidor NTP de la red. La consola lee la posición de gpsd y
 el estado real de ntpsec; las reglas de difusión usan siempre la posición
 actual, así que el radio de avisos acompaña a la estación si se mueve.
 
+## Programas con los que convive
+
+El NUC es una estación de radio completa. S.A.T.-APRS no sustituye a estos
+programas: se conecta a ellos por sus interfaces de red.
+
+| Programa | Papel | Enlace con S.A.T.-APRS |
+| :--- | :--- | :--- |
+| gpsd | Posición GPS, fija o móvil | TCP 2947 (JSON) |
+| ntpsec | Servidor de hora de la red | `ntpq` |
+| Direwolf | Módem/TNC para APRS por RF | KISS sobre TCP |
+| aprx | Digipeater e I-Gate | Archivo de configuración |
+| AX.25 nativo, Pat Winlink | Correo por radio | Configuración; estado |
+| Hamlib (`rigctld`) | Control CAT de los equipos | TCP 4532 (pendiente) |
+| AIS-catcher, readsb | Recepción AIS y ADS-B con los RTL-SDR | TCP/UDP (pendiente) |
+| SDR++, SDRconnect (RSPdx-R2) | Recepción SDR general | Fuente de audio/IQ para decodificadores (pendiente) |
+| WSJT-X | Modos digitales | UDP 2237 (pendiente) |
+| WeeWX | Estación meteorológica | Archivo/HTTP (pendiente) |
+
+## Fórmulas comunes con APRS LoRa+
+
+`server/formulas/` reúne los cálculos físicos, náuticos, astronómicos y
+meteorológicos. Los usan tanto el servidor como la consola web.
+
+| Módulo | Contenido | Origen |
+| :--- | :--- | :--- |
+| `geo` | Círculo máximo, loxodrómica, Vincenty (WGS84), desvío de ruta | Plotter |
+| `astro` | Orto, ocaso y crepúsculos; posición del sol; luna (fase, posición, salida y puesta); refracción | Plotter |
+| `wxcalc` | Punto de rocío, humedad, enfriamiento por viento, índice de calor, sensación térmica, presión al nivel del mar | Plotter |
+| `wind` | Escala Beaufort, anemómetro de pulsos | Plotter |
+| `motion` | CPA/TCPA, viento real y aparente, VMG, corriente | Plotter |
+| `units` | Sistemas de unidades náutico, métrico e imperial | Plotter |
+| `wmm` | Modelo Magnético Mundial WMM2025: declinación, inclinación, intensidad | Plotter |
+| `wxextra` | Presión de vapor, humedad absoluta, bulbo húmedo (Stull), humidex, temperatura aparente, base de nubes, densidad del aire, altitud de presión, tendencia barométrica, categorías UV y de lluvia | Nuevas |
+| `nautica` | Horizonte, alcance geográfico, velocidad de casco, escala Douglas, rosa de rumbos | Nuevas |
+| `radio` | Localizador Maidenhead, pérdida en espacio libre, horizonte radio, Fresnel, dBm, PIRE, ROE, S-meter, alcance PHG | Nuevas |
+| `fisica` | Energía sísmica, llegada de ondas P y S, dosis de radiación | Nuevas |
+
+Los módulos marcados «Plotter» son el porte a TypeScript del núcleo del
+plotter APRS LoRa+ (`lib/plotter_core`), con los mismos nombres de función.
+`tests/formulas.test.ts` los compara con los resultados del código C++
+original en 300 casos (`tests/fixtures/plotter-core-ref.json`), de modo que
+la estación y los equipos del ecosistema dan exactamente los mismos valores.
+Las nuevas se comprueban contra valores publicados de cada referencia.
+
 ## Un solo servicio, en TypeScript
 
 Todo corre en un único servicio Node.js escrito en TypeScript:
@@ -81,7 +125,10 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Avisos meteorológicos (AEMET, MeteoAlarm) | Pendiente de portar del agente Python |
 | Clima espacial (NOAA), incendios (FIRMS), calidad del aire | En `server.ts`; pendientes de pasar a `server/fuentes/` |
 | Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía |
-| Estación meteorológica y perfil de usuario | Pendiente |
+| Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
+| Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
+| Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
+| Estación meteorológica: envío de datos propios y de Internet | Pendiente |
 | Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS, NAVTEX e Inmarsat son hoy simulados; ADS-B no existe |
 | Mapa con capas | Pendiente (el visor anterior se retiró en la v1.4.4) |
 | Configuración de Direwolf/aprx desde la consola | Existe; pendiente de revisar |

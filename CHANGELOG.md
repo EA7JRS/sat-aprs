@@ -2,6 +2,22 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.8.0] - 2026-11-13
+### Fórmulas comunes con el ecosistema APRS LoRa+
+- **`server/formulas/`**: porte a TypeScript de las fórmulas del núcleo del plotter APRS LoRa+ (geodesia, sol y luna, meteorología, Beaufort, movimiento relativo, unidades y Modelo Magnético Mundial WMM2025), con los mismos nombres. Se comparan con el código C++ original en 300 casos.
+- **Fórmulas nuevas** para la estación, cada una con su referencia: bulbo húmedo, humidex, temperatura aparente, humedad absoluta, base de nubes, densidad del aire, altitud de presión, tendencia barométrica; horizonte, alcance geográfico, escala Douglas; localizador Maidenhead, pérdida en espacio libre, horizonte radio, Fresnel, dBm, PIRE, ROE, S-meter, alcance PHG; energía sísmica, llegada de ondas P y S, dosis de radiación.
+- La consola usa ya las fórmulas comunes para distancias, demoras, Beaufort, orto y ocaso y altura del sol (antes tenía copias propias, menos precisas).
+
+### Consola
+- **Logotipo de APRS LoRa+** en la cabecera y en la pestaña del navegador.
+- **Perfil de la estación guardado en la estación** (`sat_perfil.json`, `GET/POST /api/perfil`): operador, estaciones y presets se ven igual desde cualquier navegador. Antes quedaban solo en el navegador donde se crearon.
+- **Perfil de la estación APRS** (Configuración → «Estación APRS»): titular y localidad, indicativo y SSID (un único dato, ya no van por separado), passcode de APRS-IS con comprobación al momento, posición fija por coordenadas o por locator (o tomada del GPS) y vista previa de la trama.
+- **Baliza de posición de la estación** (`server/estacion/baliza.ts`): posición, símbolo, PHG y comentario del perfil; usa el GPS si hay fijo y si no la posición fija. Apagada por defecto para no duplicar la de aprx o Direwolf; intervalo mínimo de 5 minutos; botón «Emitir baliza ahora» para el administrador (`GET/POST /api/estacion/baliza`). Sale por la cola y la política de emisión comunes.
+- Corregido el passcode que mostraba el configurador: se calculaba con 16 bits en lugar de 15 y podía no coincidir con el real.
+- `docs/ARQUITECTURA.md`: programas con los que convive el servicio (gpsd, ntpsec, Direwolf, aprx, Hamlib, Pat, AIS-catcher, readsb, SDR++, SDRconnect, WSJT-X, WeeWX) y tabla de fórmulas.
+
+---
+
 ## [v1.7.0] - 2026-11-13
 ### Nueva base: cadena común de avisos
 - **Modelo común de aviso** (`server/core/evento.ts`): cualquier fuente, oficial o de RF, entrega sus avisos en el mismo formato, con su procedencia y si el dato es real.

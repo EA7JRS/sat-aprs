@@ -22,26 +22,17 @@ import {
 
 
 import AdminAccess from './AdminAccess';
+import StationProfile from './StationProfile';
+import { aprsPasscode as passcodeDe, splitCallsign } from '../../../server/aprs';
 interface ConfigProps {
   config: TelemetryConfig;
   onSaveConfig: (updated: TelemetryConfig) => Promise<boolean>;
   gpsd?: GPSDStatus;
 }
 
-// Actual C/Perl/Python APRS-IS Passcode/Passkey generator algorithm standard
+// Passcode de APRS-IS: el mismo cálculo que usa el servidor (server/aprs.ts)
 export function calculateAprsPasscode(callsign: string): number {
-  const cleanCall = callsign.split('-')[0].toUpperCase().trim();
-  let hash = 0x73e2; // Constant seed hash
-  
-  for (let i = 0; i < cleanCall.length; i++) {
-    // Process string in 16-bit blocks representing character bytes
-    if (i % 2 === 0) {
-      hash ^= cleanCall.charCodeAt(i) << 8;
-    } else {
-      hash ^= cleanCall.charCodeAt(i);
-    }
-  }
-  return hash & 0xffff;
+  return passcodeDe(callsign);
 }
 
 export default function Configurator({ config, onSaveConfig, gpsd }: ConfigProps) {
@@ -458,6 +449,20 @@ export default function Configurator({ config, onSaveConfig, gpsd }: ConfigProps
   // Station Profile feedback states
   const [stationSaveSuccess, setStationSaveSuccess] = useState<string | null>(null);
   const [stationSaveError, setStationSaveError] = useState<string | null>(null);
+  // Perfil de la estación: datos del usuario
+  const [operatorName, setOperatorName] = useState<string>(config.operatorName || '');
+  const [stationQth, setStationQth] = useState<string>(config.stationQth || '');
+  const [aprsBeaconEnabled, setAprsBeaconEnabled] = useState<boolean>(!!config.aprsBeaconEnabled);
+  // El SSID forma parte del indicativo con el que se emite: un único dato
+  useEffect(() => {
+    const partes = splitCallsign(callsign);
+    if (partes && partes.ssid !== aprsSsid) setAprsSsid(partes.ssid);
+  }, [callsign]);
+  const cambiarSsid = (n: number) => {
+    setAprsSsid(n);
+    const b = callsign.split('-')[0].toUpperCase().trim();
+    setCallsign(n > 0 ? `${b}-${n}` : b);
+  };
 
   // A-GPS State
   const [isAgpsEnabled, setIsAgpsEnabled] = useState<boolean>(() => {
@@ -932,6 +937,11 @@ export default function Configurator({ config, onSaveConfig, gpsd }: ConfigProps
       ...config,
       callsign: callsign.toUpperCase().trim(),
       aprsPasscode: aprsPasscode.trim(),
+      fallbackLat: Number(fallbackLat),
+      fallbackLon: Number(fallbackLon),
+      operatorName: operatorName.trim(),
+      stationQth: stationQth.trim(),
+      aprsBeaconEnabled: Boolean(aprsBeaconEnabled),
       aprsSsid: Number(aprsSsid),
       aprsSymbolTable: aprsSymbolTable.trim(),
       aprsSymbolCode: aprsSymbolCode.trim(),
@@ -1187,6 +1197,22 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
           {/* GATING LOGIC OR TAB CONTENT */}
           {activeTab === 'profile' ? (
             <div className="space-y-5 font-sans my-2">
+              <StationProfile
+                operatorName={operatorName} setOperatorName={setOperatorName}
+                stationQth={stationQth} setStationQth={setStationQth}
+                callsign={callsign} setCallsign={setCallsign}
+                passcode={aprsPasscode} setPasscode={setAprsPasscode}
+                lat={fallbackLat} setLat={setFallbackLat}
+                lon={fallbackLon} setLon={setFallbackLon}
+                beaconEnabled={aprsBeaconEnabled} setBeaconEnabled={setAprsBeaconEnabled}
+                beaconInterval={aprsBeaconInterval}
+                symbolTable={aprsSymbolTable} symbolCode={aprsSymbolCode}
+                phg={{ power: aprsPhgPower, height: aprsPhgHeight, gain: aprsPhgGain, directivity: aprsPhgDirectivity }}
+                comment={aprsStatusComment}
+                gpsd={gpsd}
+                saving={isSaving}
+                onSave={handleSaveStationProfile}
+              />
               {/* PERFIL AVANZADO DE LA ESTACIÓN APRS PRINCIPAL */}
               <div className="bg-slate-900/30 border border-slate-900/80 rounded-xl p-5 space-y-6">
                 <div className="flex items-center justify-between border-b border-slate-900 pb-3">
@@ -1237,7 +1263,7 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                         <select
                           id="select-aprs-ssid"
                           value={aprsSsid}
-                          onChange={(e) => setAprsSsid(Number(e.target.value))}
+                          onChange={(e) => cambiarSsid(Number(e.target.value))}
                           className="w-full bg-slate-900 border border-slate-850 rounded-lg p-2 text-slate-100 font-bold focus:border-amber-500/30 focus:outline-none"
                         >
                           <option value="0">-0: Estación fija principal, laptop o desktop (Home/Office)</option>

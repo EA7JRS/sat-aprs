@@ -24,6 +24,9 @@ import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
 import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
+import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
+import { gcDistanceKm } from './server/formulas/geo';
+import { sunPosition, unixToUtc } from './server/formulas/astro';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -92,6 +95,44 @@ app.use('/api', (req: AuthedRequest, res, next) => {
     });
   }
   next();
+});
+
+// ---------------------------------------------------------------------------
+// PERFIL DE LA ESTACIÓN: datos del operador, estaciones y presets.
+// Se guardan en la propia estación (sat_perfil.json), no en cada navegador,
+// de modo que cualquier equipo que abra la consola ve el mismo perfil.
+// ---------------------------------------------------------------------------
+const PERFIL_FILE = path.join(process.cwd(), 'sat_perfil.json');
+const PERFIL_CLAVE_RE = /^users\/[A-Za-z0-9_\-/]{1,80}$/;
+let perfilEstacion: Record<string, unknown> = {};
+try {
+  if (fs.existsSync(PERFIL_FILE)) perfilEstacion = JSON.parse(fs.readFileSync(PERFIL_FILE, 'utf8')) || {};
+} catch (e) {
+  console.warn('[PERFIL] No se pudo leer sat_perfil.json; se empieza con el perfil vacío.');
+}
+
+app.get('/api/perfil', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, datos: perfilEstacion });
+});
+
+app.post('/api/perfil', (req, res) => {
+  const clave = String(req.body?.clave || '');
+  const valor = req.body?.valor;
+  if (!PERFIL_CLAVE_RE.test(clave)) {
+    return res.status(400).json({ success: false, error: 'Clave de perfil no válida.' });
+  }
+  if (valor === null || valor === undefined) delete perfilEstacion[clave];
+  else perfilEstacion[clave] = valor;
+
+  // Como el resto de la configuración: solo el administrador escribe en disco
+  const persistido = isAuthorizedRequest(req);
+  if (persistido) {
+    fs.writeFile(PERFIL_FILE, JSON.stringify(perfilEstacion, null, 2), 'utf8', (err) => {
+      if (err) console.warn(`[PERFIL] No se pudo guardar sat_perfil.json: ${err.message}`);
+    });
+  }
+  res.json({ success: true, persistido });
 });
 
 // Estado de la sesión para la interfaz (¿soy administrador?, ¿hay emisión real?)
@@ -225,6 +266,11 @@ let config: TelemetryConfig = {
   aprsPhgGain: 3, // 3 = 6 dB
   aprsPhgDirectivity: 0, // 0 = omnidirectional
   aprsBeaconInterval: 30, // 30 minutes for fixed
+  // Baliza de posición de la propia estación: apagada por defecto para no
+  // duplicar la que ya emitan aprx o Direwolf con el mismo indicativo.
+  aprsBeaconEnabled: false,
+  operatorName: '',
+  stationQth: '',
   aprsSmartBeaconing: false,
   aprsSmartLowInterval: 30,
   aprsSmartHighInterval: 5,
@@ -1606,17 +1652,9 @@ function generateWxPayload(w: WeatherTelemetry): string {
   return `_${dir}/${speed}${gust}${tempStr}${rain1}${rain24}${hum}${press} (REMER S.A.T. Telemetría WX)`;
 }
 
-// Haversine Distance Formula
+// Distancia en km con la fórmula común del ecosistema (server/formulas/geo.ts)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return parseFloat((R * c).toFixed(1));
+  return parseFloat(gcDistanceKm({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 }).toFixed(1));
 }
 
 // Generate the proper APRS WX packet
@@ -4344,6 +4382,48 @@ function startSchedules() {
       transmitWildfireBeacon(false);
     }, 60000);
   }
+
+  // Baliza de posición de la estación (perfil de la estación APRS)
+  if (timerStationBeacon) clearInterval(timerStationBeacon);
+  timerStationBeacon = undefined;
+  if (config.aprsBeaconEnabled) {
+    timerStationBeacon = setInterval(() => transmitStationBeacon(), intervaloBalizaMs(config.aprsBeaconInterval));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Baliza de posición de la propia estación
+// ---------------------------------------------------------------------------
+let timerStationBeacon: NodeJS.Timeout | undefined;
+
+/** Perfil de la estación tal como se emite: posición del GPS si hay fijo real, si no la fija. */
+function perfilBaliza(): PerfilEstacion {
+  const gpsReal = !gpsdState.isFallback && gpsdState.mode >= 2;
+  return {
+    callsign: config.callsign,
+    lat: gpsReal ? gpsdState.lat : config.fallbackLat,
+    lon: gpsReal ? gpsdState.lon : config.fallbackLon,
+    symbolTable: config.aprsSymbolTable || '/',
+    symbolCode: config.aprsSymbolCode || '-',
+    phg: {
+      power: Number(config.aprsPhgPower), height: Number(config.aprsPhgHeight),
+      gain: Number(config.aprsPhgGain), directivity: Number(config.aprsPhgDirectivity),
+    },
+    comment: config.aprsStatusComment || '',
+  };
+}
+
+/** Emite la baliza de posición por la cola de emisión. Devuelve el motivo si no se pudo construir. */
+function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string } {
+  const perfil = perfilBaliza();
+  const packet = balizaPosicion(perfil);
+  if (!packet) {
+    const error = validarPerfil(perfil).join('; ');
+    addLog('SYS', 'BALIZA', 'LOCAL', 'PERFIL', `Baliza de estación no generada: ${error}.`, false, 'Perfil incompleto');
+    return { ok: false, error };
+  }
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, 'Baliza de posición de la estación (perfil APRS).');
+  return { ok: true, packet };
 }
 
 startSchedules();
@@ -5127,24 +5207,10 @@ function getNoaaScales(xrayFlux: number, protonFlux: number, kp: number) {
   return { rScale, sScale, gScale };
 }
 
+// Altura del sol en radianes (Meeus, ~0,01°; server/formulas/astro.ts)
 function calculateSolarElevation(lat: number, lon: number): number {
-  try {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), 0, 0);
-    const diff = now.getTime() - start.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
-    
-    const declination = 23.45 * Math.sin(((360 / 365) * (284 + dayOfYear) * Math.PI) / 180);
-    const hourAngle = (now.getUTCHours() + now.getUTCMinutes() / 60 + lon / 15 - 12) * 15;
-    
-    const sinElevation = Math.sin((lat * Math.PI) / 180) * Math.sin((declination * Math.PI) / 180) +
-                         Math.cos((lat * Math.PI) / 180) * Math.cos((declination * Math.PI) / 180) * Math.cos((hourAngle * Math.PI) / 180);
-    
-    return Math.asin(Math.max(-1.0, Math.min(1.0, sinElevation)));
-  } catch (err) {
-    return 0.0;
-  }
+  const { y, m, d, utcHours } = unixToUtc(Date.now() / 1000);
+  return (sunPosition(y, m, d, utcHours, lat, lon).altDeg * Math.PI) / 180;
 }
 
 function calculateMufAndBands(sfi: number, lat: number, lon: number) {
@@ -7433,6 +7499,26 @@ app.post('/api/radiological/rar-ran/simulate', (req, res) => {
   }
 });
 
+// Baliza de la estación: vista previa de la trama y envío manual
+app.get('/api/estacion/baliza', (_req, res) => {
+  const perfil = perfilBaliza();
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    packet: balizaPosicion(perfil),
+    errores: validarPerfil(perfil),
+    activa: !!config.aprsBeaconEnabled,
+    intervaloMin: intervaloBalizaMs(config.aprsBeaconInterval) / 60000,
+    posicion: { lat: perfil.lat, lon: perfil.lon, gps: !gpsdState.isFallback && gpsdState.mode >= 2 },
+    txEnabled: TX_ENABLED,
+  });
+});
+
+app.post('/api/estacion/baliza', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede emitir la baliza.' });
+  const r = transmitStationBeacon();
+  res.status(r.ok ? 200 : 400).json({ ...r, txEnabled: TX_ENABLED });
+});
+
 app.post('/api/config', (req, res) => {
   try {
     const updated = req.body as TelemetryConfig;
@@ -7530,6 +7616,9 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsPhgGain !== undefined) config.aprsPhgGain = parseInt(updated.aprsPhgGain.toString());
     if (updated.aprsPhgDirectivity !== undefined) config.aprsPhgDirectivity = parseInt(updated.aprsPhgDirectivity.toString());
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
+    if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
+    if (updated.operatorName !== undefined) config.operatorName = String(updated.operatorName).trim().slice(0, 60);
+    if (updated.stationQth !== undefined) config.stationQth = String(updated.stationQth).trim().slice(0, 60);
     if (updated.aprsSmartBeaconing !== undefined) config.aprsSmartBeaconing = !!updated.aprsSmartBeaconing;
     if (updated.aprsSmartLowInterval !== undefined) config.aprsSmartLowInterval = parseInt(updated.aprsSmartLowInterval.toString());
     if (updated.aprsSmartHighInterval !== undefined) config.aprsSmartHighInterval = parseInt(updated.aprsSmartHighInterval.toString());

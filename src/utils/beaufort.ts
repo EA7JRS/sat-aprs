@@ -3,6 +3,8 @@
  * Standardized Beaufort Scale for meteorological visualization.
  */
 
+import { beaufort } from '../../server/formulas/wind';
+
 export interface BeaufortInfo {
   force: number;
   name: string;
@@ -23,7 +25,7 @@ export const BEAUFORT_SCALE: BeaufortInfo[] = [
   { force: 9, name: 'Temporal fuerte', rgb: 'rgb(255, 0, 0)', hex: '#FF0000' },
   { force: 10, name: 'Temporal duro', rgb: 'rgb(204, 0, 0)', hex: '#CC0000' },
   { force: 11, name: 'Temporal muy duro', rgb: 'rgb(148, 0, 211)', hex: '#9400D3' },
-  { force: 12, name: 'Huracán', rgb: 'rgb(0, 0, 0)', hex: '#000000' }
+  { force: 12, name: 'Temporal huracanado', rgb: 'rgb(0, 0, 0)', hex: '#000000' }
 ];
 
 /**
@@ -34,20 +36,8 @@ export function getBeaufortInfoByKts(speedKts: number | null | undefined): Beauf
     return BEAUFORT_SCALE[0];
   }
   
-  let force = 0;
-  if (speedKts < 1) force = 0;
-  else if (speedKts <= 3) force = 1;
-  else if (speedKts <= 6) force = 2;
-  else if (speedKts <= 10) force = 3;
-  else if (speedKts <= 16) force = 4;
-  else if (speedKts <= 21) force = 5;
-  else if (speedKts <= 27) force = 6;
-  else if (speedKts <= 33) force = 7;
-  else if (speedKts <= 40) force = 8;
-  else if (speedKts <= 47) force = 9;
-  else if (speedKts <= 55) force = 10;
-  else if (speedKts <= 63) force = 11;
-  else force = 12;
+  // La misma escala que el resto del ecosistema (server/formulas/wind.ts)
+  const force = beaufort(speedKts);
 
   return BEAUFORT_SCALE[force];
 }

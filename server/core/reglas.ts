@@ -7,6 +7,7 @@
 // vigente, que caiga dentro del radio de la estación (fija o móvil), que
 // alcance la gravedad mínima y que no se haya emitido ya hace poco.
 
+import { gcDistanceKm } from '../formulas/geo';
 import { Evento, Gravedad, ORDEN_GRAVEDAD } from './evento';
 
 export interface Posicion { lat: number; lon: number }
@@ -28,14 +29,9 @@ export interface Politica {
 
 export interface Decision { emitir: boolean; motivo: string; distanciaKm?: number }
 
-/** Distancia ortodrómica (Haversine) en km. */
+/** Distancia por círculo máximo en km (la fórmula común del ecosistema, server/formulas/geo.ts). */
 export function distanciaKm(a: Posicion, b: Posicion): number {
-  const R = 6371;
-  const rad = (g: number) => (g * Math.PI) / 180;
-  const dLat = rad(b.lat - a.lat);
-  const dLon = rad(b.lon - a.lon);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return gcDistanceKm(a, b);
 }
 
 /** ¿Cumple el aviso las condiciones para difundirse desde esta estación? */

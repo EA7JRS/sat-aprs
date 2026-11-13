@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// Almacén local de documentos y colecciones sobre localStorage.
+// Almacén del perfil de la estación (operador, estaciones, presets).
 //
-// Sustituye a la base de datos en la nube: los datos del operador (perfil,
-// estaciones, presets) se guardan en el navegador de la estación. Ofrece una
-// API mínima de documentos/colecciones con suscripción a cambios, suficiente
-// para los componentes que antes dependían de un servicio externo.
+// Los datos viven en la propia estación: el servidor los guarda en
+// sat_perfil.json (GET/POST /api/perfil) y cualquier navegador que abra la
+// consola ve el mismo perfil. localStorage se usa solo como copia para pintar
+// al instante y para seguir funcionando si el servidor no responde. Ofrece
+// una API mínima de documentos y colecciones con suscripción a cambios.
 
 const PREFIX = 'sat_store:';
 const CHANGE_EVENT = 'sat_store_changed';
@@ -37,10 +38,46 @@ function read(path: string): any {
   }
 }
 
-function write(path: string, value: any): void {
-  if (value === null) window.localStorage.removeItem(PREFIX + path);
+function writeLocal(path: string, value: any): void {
+  if (value === null || value === undefined) window.localStorage.removeItem(PREFIX + path);
   else window.localStorage.setItem(PREFIX + path, JSON.stringify(value));
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: path }));
+}
+
+function write(path: string, value: any): void {
+  writeLocal(path, value);
+  // Se guarda también en la estación; si falla, queda la copia de este navegador
+  customFetch('/api/perfil', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave: path, valor: value }),
+  }).catch((err) => console.warn('No se pudo guardar el perfil en la estación:', err));
+}
+
+/** Trae el perfil guardado en la estación; lo que haya allí manda sobre la copia local. */
+export async function sincronizarPerfil(): Promise<boolean> {
+  try {
+    const res = await customFetch('/api/perfil');
+    if (!res.ok) return false;
+    const datos: Record<string, unknown> = (await res.json()).datos || {};
+    for (const [path, value] of Object.entries(datos)) {
+      if (JSON.stringify(read(path)) !== JSON.stringify(value)) writeLocal(path, value);
+    }
+    // Lo que solo existía en este navegador (perfil creado antes) se sube a la estación
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i) || '';
+      if (!key.startsWith(PREFIX)) continue;
+      const path = key.slice(PREFIX.length);
+      if (!(path in datos)) write(path, read(path));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  void sincronizarPerfil();
 }
 
 function newId(): string {

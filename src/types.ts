@@ -195,6 +195,12 @@ export interface TelemetryConfig {
   aprsPhgGain?: number;
   aprsPhgDirectivity?: number;
   aprsBeaconInterval?: number;
+  /** La consola emite la baliza de posición de la estación. */
+  aprsBeaconEnabled?: boolean;
+  /** Titular de la estación (dato del perfil, no se emite). */
+  operatorName?: string;
+  /** Localidad / QTH (dato del perfil, no se emite). */
+  stationQth?: string;
   aprsSmartBeaconing?: boolean;
   aprsSmartLowInterval?: number;
   aprsSmartHighInterval?: number;

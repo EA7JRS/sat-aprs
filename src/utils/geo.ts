@@ -3,40 +3,25 @@
  * Uniform Distance (Haversine) and Bearing (Rumbo) computations.
  */
 
+import { gcDistanceKm, gcInitialBearing } from '../../server/formulas/geo';
+
 export interface GeoLocation {
   lat: number;
   lon: number;
 }
 
 /**
- * Calculates the Haversine distance in kilometers between two coordinates.
+ * Distancia en kilómetros por círculo máximo (fórmula común del ecosistema).
  */
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return parseFloat((R * c).toFixed(1));
+  return parseFloat(gcDistanceKm({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 }).toFixed(1));
 }
 
 /**
- * Calculates the bearing (rumbo) in degrees from point 1 to point 2.
+ * Demora inicial verdadera en grados del punto 1 al punto 2.
  */
 export function calculateBearingDegrees(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const lat1Rad = lat1 * Math.PI / 180;
-  const lat2Rad = lat2 * Math.PI / 180;
-  
-  const y = Math.sin(dLon) * Math.cos(lat2Rad);
-  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
-            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
-            
-  const brng = Math.atan2(y, x) * 180 / Math.PI;
-  return (brng + 360) % 360;
+  return gcInitialBearing({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 });
 }
 
 /**

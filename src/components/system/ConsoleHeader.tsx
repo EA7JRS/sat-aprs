@@ -261,9 +261,14 @@ export default function ConsoleHeader({
     <header className="bg-slate-900 border-b border-emerald-500/30 p-4 shadow-lg text-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
       {/* Station ID and Title */}
       <div className="flex items-center gap-3 w-full md:w-auto">
-        <div className="p-2.5 bg-emerald-950 border border-emerald-500/50 rounded-lg text-emerald-400 animate-pulse animate-duration-1000">
-          <Radio size={24} className="stroke-[2]" />
-        </div>
+        <img
+          src="/aprs-lora-plus.png"
+          alt="APRS LoRa+"
+          title="Ecosistema APRS LoRa+"
+          width={48}
+          height={48}
+          className="h-12 w-12 rounded-lg border border-emerald-500/40 shrink-0"
+        />
         <div>
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h1 className="font-sans font-extrabold text-lg tracking-wider text-emerald-400">APRS S.A.T.</h1>

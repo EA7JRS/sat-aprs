@@ -1,0 +1,6 @@
+# =====================================================================
+# /etc/ax25/axports - CONFIGURACIÓN DE PUERTOS AX.25 DEBIAN 13 S.A.T.
+# =====================================================================
+# name  callsign   speed  paclen  window  description
+wl0     EA1URG-10  19200  255     7       Puerto Winlink VHF (144.850 MHz)
+ap0     EA1URG-13  9600   255     7       Puerto APRS VHF (144.800 MHz)

@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { Radio, RefreshCw, Cpu, Disc, Server, Flame, Activity, Moon, Sun, Clock, Cloud, Power } from 'lucide-react';
+import AdminAccess from './AdminAccess';
+import { Radio, RefreshCw, Cpu, Disc, Server, Flame, Activity, Moon, Sun, Clock, Power } from 'lucide-react';
 import { GPSDStatus, NTPSECStatus, TelemetryConfig, NucDiagnostics, NoaaSpaceAlert, PropagationData } from '../../types';
 import { getSunriseSunset } from '../../utils/suncalc';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth } from '../../utils/firebase';
 
 interface HeaderProps {
   gpsd: GPSDStatus;
@@ -28,9 +27,7 @@ interface HeaderProps {
   onChangeHours: (start: number, end: number) => void;
   rtt?: number;
   noaaAlerts?: NoaaSpaceAlert[];
-  currentUser?: any;
-  isFirebaseSyncEnabled?: boolean;
-  onToggleFirebaseSync?: (val: boolean) => void;
+  isAdmin?: boolean;
   propagation?: PropagationData;
   onUpdateConfig?: (updated: Partial<TelemetryConfig>) => Promise<boolean>;
 }
@@ -57,19 +54,13 @@ export default function ConsoleHeader({
   onChangeHours,
   rtt,
   noaaAlerts = [],
-  currentUser = null,
-  isFirebaseSyncEnabled = false,
-  onToggleFirebaseSync,
+  isAdmin = false,
   propagation,
   onUpdateConfig
 }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showSolarStats, setShowSolarStats] = useState(false);
 
-  const [syncEmail, setSyncEmail] = useState('');
-  const [syncPassword, setSyncPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isAuthPending, setIsAuthPending] = useState(false);
 
   // LocalState for last valid coordinate tracking
   const [lastSaved, setLastSaved] = React.useState<{ lat: number; lon: number; timestamp: number } | null>(() => {
@@ -122,72 +113,6 @@ export default function ConsoleHeader({
     const interval = setInterval(updateAge, 5000);
     return () => clearInterval(interval);
   }, [lastSaved]);
-
-  const handleLogin = async () => {
-    if (!syncEmail || !syncPassword) {
-      setAuthError('Introduce email y contraseña');
-      return;
-    }
-
-    setIsAuthPending(true);
-    setAuthError(null);
-    try {
-      await signInWithEmailAndPassword(auth, syncEmail, syncPassword);
-      setSyncEmail('');
-      setSyncPassword('');
-      if (onToggleFirebaseSync) {
-        onToggleFirebaseSync(true);
-      }
-    } catch (e: any) {
-      console.error(e);
-      let msg = 'Error al iniciar sesión';
-      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') msg = 'Credenciales incorrectas';
-      else if (e.code === 'auth/wrong-password') msg = 'Contraseña incorrecta';
-      else if (e.code === 'auth/invalid-email') msg = 'Email inválido';
-      setAuthError(msg);
-    } finally {
-      setIsAuthPending(false);
-    }
-  };
-
-  const handleRegister = async () => {
-    if (!syncEmail || !syncPassword) {
-      setAuthError('Introduce email y contraseña');
-      return;
-    }
-
-    if (syncPassword.length < 6) {
-      setAuthError('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-    setIsAuthPending(true);
-    setAuthError(null);
-    try {
-      await createUserWithEmailAndPassword(auth, syncEmail, syncPassword);
-      setSyncEmail('');
-      setSyncPassword('');
-      if (onToggleFirebaseSync) {
-        onToggleFirebaseSync(true);
-      }
-    } catch (e: any) {
-      console.error(e);
-      let msg = 'Error al registrar';
-      if (e.code === 'auth/email-already-in-use') msg = 'El email ya está en uso';
-      else if (e.code === 'auth/invalid-email') msg = 'Email inválido';
-      else if (e.code === 'auth/weak-password') msg = 'Contraseña débil (mín. 6)';
-      setAuthError(msg);
-    } finally {
-      setIsAuthPending(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   // Format current UTC and local time
   const utcTime = new Date().toISOString().slice(11, 19) + ' UTC';
@@ -343,13 +268,13 @@ export default function ConsoleHeader({
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h1 className="font-sans font-extrabold text-lg tracking-wider text-emerald-400">APRS S.A.T.</h1>
             <span className="text-[10px] bg-slate-950 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/40 rounded font-mono font-bold tracking-widest">NUC v3.0 DEBIAN 13</span>
-            {currentUser ? (
+            {isAdmin ? (
               <span className="text-[9.5px] bg-emerald-950/80 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/40 rounded font-mono font-bold tracking-wide flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> OPERADOR AUTORIZADO
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> ADMINISTRADOR
               </span>
             ) : (
               <span className="text-[9.5px] bg-slate-950 text-slate-400 px-1.5 py-0.5 border border-slate-800 rounded font-mono font-bold tracking-wide flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-600 animate-pulse"></span> CONSOLA PRIVADA
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-600 animate-pulse"></span> SOLO LECTURA
               </span>
             )}
           </div>
@@ -895,113 +820,10 @@ export default function ConsoleHeader({
                   </>
                 )}
 
-                {/* CLOUD SYNC CONFIGURATION */}
-                <div className="border-t border-slate-900 pt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold flex items-center gap-1.5 text-amber-500 font-sans">
-                      <Cloud size={13} className="text-sky-400" />
-                      <span>Sincronización en la Nube</span>
-                    </span>
-                    {currentUser && (
-                      <span className="text-[9px] bg-emerald-500/10 text-emerald-400 font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-500/20 uppercase tracking-wider">
-                        Conectado
-                      </span>
-                    )}
-                  </div>
-
-                  {!currentUser ? (
-                    <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-900 space-y-2.5 font-sans">
-                      <p className="text-[10px] text-slate-400 leading-normal">
-                        Guarda tu Modo Noche y cálculos solares en tu cuenta S.A.T. para sincronizar múltiples estaciones en tiempo real.
-                      </p>
-                      
-                      <div className="space-y-1.5 text-xs font-mono">
-                        <div className="relative">
-                          <input
-                            type="email"
-                            placeholder="Email de Operador"
-                            value={syncEmail}
-                            onChange={(e) => setSyncEmail(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-900 rounded px-2.5 py-1 text-[10.5px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500/30 font-mono"
-                          />
-                        </div>
-                        <div className="relative">
-                          <input
-                            type="password"
-                            placeholder="Contraseña S.A.T."
-                            value={syncPassword}
-                            onChange={(e) => setSyncPassword(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-900 rounded px-2.5 py-1 text-[10.5px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500/30 font-mono"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleLogin();
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {authError && (
-                        <p className="text-[9px] text-rose-400 bg-rose-950/10 border border-rose-950/40 p-1.5 rounded font-mono leading-normal">
-                          ⚠️ {authError}
-                        </p>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-2 pt-1 font-mono">
-                        <button
-                          type="button"
-                          onClick={handleLogin}
-                          disabled={isAuthPending}
-                          className="py-1 px-2 bg-amber-500 text-slate-950 rounded text-[10px] font-black uppercase tracking-wider hover:bg-amber-400 transition-colors cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1"
-                        >
-                          {isAuthPending ? '...' : 'Entrar'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRegister}
-                          disabled={isAuthPending}
-                          className="py-1 px-2 bg-slate-950 text-slate-300 border border-slate-800 rounded text-[10px] font-black uppercase tracking-wider hover:text-slate-100 hover:border-slate-700 transition-colors cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1"
-                        >
-                          {isAuthPending ? '...' : 'Registrar'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-900 space-y-2 font-sans">
-                      <div className="flex items-center justify-between text-[11px] font-mono border-b border-slate-950 pb-2">
-                        <span className="text-slate-300 truncate max-w-[155px] font-bold" title={currentUser.email}>
-                          👤 {currentUser.email.split('@')[0]}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="text-[9.5px] text-rose-400 hover:text-rose-300 font-bold uppercase tracking-wider cursor-pointer bg-rose-950/20 border border-rose-500/10 px-1.5 py-0.5 rounded"
-                        >
-                          Cerrar
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <div>
-                          <span className="block font-bold text-slate-300 text-[11px]">Sincronización Activa</span>
-                          <span className="text-[9px] text-slate-500 block leading-tight">Cambios guardados en vivo</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onToggleFirebaseSync) {
-                              onToggleFirebaseSync(!isFirebaseSyncEnabled);
-                            }
-                          }}
-                          className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer relative ${
-                            isFirebaseSyncEnabled ? 'bg-emerald-500' : 'bg-slate-800'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
-                            isFirebaseSyncEnabled ? 'translate-x-4' : 'translate-x-0'
-                          }`} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                {/* ACCESO DE ADMINISTRADOR (token local, sin cuentas en la nube) */}
+                <div className="border-t border-slate-900 pt-3 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-amber-500 font-sans">Administración</span>
+                  <AdminAccess />
                 </div>
               </div>
             </div>

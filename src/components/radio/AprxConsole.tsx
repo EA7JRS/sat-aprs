@@ -5,9 +5,6 @@ import {
   ToggleLeft, ListFilter, Command, MapPin, Heart, AlertCircle, Sparkles, CheckCircle2,
   Trash2, Edit, Plus, X
 } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../utils/firebase';
 import { ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { AprsPacket } from './AprsAdaptor';
 
@@ -128,53 +125,11 @@ export default function AprxConsole({ weather, aprsPackets, setAprsPackets, play
   const [newServerHost, setNewServerHost] = useState('');
   const [newServerPort, setNewServerPort] = useState('14580');
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        try {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.aprsisServersList && Array.isArray(data.aprsisServersList)) {
-              setServersList(data.aprsisServersList);
-              localStorage.setItem('sat_aprsis_servers_list', JSON.stringify(data.aprsisServersList));
-            }
-          }
-        } catch (err) {
-          console.error("Error fetching custom servers from Firebase:", err);
-        }
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
   const saveServersList = async (newList: AprsIsServer[]) => {
     setServersList(newList);
     localStorage.setItem('sat_aprsis_servers_list', JSON.stringify(newList));
-    if (currentUser) {
-      try {
-        const docRef = doc(db, 'users', currentUser.uid);
-        await setDoc(docRef, {
-          aprsisServersList: newList,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        if (showToast) {
-          showToast('Servidores guardados en Firebase Firestore con éxito.');
-        }
-      } catch (err) {
-        console.error("Error saving servers list to Firestore:", err);
-        if (showToast) {
-          showToast('Servidores guardados localmente. Error al sincronizar en la nube.');
-        }
-      }
-    } else {
-      if (showToast) {
-        showToast('Servidores guardados localmente (inicia sesión para sincronizar en la nube).');
-      }
+    if (showToast) {
+      showToast('Servidores guardados en este navegador.');
     }
   };
 
@@ -1785,18 +1740,11 @@ myloc       lat 4025.00N lon 00342.00W
             <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-900 space-y-4 font-mono text-[11px] mt-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-900 pb-2">
                 <span className="text-pink-400 font-bold block uppercase text-[10px] flex items-center gap-1.5">
-                  <Globe size={13} className="text-pink-400" /> Servidores APRS-IS Persistentes (Local / Nube)
+                  <Globe size={13} className="text-pink-400" /> Servidores APRS-IS Persistentes
                 </span>
-                {currentUser ? (
-                  <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Sincronizado con Firebase Firestore
-                  </span>
-                ) : (
-                  <span className="text-[9px] text-slate-500">
-                    Sincronizado localmente (Inicia sesión para persistir en Firebase)
-                  </span>
-                )}
+                <span className="text-[9px] text-slate-500">
+                  Guardados en este navegador
+                </span>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

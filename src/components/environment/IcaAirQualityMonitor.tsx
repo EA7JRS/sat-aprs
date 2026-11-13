@@ -3,11 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { 
   Search, Globe, ShieldAlert, Radio, Wind, Sliders, ExternalLink, 
   Activity, Info, MapPin, Compass, AlertTriangle, ShieldCheck, Database, RefreshCw, X, Map,
-  Bell, BellOff, Star, Check, Settings, Save, Cloud, CloudUpload, FileText
+  Bell, BellOff, Star, Check, Settings, Save, FileText
 } from 'lucide-react';
 import { playAlertSound } from '../../utils/audio';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../../utils/firebase';
 
 interface AirQualityStation {
   id: string;
@@ -441,8 +439,8 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
 
   // Tab navigation state
   const [activeTab, setActiveTab] = useState<'monitor' | 'templates'>('monitor');
-  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
-  const [firebaseSyncStatus, setFirebaseSyncStatus] = useState<string | null>(null);
+  const [isSavingTemplates, setIsSavingTemplates] = useState<boolean>(false);
+  const [templatesSaveStatus, setTemplatesSaveStatus] = useState<string | null>(null);
 
   // Default ICA Bulletin templates containing dynamic {recomendacion} tag
   const DEFAULT_ICA_TEMPLATES = {
@@ -483,79 +481,39 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
   const [transmitStatus, setTransmitStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [transmitMessage, setTransmitMessage] = useState<string>('');
 
-  // Function to save custom templates to Firebase Firestore
-  const saveIcaTemplatesToFirebase = async (
+  // Guarda las plantillas en la configuración de la estación (servidor local)
+  const saveIcaTemplates = async (
     tempBuena?: string,
     tempRegular?: string,
     tempDesfavorable?: string,
     tempMuy?: string,
     tempExt?: string
   ) => {
-    setIsFirebaseSyncing(true);
-    const b = tempBuena !== undefined ? tempBuena : icaTemplateBuena;
-    const r = tempRegular !== undefined ? tempRegular : icaTemplateRegular;
-    const d = tempDesfavorable !== undefined ? tempDesfavorable : icaTemplateDesfavorable;
-    const m = tempMuy !== undefined ? tempMuy : icaTemplateMuyDesfavorable;
-    const e = tempExt !== undefined ? tempExt : icaTemplateExtremadamente;
-
+    setIsSavingTemplates(true);
     try {
-      const templatesData = {
-        icaTemplateBuena: b,
-        icaTemplateRegular: r,
-        icaTemplateDesfavorable: d,
-        icaTemplateMuyDesfavorable: m,
-        icaTemplateExtremadamente: e,
-        updatedAt: new Date().toISOString(),
-        updatedBy: auth.currentUser?.email || 'operator'
-      };
-
-      const systemDocRef = doc(db, 'system', 'ica_templates');
-      await setDoc(systemDocRef, templatesData, { merge: true });
-
-      if (auth.currentUser) {
-        const userDocRef = doc(db, 'users', auth.currentUser.uid);
-        await setDoc(userDocRef, {
-          icaTemplates: templatesData,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      }
-
-      setFirebaseSyncStatus('¡Plantillas guardadas en Firebase correctamente! ✓');
+      const response = await customFetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          icaTemplateBuena: tempBuena !== undefined ? tempBuena : icaTemplateBuena,
+          icaTemplateRegular: tempRegular !== undefined ? tempRegular : icaTemplateRegular,
+          icaTemplateDesfavorable: tempDesfavorable !== undefined ? tempDesfavorable : icaTemplateDesfavorable,
+          icaTemplateMuyDesfavorable: tempMuy !== undefined ? tempMuy : icaTemplateMuyDesfavorable,
+          icaTemplateExtremadamente: tempExt !== undefined ? tempExt : icaTemplateExtremadamente
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setTemplatesSaveStatus('¡Plantillas guardadas en la estación! ✓');
       playAlertSound('chime');
-      setTimeout(() => setFirebaseSyncStatus(null), 3500);
+      setTimeout(() => setTemplatesSaveStatus(null), 3500);
     } catch (err) {
-      console.error("Error guardando plantillas en Firebase:", err);
-      try {
-        handleFirestoreError(err, OperationType.WRITE, 'system/ica_templates');
-      } catch (e) {
-        setFirebaseSyncStatus('Error guardando en Firebase');
-        setTimeout(() => setFirebaseSyncStatus(null), 4000);
-      }
+      console.error("Error guardando plantillas:", err);
+      setTemplatesSaveStatus('Error al guardar (¿sesión de administrador?)');
+      setTimeout(() => setTemplatesSaveStatus(null), 4000);
     } finally {
-      setIsFirebaseSyncing(false);
+      setIsSavingTemplates(false);
     }
   };
-
-  // Load templates from Firebase on component initialization
-  useEffect(() => {
-    const loadFirebaseTemplates = async () => {
-      try {
-        const systemDocRef = doc(db, 'system', 'ica_templates');
-        const snap = await getDoc(systemDocRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.icaTemplateBuena) setIcaTemplateBuena(data.icaTemplateBuena);
-          if (data.icaTemplateRegular) setIcaTemplateRegular(data.icaTemplateRegular);
-          if (data.icaTemplateDesfavorable) setIcaTemplateDesfavorable(data.icaTemplateDesfavorable);
-          if (data.icaTemplateMuyDesfavorable) setIcaTemplateMuyDesfavorable(data.icaTemplateMuyDesfavorable);
-          if (data.icaTemplateExtremadamente) setIcaTemplateExtremadamente(data.icaTemplateExtremadamente);
-        }
-      } catch (err) {
-        console.warn("No se pudieron cargar plantillas desde Firebase:", err);
-      }
-    };
-    loadFirebaseTemplates();
-  }, []);
 
   // Keep state in sync with config changes
   useEffect(() => {
@@ -656,7 +614,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
       DEFAULT_ICA_TEMPLATES.muyDesfavorable,
       DEFAULT_ICA_TEMPLATES.extremadamente
     );
-    saveIcaTemplatesToFirebase(
+    saveIcaTemplates(
       DEFAULT_ICA_TEMPLATES.buena,
       DEFAULT_ICA_TEMPLATES.regular,
       DEFAULT_ICA_TEMPLATES.desfavorable,
@@ -1775,17 +1733,17 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
         >
           <Sliders size={12} />
           <span>Configuración de Plantillas</span>
-          {isFirebaseSyncing ? (
+          {isSavingTemplates ? (
             <RefreshCw size={10} className="animate-spin text-amber-400 ml-1" />
           ) : (
-            <Cloud size={10} className="text-amber-400/80 ml-1" />
+            <Save size={10} className="text-amber-400/80 ml-1" />
           )}
         </button>
       </div>
 
       {activeTab === 'templates' ? (
         <div className="flex flex-col gap-3 font-mono text-xs animate-fade-in">
-          {/* Encabezado y Estado de Firebase */}
+          {/* Encabezado y estado de guardado */}
           <div className="bg-slate-900/60 border border-amber-900/40 rounded-xl p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 text-amber-400">
@@ -1801,24 +1759,24 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
               </div>
 
               <div className="flex items-center gap-2">
-                {firebaseSyncStatus && (
+                {templatesSaveStatus && (
                   <span className="text-[8px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded font-bold">
-                    {firebaseSyncStatus}
+                    {templatesSaveStatus}
                   </span>
                 )}
                 <button
                   type="button"
-                  onClick={() => saveIcaTemplatesToFirebase()}
-                  disabled={isFirebaseSyncing}
+                  onClick={() => saveIcaTemplates()}
+                  disabled={isSavingTemplates}
                   className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-[8.5px] uppercase rounded-lg transition-all flex items-center gap-1 cursor-pointer border border-amber-400/30 shadow-md active:scale-95"
-                  title="Guardar plantillas de forma persistente en Firebase Firestore"
+                  title="Guardar las plantillas en la configuración de la estación"
                 >
-                  {isFirebaseSyncing ? (
+                  {isSavingTemplates ? (
                     <RefreshCw size={11} className="animate-spin" />
                   ) : (
-                    <CloudUpload size={11} />
+                    <Save size={11} />
                   )}
-                  <span>Guardar en Firebase</span>
+                  <span>Guardar</span>
                 </button>
 
                 <button
@@ -1892,7 +1850,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                       aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
                       icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
                     );
-                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                    saveIcaTemplates(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
                   }}
                   className="w-full bg-slate-900 border border-emerald-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-emerald-500 shadow-inner"
                 />
@@ -1943,7 +1901,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                       aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
                       icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
                     );
-                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                    saveIcaTemplates(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
                   }}
                   className="w-full bg-slate-900 border border-amber-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-amber-500 shadow-inner"
                 />
@@ -1994,7 +1952,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                       aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
                       icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
                     );
-                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                    saveIcaTemplates(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
                   }}
                   className="w-full bg-slate-900 border border-orange-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-orange-500 shadow-inner"
                 />
@@ -2045,7 +2003,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                       aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
                       icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
                     );
-                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                    saveIcaTemplates(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
                   }}
                   className="w-full bg-slate-900 border border-rose-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-rose-500 shadow-inner"
                 />
@@ -2096,7 +2054,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
                       aprsIcaEnabled, aprsIcaInterval, enableAprsIcaFilterRegular,
                       icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente
                     );
-                    saveIcaTemplatesToFirebase(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
+                    saveIcaTemplates(icaTemplateBuena, icaTemplateRegular, icaTemplateDesfavorable, icaTemplateMuyDesfavorable, icaTemplateExtremadamente);
                   }}
                   className="w-full bg-slate-900 border border-purple-900/60 rounded-lg px-2.5 py-2 text-[9px] text-slate-100 font-mono focus:outline-none focus:border-purple-500 shadow-inner"
                 />

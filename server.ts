@@ -17,7 +17,7 @@ import {
   toIsPacket,
   toRfFrame
 } from './server/aprs';
-import { AuthInfo, createAuthenticator, parseList } from './server/auth';
+import { AuthInfo, createAuthenticator } from './server/auth';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -61,23 +61,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 const TX_ENABLED = ['on', '1', 'true', 'yes'].includes((process.env.SAT_APRS_TX || '').trim().toLowerCase());
 
 // ---------------------------------------------------------------------------
-// AUTENTICACIÓN: la identidad se verifica en el servidor (ver server/auth.ts)
+// AUTENTICACIÓN local, sin cuentas ni nube (ver server/auth.ts)
 // ---------------------------------------------------------------------------
-function readFirebaseProjectId(): string | undefined {
-  if (process.env.FIREBASE_PROJECT_ID) return process.env.FIREBASE_PROJECT_ID.trim();
-  try {
-    const raw = fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf8');
-    return JSON.parse(raw).projectId;
-  } catch {
-    return undefined;
-  }
-}
-
 const TRUST_LOCALHOST = ['on', '1', 'true', 'yes'].includes((process.env.SAT_TRUST_LOCALHOST || '').trim().toLowerCase());
 
 const authenticator = createAuthenticator({
-  projectId: readFirebaseProjectId(),
-  adminEmails: parseList(process.env.SAT_ADMIN_EMAILS),
   adminToken: process.env.SAT_ADMIN_TOKEN,
   trustLocalhost: TRUST_LOCALHOST
 });
@@ -86,22 +74,29 @@ type AuthedRequest = express.Request & { auth?: AuthInfo | null };
 
 app.use(express.json({ limit: '1mb' }));
 
-app.use('/api', async (req: AuthedRequest, res, next) => {
-  try {
-    req.auth = await authenticator.authenticate(req);
-  } catch {
-    req.auth = null;
-  }
+app.use('/api', (req: AuthedRequest, res, next) => {
+  req.auth = authenticator.authenticate(req);
   // Con la emisión activada la consola gobierna una estación real: solo un
   // administrador verificado puede cambiar su estado o provocar transmisiones.
   const isReadOnly = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
   if (TX_ENABLED && !isReadOnly && !isAuthorizedRequest(req)) {
     return res.status(403).json({
       success: false,
-      error: 'Operación reservada al administrador de la estación. Inicie sesión con una cuenta autorizada.'
+      error: 'Operación reservada al administrador de la estación. Introduzca el token de administrador.'
     });
   }
   next();
+});
+
+// Estado de la sesión para la interfaz (¿soy administrador?, ¿hay emisión real?)
+app.get('/api/auth/status', (req: AuthedRequest, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    admin: req.auth?.admin === true,
+    via: req.auth?.via || null,
+    adminConfigured: authenticator.adminConfigured,
+    txEnabled: TX_ENABLED
+  });
 });
 
 // Parse initial callsign and passcode from config.ini or aprs_sat.py for single-source-of-truth.
@@ -8769,8 +8764,13 @@ async function initServer() {
     console.log(TX_ENABLED
       ? `[APRS TX] Emisión ACTIVADA para ${config.callsign}${isValidCallsign(config.callsign) ? '' : ' (indicativo no válido: no se transmitirá hasta configurarlo)'}.`
       : '[APRS TX] Emisión DESACTIVADA: la consola no transmite. Active SAT_APRS_TX=on en .env para emitir.');
-    if (TX_ENABLED && parseList(process.env.SAT_ADMIN_EMAILS).length === 0 && !(process.env.SAT_ADMIN_TOKEN || '').trim() && !TRUST_LOCALHOST) {
-      console.warn('[AUTH] No hay ningún administrador configurado (SAT_ADMIN_EMAILS / SAT_ADMIN_TOKEN): nadie podrá modificar la estación.');
+    if (authenticator.tokenTooShort) {
+      console.warn('[AUTH] SAT_ADMIN_TOKEN es demasiado corto (mínimo 16 caracteres) y se ignora. Genere uno con: openssl rand -hex 32');
+    }
+    if (!authenticator.adminConfigured) {
+      console.warn(TX_ENABLED
+        ? '[AUTH] No hay administrador configurado (SAT_ADMIN_TOKEN o SAT_TRUST_LOCALHOST): nadie podrá modificar la estación.'
+        : '[AUTH] No hay administrador configurado (SAT_ADMIN_TOKEN): la consola funciona en modo demostración y no guarda cambios en disco.');
     }
     
     // Execute configuration verification on startup (tras reinicio del NUC)

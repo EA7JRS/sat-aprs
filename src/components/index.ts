@@ -44,7 +44,5 @@ export { default as Configurator } from './system/Configurator';
 export { default as ScriptExporter } from './system/ScriptExporter';
 export { default as HelpOverlay } from './system/HelpOverlay';
 export { default as DgtTrafficDatabase } from './system/DgtTrafficDatabase';
-export { default as PrivateLoginGate } from './system/PrivateLoginGate';
-export { default as TwoFactorConfigurator } from './system/TwoFactorConfigurator';
-export { default as TwoFactorVerificationGate } from './system/TwoFactorVerificationGate';
 export { default as UserProfileManager } from './system/UserProfileManager';
+export { default as AdminAccess } from './system/AdminAccess';

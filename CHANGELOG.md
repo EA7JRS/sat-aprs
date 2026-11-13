@@ -2,6 +2,15 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.6.0] - 2026-11-13
+### Eliminado: Firebase
+- **La consola ya no depende de Firebase** (Authentication ni Firestore) ni de ningún otro servicio en la nube. Eliminados el SDK (`firebase`), `firebase-applet-config.json`, `firebase-blueprint.json`, `firestore.rules` y `src/utils/firebase.ts`.
+- **Administración con token local**: el administrador se identifica con `SAT_ADMIN_TOKEN` (mínimo 16 caracteres) desde el nuevo botón «Acceder» de la consola (`AdminAccess`), o con `SAT_TRUST_LOCALHOST`. Funciona sin Internet. Desaparece `SAT_ADMIN_EMAILS`. Nuevo `GET /api/auth/status`.
+- **Datos del operador en el navegador**: perfil, estaciones y presets (`src/utils/localStore.ts`), lista de servidores APRS-IS, ajustes SOS y de sonido. Las plantillas de boletín ICA se guardan en la configuración de la estación (`/api/config`).
+- Eliminados el registro e inicio de sesión de operadores, los roles (REMER/EMCOM), la sincronización «en la nube», el aviso de versión publicado desde Firestore y el 2FA/acceso por QR (`PrivateLoginGate`, `TwoFactorConfigurator`, `TwoFactorVerificationGate`, `totp.ts`; dependencias `otpauth` y `jsqr`).
+
+---
+
 ## [v1.5.0] - 2026-11-13
 ### Seguridad de emisión (nada simulado sale al aire)
 - **Política de emisión única** (`server/aprs.ts`, `decideTransmission`): toda trama TX de la consola pasa por un único control. La consola no transmite salvo `SAT_APRS_TX=on`; nunca emite datos simulados o de prueba; exige un indicativo válido (no de plantilla), que el origen de la trama sea el de la estación y, en APRS-IS, el passcode correcto. Las tramas no emitidas quedan registradas como `[NO EMITIDO: motivo]`.
@@ -10,7 +19,7 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 - Nuevos modos `--dry-run`, `--simulate` y `--once` para probar sin transmitir.
 
 ### Seguridad de la consola
-- **Autenticación verificada en el servidor** (`server/auth.ts`): se comprueba la firma del token de identidad de Firebase; ya no se confía en las cabeceras `X-User-UID` / `X-User-Email`, que cualquiera podía enviar. Administradores por `SAT_ADMIN_EMAILS` (correo verificado), token local `SAT_ADMIN_TOKEN` (funciona sin Internet) o `SAT_TRUST_LOCALHOST`.
+- **Autenticación verificada en el servidor** (`server/auth.ts`): ya no se confía en las cabeceras `X-User-UID` / `X-User-Email`, que cualquiera podía enviar (el mecanismo definitivo, sin Firebase, es el de la v1.6.0).
 - Con la emisión activada, toda operación que modifica la estación exige un administrador.
 - **Corregida una inyección de órdenes** en `/api/system/clear-service-logs` (el nombre del servicio se interpolaba en una línea de `sudo`). Todas las órdenes del sistema usan ahora argumentos fijos, sin intérprete de órdenes.
 - **Eliminada la contraseña del creador** embebida en `PrivateLoginGate.tsx` y el botón de «Master Bypass».
@@ -29,13 +38,12 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 - Sismos del agente: magnitud mínima y antigüedad máxima configurables, nombres de objeto únicos, historial persistente (`sat_state.json`) para no repetir anuncios al reiniciar, y un evento defectuoso ya no detiene el resto del ciclo.
 - Avisos meteorológicos: soporte del feed Atom de MeteoAlarm, filtro por zonas de la estación (`meteoAreaFilter`), descarte de avisos caducados e identificadores estables.
 - `config.ini`: el servidor ignoraba todas las secciones salvo `[APRS]` (comparaba nombres en mayúsculas con claves en minúsculas); la posición de respaldo configurada ahora se aplica al arrancar.
-- `firebase.ts` usa `firebase-applet-config.json` (la copia manual tenía erratas en `apiKey` y `appId` y no indicaba la base de datos).
 - GPS: los contadores de satélites se actualizan; `last_gps.json` se escribe como mucho una vez por minuto (antes, cada segundo).
 - `npm run start` arranca en modo producción; Vite solo se carga en desarrollo; un único temporizador de baliza de incendios.
 
 ### Repositorio
 - `config.ini` y `sat_config.json` dejan de versionarse (plantilla en `config.ini.example`); eliminados los `__pycache__`.
-- Pruebas automáticas: `npm test` (24) y `npm run test:py` (34).
+- Pruebas automáticas: `npm test` y `npm run test:py`.
 - README: guía de instalación corregida (unidades systemd, variables de entorno, actualización) y sección de seguridad de emisión.
 
 ---

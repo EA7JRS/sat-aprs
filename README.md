@@ -145,7 +145,7 @@ npm ci
 
 # 1.4- Variables de entorno
 cp .env.example .env
-nano .env        # SAT_ADMIN_EMAILS, SAT_ADMIN_TOKEN, SAT_APRS_TX...
+nano .env        # SAT_ADMIN_TOKEN, SAT_APRS_TX...
 
 # 1.5- Compilar y arrancar
 npm run build
@@ -157,12 +157,11 @@ Variables principales de `.env` (todas documentadas en `.env.example`):
 | Variable | Para qué sirve |
 | :--- | :--- |
 | `SAT_APRS_TX` | `on` permite que la consola transmita. Por defecto `off`. |
-| `SAT_ADMIN_EMAILS` | Correos de las cuentas (verificadas) que administran la estación. |
-| `SAT_ADMIN_TOKEN` | Token local de administrador, para operar sin Internet. |
-| `SAT_TRUST_LOCALHOST` | `on` trata como administrador al navegador del propio equipo. |
+| `SAT_ADMIN_TOKEN` | Token local de administrador (mín. 16 caracteres; `openssl rand -hex 32`). |
+| `SAT_TRUST_LOCALHOST` | `on` trata como administrador al navegador del propio equipo, sin token. |
 | `HOST` / `PORT` | Interfaz y puerto de escucha (`HOST=127.0.0.1` tras un proxy con TLS). |
 
-> La identidad del operador se verifica en el servidor (token de Firebase firmado o token local). Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
+> **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. Las preferencias del operador (perfil, estaciones, presets, sonidos) se guardan en el navegador. Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
 
 ---
 

@@ -39,17 +39,13 @@ import {
   PatAx25Console,
   HelpOverlay,
   PropagacionMonitor,
-  PrivateLoginGate,
-  TwoFactorVerificationGate,
   UserProfileManager
 } from './components';
 
 import AprsScheduler from './components/radio/AprsScheduler';
 import { DEFAULT_SOS_SETTINGS } from './components/emergency/SOSConfiguration';
 
-import { onAuthStateChanged, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from './utils/firebase';
+import { useAdminSession } from './utils/session';
 import { getSunriseSunset, isNightTime } from './utils/suncalc';
 import { HeartPulse, Mail, Lock, Shield, Key, AlertCircle, Terminal, UserPlus } from 'lucide-react';
 import { HelpCircle } from 'lucide-react';
@@ -470,9 +466,6 @@ export default function App() {
     });
   }, [data?.logs, lastSeenLogId, isAprsPopupEnabled, aprsPopupFilter]);
 
-  // Firebase Database Sync Status indicator state
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'disabled' | 'offline'>('synced');
-
   // Sync state modifications across multiple tabs or browser windows
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -538,7 +531,8 @@ export default function App() {
   const [showUpdatePrompt, setShowUpdatePrompt] = useState<boolean>(false);
   const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Sesión de administrador local (token de la estación)
+  const adminSession = useAdminSession();
   
   // --- SINCRONIZADOR DE CONFIGURACIONES Y MONITOREO DE REINICIOS S.A.T. ---
   const [configVerification, setConfigVerification] = useState<any>(null);
@@ -661,101 +655,6 @@ export default function App() {
     
     return () => clearInterval(checkInterval);
   }, []);
-  const [loadingUser, setLoadingUser] = useState<boolean>(true);
-  const [userProfile, setUserProfile] = useState<any | null>(null);
-  const [is2faVerified, setIs2faVerified] = useState<boolean>(false);
-  const [isFirebaseSyncEnabled, setIsFirebaseSyncEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('firebase_sync_enabled') !== 'false'; // Sync active by default if logged in
-  });
-
-  const handleToggleFirebaseSync = (v: boolean) => {
-    setIsFirebaseSyncEnabled(v);
-    localStorage.setItem('firebase_sync_enabled', String(v));
-  };
-
-  // Always listen to the user profile when logged in to check roles and 2FA status
-  useEffect(() => {
-    if (!currentUser) {
-      setUserProfile(null);
-      setIs2faVerified(false);
-      return;
-    }
-    const docRef = doc(db, 'users', currentUser.uid);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setUserProfile(docSnap.data());
-      } else {
-        setUserProfile({});
-      }
-    }, (error) => {
-      console.error("Error listening to user profile in App.tsx:", error);
-    });
-    return unsubscribe;
-  }, [currentUser]);
-
-  // Listen to Auth state and network connectivity
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setLoadingUser(false);
-      if (!user) {
-        setSyncStatus('disabled');
-        setUserProfile(null);
-        setIs2faVerified(false);
-      } else if (isFirebaseSyncEnabled) {
-        setSyncStatus('synced');
-      } else {
-        setSyncStatus('disabled');
-      }
-    });
-
-    const handleOnline = () => {
-      if (currentUser && isFirebaseSyncEnabled) {
-        setSyncStatus('synced');
-      }
-    };
-    const handleOffline = () => {
-      setSyncStatus('offline');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    if (!navigator.onLine) {
-      setSyncStatus('offline');
-    }
-
-    return () => {
-      unsubscribe();
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [isFirebaseSyncEnabled, currentUser]);
-
-  // Listen to global system config for unified version tracking
-  useEffect(() => {
-    if (!currentUser || !isFirebaseSyncEnabled) return;
-
-    const sysRef = doc(db, 'system', 'config');
-    const unsubscribe = onSnapshot(sysRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const serverVersion = data.currentVersion;
-        if (serverVersion && serverVersion !== APP_VERSION) {
-          setLatestVersion(serverVersion);
-          setChangelog(data.changelog || 'Actualizaciones operativas del sistema.');
-          setForceUpdate(data.forceUpdate !== undefined ? !!data.forceUpdate : true);
-          setShowUpdatePrompt(true);
-        } else {
-          setShowUpdatePrompt(false);
-        }
-      }
-    }, (error) => {
-      console.warn("No se pudo conectar al canal de versiones S.A.T.:", error);
-    });
-
-    return unsubscribe;
-  }, [currentUser, isFirebaseSyncEnabled]);
-
   // Automatic countdown timer for forced reloads
   useEffect(() => {
     if (!showUpdatePrompt || !forceUpdate) {
@@ -776,97 +675,6 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [showUpdatePrompt, forceUpdate]);
-
-  // Listen to Firestore settings changes
-  useEffect(() => {
-    if (!currentUser || !isFirebaseSyncEnabled) {
-      setSyncStatus('disabled');
-      return;
-    }
-
-    setSyncStatus('syncing');
-    const docRef = doc(db, 'users', currentUser.uid);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      setSyncStatus('synced');
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        
-        // Only update if different to avoid infinite trigger loops
-        if (data.nightMode !== undefined && data.nightMode !== nightMode) {
-          setNightMode(data.nightMode);
-          localStorage.setItem('nightMode', String(data.nightMode));
-        }
-        if (data.isEcoMode !== undefined && data.isEcoMode !== isEcoMode) {
-          setIsEcoMode(data.isEcoMode);
-          localStorage.setItem('eco_mode', String(data.isEcoMode));
-          window.dispatchEvent(new Event('eco_mode_changed'));
-        }
-        if (data.nightModeAuto !== undefined && data.nightModeAuto !== nightModeAuto) {
-          setNightModeAuto(data.nightModeAuto);
-          localStorage.setItem('nightModeAuto', String(data.nightModeAuto));
-        }
-        if (data.nightModeUseSolar !== undefined && data.nightModeUseSolar !== nightModeUseSolar) {
-          setNightModeUseSolar(data.nightModeUseSolar);
-          localStorage.setItem('nightModeUseSolar', String(data.nightModeUseSolar));
-        }
-        if (data.startHour !== undefined && data.startHour !== startHour) {
-          setStartHour(data.startHour);
-          localStorage.setItem('nightModeStartHour', String(data.startHour));
-        }
-        if (data.endHour !== undefined && data.endHour !== endHour) {
-          setEndHour(data.endHour);
-          localStorage.setItem('nightModeEndHour', String(data.endHour));
-        }
-      }
-    }, (error) => {
-      console.error("Error listening to user settings in Firestore:", error);
-      setSyncStatus('error');
-    });
-
-    return unsubscribe;
-  }, [currentUser, isFirebaseSyncEnabled]);
-
-  // Push local changes to Firestore
-  useEffect(() => {
-    if (!currentUser || !isFirebaseSyncEnabled) return;
-
-    const saveSettings = async () => {
-      try {
-        setSyncStatus('syncing');
-        const docRef = doc(db, 'users', currentUser.uid);
-        // Only save if it's actually different from what's in the DB to avoid unnecessary writes
-        const docSnap = await getDoc(docRef);
-        const currentData = docSnap.exists() ? docSnap.data() : {};
-        
-        if (
-          currentData.nightMode !== nightMode ||
-          currentData.isEcoMode !== isEcoMode ||
-          currentData.nightModeAuto !== nightModeAuto ||
-          currentData.nightModeUseSolar !== nightModeUseSolar ||
-          currentData.startHour !== startHour ||
-          currentData.endHour !== endHour
-        ) {
-          await setDoc(docRef, {
-            nightMode,
-            isEcoMode,
-            nightModeAuto,
-            nightModeUseSolar,
-            startHour,
-            endHour,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        }
-        setSyncStatus('synced');
-      } catch (error) {
-        console.error("Error saving user settings to Firestore:", error);
-        setSyncStatus('error');
-      }
-    };
-
-    // Debounce database write slightly
-    const timer = setTimeout(saveSettings, 1000);
-    return () => clearTimeout(timer);
-  }, [currentUser, isFirebaseSyncEnabled, nightMode, isEcoMode, nightModeAuto, nightModeUseSolar, startHour, endHour]);
 
   // Keep checking local time for automatic night mode triggers
   useEffect(() => {
@@ -1629,18 +1437,7 @@ export default function App() {
           }
         `}} />
       )}
-      {loadingUser ? (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100 font-sans">
-          <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-            <Radio className="text-emerald-500 animate-pulse" size={48} />
-            <h1 className="font-sans font-extrabold text-lg tracking-widest text-emerald-400 uppercase">S.A.T. CONSOLE</h1>
-            <p className="text-xs text-slate-500 font-mono tracking-widest uppercase">Estableciendo canal seguro...</p>
-            <div className="w-20 h-1 bg-slate-900 rounded-full overflow-hidden relative">
-              <div className="absolute inset-0 bg-emerald-500 animate-bounce duration-1000"></div>
-            </div>
-          </div>
-        </div>
-      ) : (
+      {(
         <>
           {/* HEADER COMPONENT */}
           <ConsoleHeader 
@@ -1665,9 +1462,7 @@ export default function App() {
         onChangeHours={handleChangeHours}
         rtt={rtt !== null ? rtt : undefined}
         noaaAlerts={data.noaaAlerts}
-        currentUser={currentUser}
-        isFirebaseSyncEnabled={isFirebaseSyncEnabled}
-        onToggleFirebaseSync={handleToggleFirebaseSync}
+        isAdmin={adminSession.isAdmin}
         propagation={data.propagation}
         onUpdateConfig={handleSaveConfig}
       />
@@ -2849,9 +2644,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            {currentUser && (
-              <UserProfileManager currentUser={currentUser} userProfile={userProfile} />
-            )}
+            <UserProfileManager />
 
             {/* Low-Level ntpsec / gpsd Channels */}
             <TelemetryStatus 
@@ -2871,13 +2664,10 @@ export default function App() {
           >
             {/* Config & Stations Parameters */}
             <div className="lg:col-span-5 flex flex-col gap-4">
-              <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} currentUser={currentUser} />
+              <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} />
               
               {/* Perfiles de Estación (Presets) */}
-              {currentUser ? (
-                <UserProfileManager 
-                  currentUser={currentUser} 
-                  userProfile={userProfile} 
+              <UserProfileManager 
                   defaultSubTab="presets"
                   onApplyPreset={async (callsign, statusComment) => {
                     const updated = {
@@ -2893,17 +2683,6 @@ export default function App() {
                     }
                   }}
                 />
-              ) : (
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs">
-                  <div className="text-emerald-500 font-bold uppercase mb-2 flex items-center gap-1.5">
-                    <Sliders size={14} />
-                    Perfiles de Estación (Presets)
-                  </div>
-                  <p className="text-slate-400 font-sans text-[11px] leading-relaxed">
-                    Para configurar, guardar y aplicar perfiles de estación (presets) persistidos en Firestore, por favor inicie sesión o cree un perfil de operador en el panel de control.
-                  </p>
-                </div>
-              )}
               
               {/* Architecture block chart */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs">
@@ -2961,9 +2740,9 @@ export default function App() {
 
             {/* Script codes and local OS integrations details */}
             <div className="lg:col-span-7 flex flex-col gap-4">
-              <SyncScheduler config={data.config} onSaveConfig={handleSaveConfig} currentUser={currentUser} />
+              <SyncScheduler config={data.config} onSaveConfig={handleSaveConfig} />
               <AprsScheduler onScheduleTriggered={() => fetchTelemetry(true)} />
-              <AlarmThresholds config={data.config} onSaveConfig={handleSaveConfig} currentUser={currentUser} />
+              <AlarmThresholds config={data.config} onSaveConfig={handleSaveConfig} />
               <ScriptExporter onInjectRaw={handleInjectRaw} />
             </div>
           </motion.div>
@@ -3558,42 +3337,6 @@ export default function App() {
         </span>
         <NtpSyncStatus ntp={data?.ntp} />
         
-        {/* FIREBASE SYNC STATUS */}
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-900/40 border border-slate-900 rounded-lg select-none">
-          <Database size={11} className={syncStatus === 'syncing' ? 'text-amber-400 animate-spin' : syncStatus === 'error' ? 'text-rose-500' : 'text-emerald-400'} />
-          <span className="text-slate-500 mr-1 uppercase text-[9px] font-bold">Nube:</span>
-          {syncStatus === 'synced' && (
-            <span className="flex items-center gap-1 text-emerald-400 font-bold uppercase text-[9px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Sincronizado
-            </span>
-          )}
-          {syncStatus === 'syncing' && (
-            <span className="flex items-center gap-1 text-amber-400 font-bold uppercase text-[9px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-              Sincronizando...
-            </span>
-          )}
-          {syncStatus === 'error' && (
-            <span className="flex items-center gap-1 text-rose-400 font-bold uppercase text-[9px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-              Error
-            </span>
-          )}
-          {syncStatus === 'disabled' && (
-            <span className="flex items-center gap-1 text-slate-500 font-bold uppercase text-[9px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-600"></span>
-              Inactivo
-            </span>
-          )}
-          {syncStatus === 'offline' && (
-            <span className="flex items-center gap-1 text-indigo-400 font-bold uppercase text-[9px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-              Sin Red (Offline)
-            </span>
-          )}
-        </div>
-
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
           S.A.T.-APRS Dashboard • v2.4.0 (Centralizado)

@@ -4,9 +4,6 @@ import { EarthquakeEvent, NoaaSpaceAlert, TsunamiAlert } from '../../types';
 import { AprsPacket } from '../radio/AprsAdaptor';
 import SOSConfiguration, { DEFAULT_SOS_SETTINGS, SOSSettingsMap } from './SOSConfiguration';
 import { motion, AnimatePresence } from 'motion/react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../../utils/firebase';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 
 interface AlertProps {
@@ -151,7 +148,6 @@ export default function AlertMonitor({
   const [minMagnitudeNoise, setMinMagnitudeNoise] = useState<number>(3.0);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tsunamiMinSeverity, setTsunamiMinSeverity] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('alert_monitor_tsunami_min_severity');
@@ -251,43 +247,9 @@ export default function AlertMonitor({
     } catch (_) {}
   };
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const docRef = doc(db, 'users', currentUser.uid);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.tsunamiMinSeverity !== undefined && data.tsunamiMinSeverity !== tsunamiMinSeverity) {
-          setTsunamiMinSeverity(data.tsunamiMinSeverity);
-          localStorage.setItem('alert_monitor_tsunami_min_severity', data.tsunamiMinSeverity);
-        }
-        if (data.soundSettings !== undefined) {
-          setSoundSettings(data.soundSettings);
-          localStorage.setItem('alert_monitor_sound_settings', JSON.stringify(data.soundSettings));
-        }
-      }
-    });
-    return unsubscribe;
-  }, [currentUser]);
-
   const handleSaveTsunamiMinSeverity = async (val: string) => {
     setTsunamiMinSeverity(val);
     localStorage.setItem('alert_monitor_tsunami_min_severity', val);
-    if (currentUser) {
-      try {
-        const docRef = doc(db, 'users', currentUser.uid);
-        await setDoc(docRef, { tsunamiMinSeverity: val }, { merge: true });
-      } catch (err) {
-        console.error("Error saving tsunami threshold to Firestore:", err);
-      }
-    }
   };
 
   const handleSaveSoundSetting = async (severity: string, soundType: string) => {
@@ -297,14 +259,6 @@ export default function AlertMonitor({
     };
     setSoundSettings(updated);
     localStorage.setItem('alert_monitor_sound_settings', JSON.stringify(updated));
-    if (currentUser) {
-      try {
-        const docRef = doc(db, 'users', currentUser.uid);
-        await setDoc(docRef, { soundSettings: updated }, { merge: true });
-      } catch (err) {
-        console.error("Error saving sound settings to Firestore:", err);
-      }
-    }
     triggerSound(severity, soundType);
   };
 
@@ -875,12 +829,6 @@ export default function AlertMonitor({
               </p>
             </div>
           </div>
-          {currentUser && (
-            <div className="flex items-center gap-1.5 text-[10px] bg-blue-950/40 border border-blue-500/20 text-blue-400 font-mono px-2 py-0.5 rounded">
-              <Database size={10} />
-              <span>Sincronizado con la nube</span>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1254,16 +1202,7 @@ export default function AlertMonitor({
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-300 block">Configuración de Alertas de Tsunami</span>
               <div className="flex items-center gap-1.5 text-[9px] text-slate-500 font-mono">
-                {currentUser ? (
-                  <span className="text-emerald-400 flex items-center gap-1 font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Sincronizado con Firebase
-                  </span>
-                ) : (
-                  <span className="text-slate-500">
-                    Almacenamiento Local (Sin sesión)
-                  </span>
-                )}
+                <span className="text-slate-500">Guardado en este navegador</span>
               </div>
             </div>
 

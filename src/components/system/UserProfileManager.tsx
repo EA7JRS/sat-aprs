@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, addDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../utils/firebase';
+import { db, doc, updateDoc, collection, onSnapshot, addDoc, deleteDoc } from '../../utils/localStore';
 import { 
   User as UserIcon, 
   Settings, 
@@ -19,18 +18,17 @@ import {
   Sparkles,
   RefreshCw,
   AlertTriangle,
-  Lock,
   Sliders,
   Play,
   Cloud
 } from 'lucide-react';
-import TwoFactorConfigurator from './TwoFactorConfigurator';
+
+// Los datos del operador se guardan en este navegador (sin cuentas ni nube)
+const LOCAL_OPERATOR = { uid: 'local' } as const;
 
 interface UserProfileManagerProps {
-  currentUser: any;
-  userProfile: any;
   onRefreshProfile?: () => void;
-  defaultSubTab?: 'profile' | 'alerts' | 'stations' | 'security' | 'presets';
+  defaultSubTab?: 'profile' | 'alerts' | 'stations' | 'presets';
   onApplyPreset?: (callsign: string, aprsStatusComment: string) => void;
 }
 
@@ -59,13 +57,20 @@ interface Station {
 }
 
 export default function UserProfileManager({ 
-  currentUser, 
-  userProfile, 
   onRefreshProfile,
   defaultSubTab = 'profile',
   onApplyPreset
 }: UserProfileManagerProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'alerts' | 'stations' | 'security' | 'presets'>(defaultSubTab);
+  const currentUser = LOCAL_OPERATOR;
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'alerts' | 'stations' | 'presets'>(defaultSubTab);
+
+  // Perfil del operador guardado en este navegador
+  useEffect(() => {
+    return onSnapshot(doc(db, 'users', LOCAL_OPERATOR.uid), (snap) => {
+      setUserProfile(snap.exists() ? snap.data() : {});
+    });
+  }, []);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -213,7 +218,7 @@ export default function UserProfileManager({
         updatedAt: new Date().toISOString()
       });
 
-      setSuccessMsg('¡Datos de perfil guardados correctamente en la base de datos!');
+      setSuccessMsg('¡Datos de perfil guardados!');
       if (onRefreshProfile) onRefreshProfile();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
@@ -459,7 +464,7 @@ export default function UserProfileManager({
           ...presetData,
           createdAt: new Date().toISOString()
         });
-        setSuccessMsg('¡Nuevo preset de estación guardado en Firestore!');
+        setSuccessMsg('¡Nuevo preset de estación guardado!');
       }
 
       // Reset form
@@ -534,7 +539,7 @@ export default function UserProfileManager({
       for (const pr of defaultPresetsList) {
         await addDoc(presetsColRef, pr);
       }
-      setSuccessMsg('¡Presets por defecto cargados correctamente en su perfil de Firestore!');
+      setSuccessMsg('¡Presets por defecto cargados!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
       console.error("Error loading default presets:", err);
@@ -557,21 +562,9 @@ export default function UserProfileManager({
               GESTIÓN DE PERFIL Y ESTACIONES DE OPERADOR
             </h3>
             <p className="text-[10px] text-slate-400 font-mono tracking-wide mt-0.5">
-              ID OPERADOR: <span className="text-slate-200 font-bold">{currentUser?.uid}</span> • SESIÓN: <span className="text-emerald-400 font-black">ACTIVA</span>
+              DATOS GUARDADOS EN ESTE NAVEGADOR
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2 font-mono text-[10px]">
-          <span className="text-slate-500 uppercase">Estado Perfil:</span>
-          {userProfile?.isApproved ? (
-            <span className="bg-emerald-950/50 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-black uppercase">
-              ✔ VERIFICADO REMER
-            </span>
-          ) : (
-            <span className="bg-amber-950/50 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded font-black uppercase">
-              ⚠ PENDIENTE APROBACIÓN
-            </span>
-          )}
         </div>
       </div>
 
@@ -625,18 +618,6 @@ export default function UserProfileManager({
           <Sliders size={13} />
           Mis Presets ({presets.length})
         </button>
-        <button
-          type="button"
-          onClick={() => { setActiveSubTab('security'); setErrorMsg(null); }}
-          className={`flex-1 py-2 px-3 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeSubTab === 'security'
-              ? 'bg-slate-800 text-slate-100 border border-slate-700/60'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-          }`}
-        >
-          <Lock size={13} />
-          Seguridad 2FA
-        </button>
       </div>
 
       {/* NOTIFICATIONS */}
@@ -660,16 +641,6 @@ export default function UserProfileManager({
         {activeSubTab === 'profile' && (
           <form onSubmit={handleSaveProfile} className="space-y-4 font-mono text-xs">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Email de Registro (No editable)</label>
-                <input
-                  type="email"
-                  disabled
-                  value={currentUser?.email || ''}
-                  className="w-full bg-slate-900/50 border border-slate-900 rounded-lg px-3 py-2 text-slate-500 font-bold focus:outline-none"
-                />
-              </div>
-
               <div className="space-y-1.5">
                 <label className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Nombre de Operador / Responsable</label>
                 <input
@@ -1152,7 +1123,7 @@ export default function UserProfileManager({
             {loadingStations ? (
               <div className="flex items-center justify-center py-8 gap-2">
                 <RefreshCw className="animate-spin text-emerald-500" size={16} />
-                <span className="text-slate-500 font-mono text-[10px]">Cargando canal de base de datos de estaciones...</span>
+                <span className="text-slate-500 font-mono text-[10px]">Cargando estaciones...</span>
               </div>
             ) : stations.length === 0 ? (
               <div className="border border-dashed border-slate-850 rounded-xl p-8 text-center text-slate-500 space-y-2">
@@ -1243,7 +1214,7 @@ export default function UserProfileManager({
           <div className="space-y-4 font-mono text-xs">
             <div className="flex items-center justify-between border-b border-slate-900 pb-2.5">
               <div>
-                <span className="font-bold text-slate-200 block">Perfiles de Estación / Presets Rápidos (Firestore)</span>
+                <span className="font-bold text-slate-200 block">Perfiles de Estación / Presets Rápidos</span>
                 <span className="text-[10px] text-slate-500 font-sans block leading-tight">Define y almacena combinaciones preestablecidas de Indicativo, SSID y comentarios de balizas de estado para activarlas instantáneamente</span>
               </div>
               <div className="flex gap-2">
@@ -1392,7 +1363,7 @@ export default function UserProfileManager({
             {loadingPresets ? (
               <div className="flex items-center justify-center py-8 gap-2">
                 <RefreshCw className="animate-spin text-emerald-500" size={16} />
-                <span className="text-slate-500 font-mono text-[10px]">Cargando presets de estación desde Firestore...</span>
+                <span className="text-slate-500 font-mono text-[10px]">Cargando presets de estación...</span>
               </div>
             ) : presets.length === 0 ? (
               <div className="border border-dashed border-slate-850 rounded-xl p-8 text-center text-slate-500 space-y-2">
@@ -1456,13 +1427,6 @@ export default function UserProfileManager({
                 })}
               </div>
             )}
-          </div>
-        )}
-
-        {/* SUB-TAB 4: SEGURIDAD (MFA) */}
-        {activeSubTab === 'security' && (
-          <div className="space-y-2">
-            <TwoFactorConfigurator currentUser={currentUser} userProfile={userProfile} />
           </div>
         )}
       </div>

@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Volume2, ZoomIn, Save, RefreshCw, Palette, Sparkles, HelpCircle } from 'lucide-react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../../utils/firebase';
 
 export interface SOSSetting {
   color: string;
@@ -51,7 +48,6 @@ interface SOSConfigurationProps {
 }
 
 export default function SOSConfiguration({ onSettingsChange, isExtremeContrast = false }: SOSConfigurationProps) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<SOSSettingsMap>(() => {
     try {
       const stored = localStorage.getItem('alert_monitor_sos_settings');
@@ -62,37 +58,6 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return unsubscribe;
-  }, []);
-
-  // Sync settings with Firestore in real-time
-  useEffect(() => {
-    if (!currentUser) return;
-    const docRef = doc(db, 'system', 'sos_config');
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const fetchedSettings = data.settings || data.sosSettings;
-        if (fetchedSettings) {
-          setSettings(fetchedSettings);
-          localStorage.setItem('alert_monitor_sos_settings', JSON.stringify(fetchedSettings));
-          if (onSettingsChange) onSettingsChange(fetchedSettings);
-        }
-      }
-    }, (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, 'system/sos_config');
-      } catch (e) {
-        console.error('Error fetching global SOS configuration:', e);
-      }
-    });
-    return unsubscribe;
-  }, [currentUser]);
 
   const handleUpdateField = <K extends keyof SOSSetting>(code: string, field: K, value: SOSSetting[K]) => {
     const updated = {
@@ -112,21 +77,10 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
     setSaveSuccess(false);
     try {
       localStorage.setItem('alert_monitor_sos_settings', JSON.stringify(settings));
-      if (currentUser) {
-        const docRef = doc(db, 'system', 'sos_config');
-        await setDoc(docRef, { 
-          settings: settings,
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser.email || currentUser.uid
-        }, { merge: true });
-      }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
-      console.error('Error saving SOS settings to cloud:', error);
-      try {
-        handleFirestoreError(error, OperationType.WRITE, 'system/sos_config');
-      } catch (e) {}
+      console.error('Error saving SOS settings:', error);
     } finally {
       setIsSaving(false);
     }
@@ -136,21 +90,6 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
     setSettings(DEFAULT_SOS_SETTINGS);
     localStorage.setItem('alert_monitor_sos_settings', JSON.stringify(DEFAULT_SOS_SETTINGS));
     if (onSettingsChange) onSettingsChange(DEFAULT_SOS_SETTINGS);
-    if (currentUser) {
-      try {
-        const docRef = doc(db, 'system', 'sos_config');
-        await setDoc(docRef, { 
-          settings: DEFAULT_SOS_SETTINGS,
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser.email || currentUser.uid
-        }, { merge: true });
-      } catch (error) {
-        console.error('Error resetting SOS settings in cloud:', error);
-        try {
-          handleFirestoreError(error, OperationType.WRITE, 'system/sos_config');
-        } catch (e) {}
-      }
-    }
   };
 
   const triggerPreviewSound = (freq: number, soundType: 'pulse' | 'continuous' | 'siren') => {
@@ -240,7 +179,7 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
             }`}
           >
             <Save size={11} className={isSaving ? 'animate-spin' : ''} />
-            <span>{isSaving ? 'Sincronizando...' : saveSuccess ? '¡Guardado!' : 'Sincronizar Cloud'}</span>
+            <span>{isSaving ? 'Guardando...' : saveSuccess ? '¡Guardado!' : 'Guardar'}</span>
           </button>
         </div>
       </div>

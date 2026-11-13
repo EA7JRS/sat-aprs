@@ -528,7 +528,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
 
   const fetchAprsBlnData = async () => {
     try {
-      const res = await fetch('/api/space-weather/aprs-bulletin');
+      const res = await customFetch('/api/space-weather/aprs-bulletin');
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
@@ -559,7 +559,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     const updated = { ...aprsBlnConfig, ...newCfg };
     setAprsBlnConfig(updated);
     try {
-      const res = await fetch('/api/space-weather/aprs-bulletin/config', {
+      const res = await customFetch('/api/space-weather/aprs-bulletin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
@@ -576,7 +576,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     setIsTransmittingBln(true);
     setBlnTxMessage(null);
     try {
-      const res = await fetch('/api/space-weather/aprs-bulletin/transmit', {
+      const res = await customFetch('/api/space-weather/aprs-bulletin/transmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

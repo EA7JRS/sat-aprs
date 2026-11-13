@@ -14,6 +14,13 @@ Módulo adicional de integración meteorológica de alta disponibilidad para:
 
 Permite parsear formatos estándar, aplicar filtrado geográfico geodésico o nominal,
 clasificar alertas por severidad (Yellow, Orange, Red) y emitir boletines APRS.
+
+IMPORTANTE: este módulo solo entrega avisos REALES. Si una fuente no responde o
+no hay clave API, no devuelve nada. Los avisos de ejemplo solo se generan con
+allow_simulated=True (modo --simulate del agente, que nunca transmite).
+
+Licencia: SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Manuel - EA7JRS
 ================================================================================
 """
 
@@ -21,10 +28,14 @@ import os
 import re
 import json
 import ssl
+import hashlib
+import unicodedata
 import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import aprs_proto
 
 # ==============================================================================
 # CONFIGURACIÓN FLEXIBLE Y FUENTES DE DATOS POR DEFECTO
@@ -32,20 +43,33 @@ from datetime import datetime, timezone
 
 WEATHER_ALERTS_CONFIG_FILE = "weather_alerts_sources.json"
 
+# El filtro geográfico de cada fuente es opcional: si se deja vacío se usa el
+# filtro de zona de la estación ([Alerts] meteoAreaFilter en config.ini).
+# Sin ningún filtro la fuente se omite, para no difundir avisos de todo el país.
 DEFAULT_SOURCES_CONFIG = {
     "sources": [
         {
-            "id": "aemet",
-            "name": "AEMET Avisos (España)",
+            "id": "meteoalarm",
+            "name": "MeteoAlarm España (avisos oficiales AEMET)",
             "enabled": True,
-            "url": "https://opendata.aemet.es/opendata/api/avisos/hoy/provincia/madrid",
+            "url": "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-spain",
+            "format": "XML",
+            "api_key_required": False,
+            "geographic_filter": "",
+            "parser_config": {}
+        },
+        {
+            "id": "aemet",
+            "name": "AEMET OpenData (experimental)",
+            "enabled": False,
+            "url": "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp",
             "format": "JSON",
             "api_key_required": True,
             "api_key_env_var": "AEMET_API_KEY",
-            "geographic_filter": "Madrid",
+            "geographic_filter": "",
             "parser_config": {
                 "root_path": "",
-                "item_list_key": "datos", # AEMET OpenData devuelve un JSON de metadatos con url de "datos"
+                "item_list_key": "datos",
                 "mapping": {
                     "id": "id_aviso",
                     "event": "fenomeno",
@@ -54,70 +78,6 @@ DEFAULT_SOURCES_CONFIG = {
                     "description": "descripcion",
                     "start": "comienzo",
                     "end": "final"
-                }
-            }
-        },
-        {
-            "id": "meteoalarm",
-            "name": "MeteoAlarm (Europa - CAP XML)",
-            "enabled": True,
-            "url": "https://feeds.meteoalarm.org/feeds/meteoalarm-cap/spain",
-            "format": "XML",
-            "api_key_required": False,
-            "geographic_filter": "Madrid",
-            "parser_config": {
-                "item_tag": "{urn:oasis:names:tc:emergency:cap:1.2}info",
-                "mapping": {
-                    "id": "../{urn:oasis:names:tc:emergency:cap:1.2}identifier",
-                    "event": "{urn:oasis:names:tc:emergency:cap:1.2}event",
-                    "severity": "{urn:oasis:names:tc:emergency:cap:1.2}severity",
-                    "area": "{urn:oasis:names:tc:emergency:cap:1.2}area/{urn:oasis:names:tc:emergency:cap:1.2}areaDesc",
-                    "description": "{urn:oasis:names:tc:emergency:cap:1.2}description",
-                    "start": "{urn:oasis:names:tc:emergency:cap:1.2}onset",
-                    "end": "{urn:oasis:names:tc:emergency:cap:1.2}expires"
-                }
-            }
-        },
-        {
-            "id": "dwd",
-            "name": "DWD (Alemania - JSON)",
-            "enabled": True,
-            "url": "https://maps.dwd.de/geoserver/dwd/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=dwd:Warnungen_Gemeinden&outputFormat=application/json",
-            "format": "JSON",
-            "api_key_required": False,
-            "geographic_filter": "München",
-            "parser_config": {
-                "root_path": "features",
-                "mapping": {
-                    "id": "properties.EVENT_CODE",
-                    "event": "properties.EVENT",
-                    "severity": "properties.SEVERITY",
-                    "area": "properties.A_NAME",
-                    "description": "properties.DESCRIPTION",
-                    "start": "properties.ONSET",
-                    "end": "properties.EXPIRES"
-                }
-            }
-        },
-        {
-            "id": "metoffice",
-            "name": "Met Office Warnings (Reino Unido - TEXT/JSON)",
-            "enabled": True,
-            "url": "https://api.metoffice.gov.uk/warnings/v1/feed",
-            "format": "JSON",
-            "api_key_required": True,
-            "api_key_env_var": "METOFFICE_API_KEY",
-            "geographic_filter": "London",
-            "parser_config": {
-                "root_path": "warnings",
-                "mapping": {
-                    "id": "id",
-                    "event": "type",
-                    "severity": "color",
-                    "area": "regions",
-                    "description": "headline",
-                    "start": "start",
-                    "end": "end"
                 }
             }
         },
@@ -169,7 +129,7 @@ def normalize_severity(raw_severity):
         return "ORANGE"
         
     # 3. Alertas amarillas / moderadas
-    if any(keyword in sev for keyword in ["YELLOW", "AMARILLO", "MODERATE", "MODERADO", "LEVEL1", "NIVEL1", "MINOR", "ALERT", "AVISO"]):
+    if any(keyword in sev for keyword in ["YELLOW", "AMARILLO", "MODERATE", "MODERADO", "LEVEL1", "NIVEL1", "ALERT", "AVISO"]):
         return "YELLOW"
         
     # 4. Alertas verdes / informativas
@@ -243,48 +203,66 @@ class AlertParserEngine:
             
         return parsed_alerts
 
+    # Nombre local del elemento XML que alimenta cada campo, por orden de preferencia
+    XML_FIELDS = {
+        "id": ("identifier", "id"),
+        "event": ("event", "title"),
+        "severity": ("severity",),
+        "area": ("areaDesc",),
+        "description": ("description", "headline", "summary", "title"),
+        "start": ("onset", "effective", "sent"),
+        "end": ("expires",),
+    }
+
+    @staticmethod
+    def _local(tag):
+        """Nombre de la etiqueta sin su namespace."""
+        return tag.split("}")[-1] if isinstance(tag, str) else ""
+
     @staticmethod
     def parse_xml_cap(raw_data, parser_config):
         """
-        Parsea datos XML en formato CAP (Common Alerting Protocol) o XML genérico.
-        Utiliza namespaces si están presentes en la configuración del mapeo.
+        Parsea avisos en XML: documentos CAP (<alert><info>...) y feeds Atom con
+        elementos CAP por entrada (<entry><cap:event>...), como el de MeteoAlarm.
+        Los elementos se localizan por su nombre local, sin depender del namespace.
         """
         try:
             root = ET.fromstring(raw_data)
         except Exception as e:
             print(f"[PARSER XML ERROR] No se pudo parsear XML: {e}")
             return []
-            
-        item_tag = parser_config.get("item_tag", "{urn:oasis:names:tc:emergency:cap:1.2}info")
-        mapping = parser_config.get("mapping", {})
-        
-        # Buscar todas las etiquetas del elemento objetivo
-        # Si no se encuentra con el tag con namespace, intentar de forma genérica sin namespace
-        nodes = root.findall(f".//{item_tag}")
-        if not nodes:
-            # Reintentar removiendo namespaces del tag
-            clean_tag = item_tag.split("}")[-1] if "}" in item_tag else item_tag
-            nodes = root.findall(f".//{clean_tag}")
-            
+
+        local = AlertParserEngine._local
+        item_tag = local(parser_config.get("item_tag", ""))
+        if item_tag:
+            nodes = [el for el in root.iter() if local(el.tag) == item_tag]
+        else:
+            nodes = [el for el in root.iter() if local(el.tag) == "entry"]
+            if not nodes:
+                nodes = [el for el in root.iter() if local(el.tag) == "info"]
+
+        # En un documento CAP el identificador cuelga de <alert>, no de <info>
+        root_fields = {}
+        for el in root:
+            name = local(el.tag)
+            if name not in root_fields and el.text and el.text.strip():
+                root_fields[name] = el.text.strip()
+
         parsed_alerts = []
         for node in nodes:
+            found = {}
+            for el in node.iter():
+                name = local(el.tag)
+                if name not in found and el.text and el.text.strip():
+                    found[name] = el.text.strip()
             alert_data = {}
-            for target_field, xpath_expr in mapping.items():
-                # Intentar buscar el nodo relativo
-                found_el = node.find(xpath_expr)
-                if found_el is not None:
-                    alert_data[target_field] = found_el.text
-                else:
-                    # Intento alternativo sin namespaces en la consulta xpath
-                    clean_xpath = re.sub(r'\{[^\}]+\}', '', xpath_expr)
-                    found_el_alt = node.find(clean_xpath)
-                    if found_el_alt is not None:
-                        alert_data[target_field] = found_el_alt.text
-                    else:
-                        alert_data[target_field] = "N/D"
-                        
+            for target_field, candidates in AlertParserEngine.XML_FIELDS.items():
+                value = next((found[c] for c in candidates if c in found), None)
+                if value is None:
+                    value = next((root_fields[c] for c in candidates if c in root_fields), "N/D")
+                alert_data[target_field] = value
             parsed_alerts.append(alert_data)
-            
+
         return parsed_alerts
 
     @staticmethod
@@ -327,10 +305,15 @@ class WeatherAlertsManager:
     boletines listos para emitir sobre la red APRS.
     """
     
-    def __init__(self, fallback_lat=40.416775, fallback_lon=-3.703790):
-        self.config_path = WEATHER_ALERTS_CONFIG_FILE
+    def __init__(self, fallback_lat=40.416775, fallback_lon=-3.703790,
+                 area_filter="", allow_simulated=False, config_path=None):
+        self.config_path = config_path or WEATHER_ALERTS_CONFIG_FILE
         self.station_lat = fallback_lat
         self.station_lon = fallback_lon
+        # Zonas de interés de la estación (separadas por comas), p. ej. "Sevilla,Cadiz"
+        self.area_filter = area_filter or ""
+        # Solo en pruebas: permite generar avisos de ejemplo cuando la fuente falla
+        self.allow_simulated = bool(allow_simulated)
         self.sources = []
         self.load_config()
 
@@ -365,34 +348,21 @@ class WeatherAlertsManager:
         self.station_lat = lat
         self.station_lon = lon
 
-    def _fetch_url(self, url, api_key_env_var=None, api_key_value=None):
+    def _fetch_url(self, url, api_key_value=None):
         """
-        Ejecuta llamadas HTTP de forma segura con cabeceras de navegador para evitar
-        bloqueos institucionales de descarga automatizada.
+        Descarga una URL verificando el certificado TLS del servidor.
+        La clave API, si existe, solo se envía a la fuente que la requiere.
         """
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
         headers = {
-            "User-Agent": "S.A.T. Weather Emergency System/3.0",
+            "User-Agent": "S.A.T. Weather Emergency System/3.1",
             "Accept": "application/json, application/xml, text/plain, */*"
         }
-        
-        # Inyectar claves API si están configuradas
-        if api_key_env_var:
-            env_key = os.environ.get(api_key_env_var)
-            if env_key:
-                headers["api_key"] = env_key
-                headers["Authorization"] = f"Bearer {env_key}"
-                
         if api_key_value:
             headers["api_key"] = api_key_value
-            headers["Authorization"] = f"Bearer {api_key_value}"
 
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, context=ctx, timeout=7) as response:
+            with urllib.request.urlopen(req, context=ssl.create_default_context(), timeout=10) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
             print(f"[METEO HTTP ERROR] Código {e.code} al acceder a {url}: {e.reason}")
@@ -402,11 +372,33 @@ class WeatherAlertsManager:
             print(f"[METEO HTTP EXCEPTION] Error imprevisto al descargar de {url}: {e}")
         return None
 
+    @staticmethod
+    def _fold(text):
+        """Minúsculas y sin tildes, para comparar nombres de zona."""
+        text = unicodedata.normalize("NFKD", str(text or ""))
+        return "".join(c for c in text if not unicodedata.combining(c)).lower().strip()
+
+    def _area_terms(self, source_filter):
+        """Lista de zonas a vigilar: las de la fuente o, si no tiene, las de la estación."""
+        raw = source_filter or self.area_filter
+        return [self._fold(t) for t in str(raw).split(",") if t.strip()]
+
+    @staticmethod
+    def _is_expired(end_value):
+        """True si el aviso tiene fecha de fin reconocible y ya ha pasado."""
+        try:
+            end = datetime.fromisoformat(str(end_value).strip().replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return end < datetime.now(timezone.utc)
+
     def query_source(self, source_config, api_key_fallback=""):
         """
-        Consulta una fuente meteorológica específica y parsea los resultados.
-        Si la API está inactiva o da error, retorna datos simulados/fallbacks
-        educativos para asegurar que la UI y el flujo mantengan alta disponibilidad.
+        Consulta una fuente meteorológica y devuelve sus avisos vigentes y filtrados.
+        Si la fuente no responde devuelve una lista vacía: nunca se inventan avisos
+        (salvo con allow_simulated=True, reservado a las pruebas sin transmisión).
         """
         src_id = source_config.get("id")
         name = source_config.get("name")
@@ -414,22 +406,30 @@ class WeatherAlertsManager:
         fmt = source_config.get("format", "JSON").upper()
         geo_filter = source_config.get("geographic_filter", "")
         parser_cfg = source_config.get("parser_config", {})
-        
+
+        area_terms = self._area_terms(geo_filter)
+        if not area_terms:
+            print(f"[METEO POLLING] {name}: sin zona configurada (meteoAreaFilter en config.ini). Fuente omitida.")
+            return []
+
         print(f"[METEO POLLING] Consultando {name} (Formato: {fmt})...")
-        
-        # Intentar llamada real
+
         api_key_env = source_config.get("api_key_env_var")
-        api_key_val = os.environ.get(api_key_env) if api_key_env else api_key_fallback
-        
+        api_key_val = (os.environ.get(api_key_env) if api_key_env else "") or api_key_fallback
+
         raw_data = None
-        if not source_config.get("api_key_required") or api_key_val:
-            raw_data = self._fetch_url(url, api_key_env_var=api_key_env, api_key_value=api_key_val)
-            
-        # Si falla o no se cuenta con claves reales, activamos el Generador de Alertas
-        # Didácticas / Simulador para demostración inmediata impecable
+        if not source_config.get("api_key_required"):
+            raw_data = self._fetch_url(url)
+        elif api_key_val:
+            raw_data = self._fetch_url(url, api_key_value=api_key_val)
+        else:
+            print(f"[METEO POLLING] {name} requiere clave API y no hay ninguna configurada.")
+
         if raw_data is None:
-            print(f"[METEO POLLING WARNING] {name} no disponible de forma directa. Activando inyección de contingencia didáctica.")
-            raw_data = self._generate_fallback_raw_data(src_id, fmt, geo_filter)
+            if not self.allow_simulated:
+                return []
+            print(f"[METEO POLLING] MODO SIMULACIÓN: generando avisos de ejemplo para {name}.")
+            raw_data = self._generate_fallback_raw_data(src_id, fmt, geo_filter or self.area_filter.split(",")[0])
 
         parsed_items = []
         if fmt == "JSON":
@@ -438,38 +438,48 @@ class WeatherAlertsManager:
             parsed_items = AlertParserEngine.parse_xml_cap(raw_data, parser_cfg)
         elif fmt == "TEXT":
             parsed_items = AlertParserEngine.parse_plaintext(raw_data, parser_cfg)
-            
-        # Filtrar y normalizar alertas
+
         valid_alerts = []
+        seen_ids = set()
         for item in parsed_items:
-            # 1. Normalizar Severidad
-            severity_raw = item.get("severity", "")
-            severity = normalize_severity(severity_raw)
-            
-            # Omitir alertas normales/verdes para reducir consumo de frecuencia RF
+            # 1. Normalizar severidad; los niveles verdes no son avisos
+            severity = normalize_severity(item.get("severity", ""))
             if severity == "GREEN":
                 continue
-                
-            # 2. Aplicar Filtro Geográfico Nominal
-            area = str(item.get("area", "Península Ibérica")).strip()
-            if geo_filter and geo_filter.lower() not in area.lower():
-                # Omitir si la alerta está fuera del alcance de cobertura operativa
+
+            # 2. Filtro geográfico nominal (insensible a mayúsculas y tildes)
+            area = str(item.get("area", "")).strip()
+            folded_area = self._fold(area)
+            if not any(term in folded_area for term in area_terms):
                 continue
-                
-            # 3. Empaquetar
+
+            # 3. Descartar avisos ya caducados
+            if self._is_expired(item.get("end", "")):
+                continue
+
+            # 4. Identificador estable: si la fuente no da uno, se deriva del contenido
+            event = str(item.get("event") or "METEOROLOGIA ADVERSA")
+            alert_id = str(item.get("id") or "").strip()
+            if not alert_id or alert_id == "N/D":
+                digest = hashlib.sha1(f"{event}|{area}|{item.get('start', '')}".encode("utf-8")).hexdigest()[:12]
+                alert_id = f"{src_id}_{digest}"
+            if alert_id in seen_ids:
+                continue
+            seen_ids.add(alert_id)
+
             valid_alerts.append({
                 "source_id": src_id,
                 "source_name": name,
-                "id": item.get("id", f"{src_id}_{int(datetime.now().timestamp())}"),
-                "event": item.get("event", "METEOROLOGÍA ADVERSA"),
+                "id": alert_id,
+                "event": event,
                 "severity": severity,
                 "area": area,
-                "description": item.get("description", "Condiciones climáticas severas previstas."),
+                "description": item.get("description", ""),
                 "start": item.get("start", "N/D"),
                 "end": item.get("end", "N/D"),
                 "timestamp": int(datetime.now().timestamp())
             })
-            
+
         return valid_alerts
 
     def poll_all_services(self, aemet_key="", metoffice_key=""):
@@ -498,10 +508,11 @@ class WeatherAlertsManager:
 
     def _generate_fallback_raw_data(self, source_id, fmt, geo_filter):
         """
-        Generador de fallbacks de contingencia didáctica altamente realistas.
-        Permite validar la cadena de transmisión y visualización sin forzar llamadas API fallidas.
+        Avisos de EJEMPLO para pruebas. Solo se usan con allow_simulated=True
+        (modo --simulate del agente, que nunca transmite): no son avisos reales.
         """
         now_str = datetime.now(timezone.utc).isoformat()
+        end_str = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
         
         if source_id == "aemet":
             # Formato JSON estructurado de AEMET
@@ -514,7 +525,7 @@ class WeatherAlertsManager:
                         "ambito": f"{geo_filter or 'Comunidad de Madrid'} - Sierra",
                         "descripcion": "Acumulación de precipitación en 1h: 30 mm acompañada de ráfagas fuertes.",
                         "comienzo": now_str,
-                        "final": now_str
+                        "final": end_str
                     },
                     {
                         "id_aviso": f"AEMET-2026-T1122",
@@ -523,7 +534,7 @@ class WeatherAlertsManager:
                         "ambito": f"{geo_filter or 'Madrid'} Metropolitana y Henares",
                         "descripcion": "Rachas de viento que pueden superar los 80 Km/h.",
                         "comienzo": now_str,
-                        "final": now_str
+                        "final": end_str
                     }
                 ]
             }
@@ -541,7 +552,7 @@ class WeatherAlertsManager:
                     <event>Severe Snow/Ice Alert</event>
                     <severity>Severe</severity>
                     <onset>{now_str}</onset>
-                    <expires>{now_str}</expires>
+                    <expires>{end_str}</expires>
                     <description>Nevadas copiosas a cotas de montaña superiores a 900 metros.</description>
                     <area>
                         <areaDesc>{geo_filter or 'Madrid Sierra'}</areaDesc>
@@ -563,7 +574,7 @@ class WeatherAlertsManager:
                             "A_NAME": f"Stadt {geo_filter or 'München'}",
                             "DESCRIPTION": "Heavy downpour expected with risk of localized urban flooding.",
                             "ONSET": now_str,
-                            "EXPIRES": now_str
+                            "EXPIRES": end_str
                         }
                     }
                 ]
@@ -581,7 +592,7 @@ class WeatherAlertsManager:
                         "regions": f"{geo_filter or 'London'} and South East England",
                         "headline": "Thunderstorms are expected to cause travel delays and localized power outages.",
                         "start": now_str,
-                        "end": now_str
+                        "end": end_str
                     }
                 ]
             }
@@ -601,57 +612,39 @@ DESCRIPCION: Ventisca de nieve extrema bloqueando principales puertos de paso.
 # GENERADOR DE BOLETINES ESTANDARIZADOS APRS
 # ==============================================================================
 
-def generate_aprs_weather_bulletin(callsign, alert, bulletin_index=1):
+SEVERITY_LABELS = {"RED": "ROJO", "ORANGE": "NARANJA", "YELLOW": "AMARILLO"}
+
+
+def generate_aprs_weather_bulletin(alert, bulletin_index=1):
     """
-    Toma un diccionario de alerta normalizado y genera un paquete de Boletín APRS
-    conforme a las especificaciones oficiales del protocolo APRS.
-    
-    Sintaxis del Boletín APRS:
-    CALLSIGN>APRS,TCPIP*,qAC,WEATHER:BLN<N><ID_BOLETIN>: [SEV] [AREA] ALERT_TEXT
-    - <N>: Número correlativo del boletín (1 al 9)
-    - <ID_BOLETIN>: Nombre corto identificador de la red (hasta 8 caracteres totales)
-      Por ejemplo: 'BLN1METEO', 'BLN2AEMET', 'BLN3EURO'
-      
-    Nota: El paquete APRS se compacta para que el mensaje no exceda los 70-80 caracteres
-    para garantizar máxima compatibilidad con las pantallas LCD de los transceptores VHF.
+    Toma un aviso normalizado y devuelve el campo de información de un Boletín APRS:
+
+        :BLN<N>METEO:<NIVEL> <FENOMENO> - <ZONA>
+
+    - <N>: número correlativo del boletín (1 al 9).
+    - El destinatario ocupa 9 caracteres y el texto se limita a 67, en ASCII puro,
+      para que se lea en cualquier TNC o pantalla de transceptor.
+    El agente añade la cabecera (indicativo, destino y ruta) al transmitir.
     """
-    source_id = alert["source_id"].upper()[:4]
-    severity = alert["severity"]
-    event = alert["event"].upper()
-    area = alert["area"]
-    
-    # Acortar textos para visualizadores VHF de ham radio
-    sev_symbol = "🚨CRIT" if severity == "RED" else "⚠️GRAV" if severity == "ORANGE" else "🔔AVIS"
-    
-    # Limpieza de acentos y caracteres especiales para transmisión analógica pura
-    clean_event = normalize_characters(event)
-    clean_area = normalize_characters(area)[:15] # Truncar a 15 caracteres
-    
-    # Construcción abreviada para no saturar tramas AX.25
-    alert_summary = f"{sev_symbol} {clean_event} en {clean_area}"
-    
-    # Identificador exclusivo de Boletín según su número correlativo
-    bulletin_header = f"BLN{bulletin_index}METEO"
-    
-    # Ensamble de paquete APRS completo
-    packet = f"{callsign}>APRS,TCPIP*,qAC,WEATHER:{bulletin_header}: [SAT-{source_id}] {alert_summary}"
-    return packet
+    level = SEVERITY_LABELS.get(alert.get("severity"), "AVISO")
+    event = normalize_characters(alert.get("event", ""))
+    area = normalize_characters(alert.get("area", ""))
+    text = f"{level} {event}"
+    if area:
+        # Reservar sitio para la zona recortando primero el fenómeno
+        room = aprs_proto.MAX_BULLETIN_TEXT - len(level) - 4
+        area = area[:24]
+        event = event[:max(10, room - len(area))]
+        text = f"{level} {event} - {area}"
+    index = min(9, max(1, int(bulletin_index)))
+    return aprs_proto.format_bulletin_info(f"BLN{index}METEO", text)
 
 
 def normalize_characters(text):
     """
-    Elimina caracteres especiales, tildes y diacríticos para asegurar que la
-    trama AX.25 se decodifique perfectamente en cualquier TNC o pantalla LCD.
+    Elimina tildes, diacríticos y símbolos para asegurar que la trama AX.25
+    se decodifique perfectamente en cualquier TNC o pantalla LCD.
     """
-    import unicodedata
-    if not text:
-        return ""
-    # Descomponer caracteres con acentos
-    text = unicodedata.normalize('NFD', text)
-    # Filtrar solo caracteres ASCII simples
-    text = "".join(c for c in text if unicodedata.category(c) != 'Mn')
-    # Reemplazos comunes
-    text = text.replace("ñ", "n").replace("Ñ", "N")
-    # Remover cualquier caracter no ASCII o puntuaciones complejas
+    text = aprs_proto.to_ascii(text)
     text = re.sub(r'[^a-zA-Z0-9\s\-\/\_\.\:\,]', '', text)
-    return text.upper()
+    return re.sub(r'\s+', ' ', text).strip().upper()

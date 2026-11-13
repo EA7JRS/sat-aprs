@@ -160,7 +160,7 @@ export default function ThreatPollingEngine({
   // Fetch wildfires from NASA / Copernicus on mount
   const fetchWildfires = async () => {
     try {
-      const res = await fetch('/api/wildfires/latest');
+      const res = await customFetch('/api/wildfires/latest');
       if (res.ok) {
         const json = await res.json();
         const list = Array.isArray(json) ? json : (json.hotspots || []);

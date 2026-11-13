@@ -15,21 +15,30 @@ Este script actúa como agente centralizado para integrar y procesar:
 - NOAA Space Weather Alerts: Boletines espaciales (Escalas G, R, S).
 - Transmisión dual: Puertos APRS-IS (14580) y KISS TCP de Direwolf (8001).
 
+Seguridad de emisión:
+- Solo se transmite con un indicativo válido y, en APRS-IS, con su passcode.
+- Los datos simulados JAMÁS salen al aire: el modo --simulate implica --dry-run.
+
 Licencia: SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Manuel - EA7JRS
 ================================================================================
 """
 
 import os
+import re
 import sys
 import math
 import time
 import socket
 import json
 import ssl
+import argparse
 import configparser
 from datetime import datetime, timezone, timedelta
 import urllib.request
 import urllib.error
+
+import aprs_proto
 
 # Módulo adicional de alertas de múltiples agencias meteorológicas nacionales/regionales
 try:
@@ -40,9 +49,9 @@ except ImportError:
     generate_aprs_weather_bulletin = None
 
 # ==============================================================================
-# CONFIGURACIÓN DE LA ESTACIÓN (Modificar según necesidad)
+# VALORES POR DEFECTO (la configuración real va en config.ini, no aquí)
 # ==============================================================================
-CALLSIGN = "CALLSING-13"          # Indicativo APRS con SSID de telemetría/WX
+CALLSIGN = "N0CALL"               # Plantilla: configure su indicativo en config.ini
 APRS_PASSCODE = ""          # Código de autenticación para APRS-IS
 FILTER_RADIUS_KM = 200.0         # Radio de cobertura crítica para sismos
 OWM_API_KEY = ""                 # Tu API Key de OpenWeatherMap (Opcional)
@@ -69,18 +78,40 @@ APRS_IS_PORT = 14580
 DIREWOLF_KISS_HOST = "localhost"
 DIREWOLF_KISS_PORT = 8001       # Puerto KISS sobre TCP de Direwolf
 
-# Historial local para evitar duplicados en la red APRS
-transmitidos_sismos = set()     # IDs de sismos anunciados
+# Canales de emisión y ruta de RF
+APRS_IS_ENABLED = True          # Inyectar en APRS-IS (requiere passcode válido)
+RF_ENABLED = True               # Emitir por radio a través del TNC KISS (Direwolf)
+RF_PATH = aprs_proto.DEFAULT_RF_PATH
+
+# Filtros de sismos y avisos
+MIN_MAGNITUDE = 3.0             # Magnitud mínima para anunciar un sismo en APRS
+MAX_QUAKE_AGE_HOURS = 24.0      # No anunciar sismos más antiguos que esto
+METEO_AREA_FILTER = ""          # Zonas (separadas por comas) para avisos MeteoAlarm/AEMET
+
+# Modos de ejecución (se fijan por línea de órdenes, ver main())
+DRY_RUN = False                 # No transmite: solo muestra las tramas
+SIMULATE = False                # Usa fuentes simuladas (obliga a DRY_RUN)
+
+# Intervalos de sondeo (segundos)
+QUAKE_POLL_INTERVAL = 120
+NOAA_POLL_INTERVAL = 300
+
+# Historial persistente para no repetir anuncios tras un reinicio
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sat_state.json")
+STATE_MAX_AGE_S = 7 * 86400
+transmitidos_sismos = {}        # id de sismo -> timestamp del anuncio
 transmitido_sw_id = None        # ID de alerta clima espacial activa
 ultima_baliza_wx = 0            # Timestamp Unix de última baliza meteorológica
-last_known_weather = (20.4, 52, 5.0, 230, 1015.4, 8.0, 0.0, 0.0) # Datos iniciales de fallback/operación
+last_known_weather = None       # Última lectura REAL de OpenWeatherMap (o None)
+last_known_weather_time = 0     # Timestamp de esa lectura
+WEATHER_MAX_AGE_S = 3600        # No se emite una lectura con más de una hora
 
 # Historial para alertas meteorológicas del pronóstico (evita spam diario)
-transmitidas_alertas_meteo = set()
+transmitidas_alertas_meteo = {}
 ultima_consulta_pronostico = 0
 
 # Configuración de Clima Local y Alertas para Estación Meteorológica Personal / API Local
-LOCAL_WEATHER_SOURCE = "simulated"   # Puede ser 'simulated', una URL http://..., o una ruta de archivo .json
+LOCAL_WEATHER_SOURCE = ""            # URL http(s):// o ruta .json de su estación; vacío = sin estación local
 LOCAL_THRESHOLD_WIND_KTS = 20.0     # Umbral de ráfaga/viento local
 LOCAL_THRESHOLD_TEMP_MAX_C = 35.0   # Umbral de temperatura máxima local
 LOCAL_THRESHOLD_TEMP_MIN_C = 5.0    # Umbral de temperatura mínima local
@@ -88,12 +119,12 @@ LOCAL_THRESHOLD_RAIN_MM = 10.0      # Umbral de lluvia local (mm)
 LOCAL_WEATHER_INTERVAL = 300        # Intervalo de monitoreo local en segundos
 
 # Historial para alertas meteorológicas locales (evita spam de boletines idénticos seguidos)
-transmitidas_alertas_locales = set()
+transmitidas_alertas_locales = {}
 ultima_consulta_clima_local = 0
 last_local_weather = (20.0, 50, 5.0, 180, 1013.2, 0.0) # temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm
 
 # Historial para alertas meteorológicas de múltiples servicios nacionales/regionales adicionales
-transmitidas_alertas_multi_servicios = set()
+transmitidas_alertas_multi_servicios = {}
 ultima_consulta_multi_servicios = 0
 
 # ==============================================================================
@@ -114,56 +145,57 @@ def haversine(lat1, lon1, lat2, lon2):
     return round(R * c, 1)
 
 def decdeg_to_aprs_lat(lat):
-    """
-    Convierte latitud decimal (Ej: 40.416) a formato APRS (Ej: 4025.00N).
-    """
-    direction = 'N' if lat >= 0 else 'S'
-    val = abs(lat)
-    deg = int(val)
-    minutes = (val - deg) * 60.0
-    return f"{deg:02d}{minutes:05.2f}{direction}"
+    """Convierte latitud decimal (Ej: 40.416) a formato APRS (Ej: 4024.96N)."""
+    return aprs_proto.format_lat(lat)
 
 def decdeg_to_aprs_lon(lon):
-    """
-    Convierte longitud decimal (Ej: -3.703) a formato APRS (Ej: 00342.18W).
-    """
-    direction = 'E' if lon >= 0 else 'W'
-    val = abs(lon)
-    deg = int(val)
-    minutes = (val - deg) * 60.0
-    return f"{deg:03d}{minutes:05.2f}{direction}"
+    """Convierte longitud decimal (Ej: -3.703) a formato APRS (Ej: 00342.18W)."""
+    return aprs_proto.format_lon(lon)
 
-def format_aprs_wx_payload(temp_c, humidity, wind_speed_kts, wind_dir_deg, pressure_hpa, gust_kts, rain_1h_in=0.0, rain_24h_in=0.0):
-    """
-    Crea el payload de clima exacto bajo las especificaciones de APRS WX.
-    Estructura: ccrrgggttthhbbbbbpPPPrr
-    """
-    wdir = f"{int(wind_dir_deg):03d}" if wind_dir_deg is not None else "000"
-    wspeed = f"{int(wind_speed_kts):03d}" if wind_speed_kts is not None else "000"
-    
-    gust = f"g{int(gust_kts):03d}" if gust_kts else "g000"
-    
-    # Temperatura Fahrenheit
-    temp_f = int((temp_c * 9/5) + 32)
-    if temp_f < 0:
-        temp_str = f"t-{abs(temp_f):02d}"  # Manejo de bajo cero
-    else:
-        temp_str = f"t{temp_f:03d}"
-        
-    # Precipitaciones
-    r1h = f"r{int(rain_1h_in * 100):03d}"
-    r24h = f"p{int(rain_24h_in * 100):03d}"
-    
-    # Humedad (00 representa 100%)
-    hum_val = int(humidity)
-    if hum_val >= 100:
-        hum_val = 0
-    hum = f"h{hum_val:02d}"
-    
-    # Presión en décimas de hPa/milibar
-    press = f"b{int(pressure_hpa * 10):05d}" if pressure_hpa else "b00000"
-    
-    return f"_{wdir}/{wspeed}{gust}{temp_str}{r1h}{r24h}{hum}{press} (REMER S.A.T. Telemetria)"
+# ==============================================================================
+# ESTADO PERSISTENTE (evita repetir anuncios al reiniciar el servicio)
+# ==============================================================================
+def load_state():
+    """Carga el historial de anuncios ya emitidos desde sat_state.json."""
+    global transmitidos_sismos, transmitido_sw_id, transmitidas_alertas_meteo
+    global transmitidas_alertas_locales, transmitidas_alertas_multi_servicios
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"[STATE WARNING] No se pudo leer {STATE_FILE}: {e}")
+        return
+    transmitidos_sismos = dict(data.get("sismos", {}))
+    transmitido_sw_id = data.get("sw_id")
+    transmitidas_alertas_meteo = dict(data.get("meteo", {}))
+    transmitidas_alertas_locales = dict(data.get("locales", {}))
+    transmitidas_alertas_multi_servicios = dict(data.get("multi", {}))
+
+def save_state():
+    """Guarda el historial, descartando las entradas de más de una semana."""
+    if DRY_RUN:
+        return
+    limite = time.time() - STATE_MAX_AGE_S
+    for registro in (transmitidos_sismos, transmitidas_alertas_meteo,
+                     transmitidas_alertas_locales, transmitidas_alertas_multi_servicios):
+        for clave in [k for k, ts in registro.items() if ts < limite]:
+            del registro[clave]
+    data = {
+        "sismos": transmitidos_sismos,
+        "sw_id": transmitido_sw_id,
+        "meteo": transmitidas_alertas_meteo,
+        "locales": transmitidas_alertas_locales,
+        "multi": transmitidas_alertas_multi_servicios,
+    }
+    try:
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, STATE_FILE)
+    except Exception as e:
+        print(f"[STATE WARNING] No se pudo guardar {STATE_FILE}: {e}")
 
 # ==============================================================================
 # DRIVERS DE CONSULTA POR HARDWARE Y API (Sockets locales / HTTP)
@@ -178,6 +210,7 @@ def sync_local_config():
     global GPSD_HOST, GPSD_PORT, APRS_IS_SERVER, APRS_IS_PORT, DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT
     global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
     global LOCAL_WEATHER_SOURCE, LOCAL_THRESHOLD_WIND_KTS, LOCAL_THRESHOLD_TEMP_MAX_C, LOCAL_THRESHOLD_TEMP_MIN_C, LOCAL_THRESHOLD_RAIN_MM, LOCAL_WEATHER_INTERVAL
+    global APRS_IS_ENABLED, RF_ENABLED, RF_PATH, MIN_MAGNITUDE, MAX_QUAKE_AGE_HOURS, METEO_AREA_FILTER
     
     ini_path = "config.ini"
     json_path = "sat_config.json"
@@ -229,7 +262,10 @@ def sync_local_config():
                 "altitude": str(ALTITUDE_DEFAULT_M)
             }
             config["Alerts"] = {
-                "filterRadiusKm": str(ui_cfg.get("filterRadiusKm", FILTER_RADIUS_KM))
+                "filterRadiusKm": str(ui_cfg.get("filterRadiusKm", FILTER_RADIUS_KM)),
+                "minMagnitude": str(ui_cfg.get("minMagnitudBaliza", MIN_MAGNITUDE)),
+                "maxQuakeAgeHours": str(MAX_QUAKE_AGE_HOURS),
+                "meteoAreaFilter": METEO_AREA_FILTER
             }
             config["APRS"] = {
                 "callsign": str(ui_cfg.get("callsign", CALLSIGN)),
@@ -237,7 +273,10 @@ def sync_local_config():
                 "serverIp": str(ui_cfg.get("serverIp", APRS_IS_SERVER)),
                 "serverPort": str(ui_cfg.get("aprscPort", APRS_IS_PORT)),
                 "kissTcpHost": DIREWOLF_KISS_HOST,
-                "kissTcpPort": str(ui_cfg.get("kissTcpPort", DIREWOLF_KISS_PORT))
+                "kissTcpPort": str(ui_cfg.get("kissTcpPort", DIREWOLF_KISS_PORT)),
+                "aprsIsEnabled": str(APRS_IS_ENABLED).lower(),
+                "rfEnabled": str(RF_ENABLED).lower(),
+                "rfPath": str(ui_cfg.get("aprsPath", RF_PATH))
             }
             with open(ini_path, "w", encoding="utf-8") as f:
                 f.write("# S.A.T-APRS - Archivo de Configuracion Externa de la Estacion\n")
@@ -287,15 +326,21 @@ def sync_local_config():
             # Cargar seccion Alerts
             if "Alerts" in config:
                 FILTER_RADIUS_KM = config["Alerts"].getfloat("filterRadiusKm", FILTER_RADIUS_KM)
+                MIN_MAGNITUDE = config["Alerts"].getfloat("minMagnitude", MIN_MAGNITUDE)
+                MAX_QUAKE_AGE_HOURS = config["Alerts"].getfloat("maxQuakeAgeHours", MAX_QUAKE_AGE_HOURS)
+                METEO_AREA_FILTER = config["Alerts"].get("meteoAreaFilter", METEO_AREA_FILTER).strip()
                 
             # Cargar seccion APRS
             if "APRS" in config:
-                CALLSIGN = config["APRS"].get("callsign", CALLSIGN)
-                APRS_PASSCODE = config["APRS"].get("passcode", APRS_PASSCODE)
+                CALLSIGN = config["APRS"].get("callsign", CALLSIGN).strip().upper()
+                APRS_PASSCODE = config["APRS"].get("passcode", APRS_PASSCODE).strip()
                 APRS_IS_SERVER = config["APRS"].get("serverIp", APRS_IS_SERVER)
                 APRS_IS_PORT = config["APRS"].getint("serverPort", APRS_IS_PORT)
                 DIREWOLF_KISS_HOST = config["APRS"].get("kissTcpHost", DIREWOLF_KISS_HOST)
                 DIREWOLF_KISS_PORT = config["APRS"].getint("kissTcpPort", DIREWOLF_KISS_PORT)
+                APRS_IS_ENABLED = config["APRS"].getboolean("aprsIsEnabled", APRS_IS_ENABLED)
+                RF_ENABLED = config["APRS"].getboolean("rfEnabled", RF_ENABLED)
+                RF_PATH = config["APRS"].get("rfPath", RF_PATH).strip().upper()
                 
         except Exception as e:
             print(f"[CONFIG WARNING] Error al leer config.ini ({e}). Utilizando fallback.")
@@ -368,7 +413,7 @@ def get_gpsd_coordinates():
         f.readline()
         
         # Activar el streaming de JSON con gpsd
-        s.sendall(b'?WATCH={"enable":true,"json":true};')
+        s.sendall(b'?WATCH={"enable":true,"json":true};\n')
         
         # Esperar buscando el reporte de posición (TPV)
         for _ in range(10):
@@ -380,9 +425,9 @@ def get_gpsd_coordinates():
                 if trama.get("class") == "TPV":
                     lat = trama.get("lat")
                     lon = trama.get("lon")
-                    alt = trama.get("alt", ALTITUDE_DEFAULT_M)
+                    alt = trama.get("altMSL", trama.get("alt", ALTITUDE_DEFAULT_M))
                     mode = trama.get("mode", 1) # 2=2D, 3=3D
-                    if lat and lon:
+                    if lat is not None and lon is not None and mode >= 2:
                         print(f"[GPSD] Posición fijada con éxito: {lat}, {lon} (Modo: {mode})")
                         return lat, lon, alt, False
             except json.JSONDecodeError:
@@ -406,13 +451,14 @@ def get_gpsd_coordinates():
 def get_weather_data(lat, lon):
     """
     Consulta OpenWeatherMap utilizando HTTP con reintentos y backoff exponencial.
-    Retorna estructura formateada. Si falla, usa los últimos datos conocidos (last_known_weather).
+    Retorna un diccionario con la lectura real, o None si no hay datos fiables.
+    Nunca devuelve valores inventados: sin clave API no hay baliza meteorológica.
+    Si la consulta falla se reutiliza la última lectura real durante una hora.
     """
-    global last_known_weather
+    global last_known_weather, last_known_weather_time
     if not OWM_API_KEY:
-        # Clima por desajuste estático de simulación si no hay API Key
-        print("[OWM] Sin API Key de OpenWeatherMap. Simulando clima estático de operación.")
-        return last_known_weather
+        print("[OWM] Sin API Key de OpenWeatherMap: baliza meteorológica desactivada.")
+        return None
         
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OWM_API_KEY}&units=metric"
     
@@ -422,26 +468,25 @@ def get_weather_data(lat, lon):
     for attempt in range(1, max_retries + 1):
         try:
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             
             req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
             with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
                 data = json.loads(response.read().decode('utf-8'))
-                temp_c = data["main"]["temp"]
-                humidity = data["main"]["humidity"]
-                wind_speed_ms = data["wind"]["speed"]
-                wind_speed_kts = wind_speed_ms * 1.94384
-                wind_dir = data["wind"].get("deg", 0)
-                pressure = data["main"]["pressure"]
-                gust_ms = data["wind"].get("gust", wind_speed_ms * 1.2)
-                gust_kts = gust_ms * 1.94384
-                
-                rain_1h = data.get("rain", {}).get("1h", 0) / 25.4 # mm a pulgadas
-                rain_24h = data.get("rain", {}).get("3h", 0) / 25.4 * 8 # aproximación de 3h a 24h
-                
-                # Guardar en el historial de últimos datos conocidos con éxito
-                last_known_weather = (temp_c, humidity, wind_speed_kts, wind_dir, pressure, gust_kts, rain_1h, rain_24h)
+                wind = data.get("wind", {})
+                rain = data.get("rain", {})
+                ms_to_kts = 1.94384
+                last_known_weather = {
+                    "temp_c": data["main"]["temp"],
+                    "humidity": data["main"]["humidity"],
+                    "wind_kts": wind.get("speed", 0.0) * ms_to_kts,
+                    "wind_dir_deg": wind.get("deg"),
+                    "pressure_hpa": data["main"]["pressure"],
+                    # La racha solo se emite si la API la proporciona
+                    "gust_kts": wind["gust"] * ms_to_kts if "gust" in wind else None,
+                    # OWM solo da lluvia de la última hora; la de 24 h no se inventa
+                    "rain_1h_mm": rain.get("1h", 0.0),
+                }
+                last_known_weather_time = time.time()
                 print(f"[OWM SUCCESS] Consulta realizada con éxito en el intento {attempt}.")
                 return last_known_weather
                 
@@ -460,14 +505,17 @@ def get_weather_data(lat, lon):
             time.sleep(delay)
             delay *= 2  # Backoff exponencial
             
-    print("[OWM WARNING CRÍTICO] Todos los reintentos a OpenWeatherMap fallaron. Utilizando últimos datos climáticos conocidos.")
-    return last_known_weather
+    if last_known_weather and time.time() - last_known_weather_time <= WEATHER_MAX_AGE_S:
+        print("[OWM WARNING] Todos los reintentos fallaron. Se reutiliza la última lectura real (menos de 1 h).")
+        return last_known_weather
+    print("[OWM WARNING CRÍTICO] Sin datos meteorológicos recientes: no se emite baliza.")
+    return None
 
 def get_weatherapi_forecast(lat, lon):
     """
     Consulta WeatherAPI.com para obtener el pronóstico de 24-72 horas.
     Compara las métricas con umbrales personalizables y extrae alertas severas gubernamentales si existen.
-    Si no hay API Key configurada, simula el pronóstico con datos operacionales realistas para demostración.
+    Si no hay API Key configurada no se genera ninguna alerta (salvo en modo --simulate, que no transmite).
     """
     global WEATHERAPI_KEY, WEATHER_ALERT_WIND_KTS, WEATHER_ALERT_TEMP_MIN_C, WEATHER_ALERT_RAIN_MM, WEATHER_FORECAST_DAYS
     
@@ -475,23 +523,17 @@ def get_weatherapi_forecast(lat, lon):
     alertas_detectadas = []
     
     if not WEATHERAPI_KEY:
-        # Simulador de pronóstico para demostración operativa en ausencia de clave
-        print("[WeatherAPI] Sin API Key de WeatherAPI. Ejecutando simulador de pronóstico severo para pruebas.")
-        # Generamos una alerta simulada basada en el día actual para validar la inyección APRS
-        # Simulamos vientos fuertes de 28.5 nudos y heladas de -1.5 C en las próximas 48h
+        if not SIMULATE:
+            print("[WeatherAPI] Sin API Key de WeatherAPI: alertas de pronóstico desactivadas.")
+            return alertas_detectadas
+        # Solo en modo --simulate (que nunca transmite) se generan alertas de prueba
+        print("[WeatherAPI] MODO SIMULACIÓN: generando alertas de pronóstico de prueba.")
         alertas_detectadas.append({
             "tipo": "VIENTO_FUERTE",
             "valor": 28.5,
             "umbral": WEATHER_ALERT_WIND_KTS,
             "tiempo_h": 24,
             "mensaje": f"PREVISTO VIENTO MAX 28.5KTS EN 24H (UMBRAL: {WEATHER_ALERT_WIND_KTS}KTS)"
-        })
-        alertas_detectadas.append({
-            "tipo": "HELADA",
-            "valor": -1.5,
-            "umbral": WEATHER_ALERT_TEMP_MIN_C,
-            "tiempo_h": 48,
-            "mensaje": f"PREVISTA HELADA MIN -1.5C EN 48H (UMBRAL: {WEATHER_ALERT_TEMP_MIN_C}C)"
         })
         return alertas_detectadas
 
@@ -500,8 +542,6 @@ def get_weatherapi_forecast(lat, lon):
     
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         
         req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
@@ -591,8 +631,6 @@ def query_ign_earthquakes(station_lat, station_lon):
     
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         
         req = urllib.request.Request(url_ign, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
@@ -611,39 +649,82 @@ def query_ign_earthquakes(station_lat, station_lon):
     if json_bytes:
         try:
             data = json.loads(json_bytes.decode('utf-8'))
-            for feature in data.get("features", []):
-                geom = feature.get("geometry", {})
-                props = feature.get("properties", {})
-                
-                coords = geom.get("coordinates", [])
-                if len(coords) < 2: continue
-                
-                lon = coords[0]
-                lat = coords[1]
-                depth = coords[2] if len(coords) > 2 else 0
-                mag = props.get("mag", 0.0)
-                place = props.get("place", "Península Ibérica")
-                eq_id = feature.get("id") or props.get("code") or str(props.get("time"))
-                
-                # Aplicar fórmula Haversine
-                dist = haversine(station_lat, station_lon, lat, lon)
-                
-                if dist <= FILTER_RADIUS_KM:
-                    print(f"  [ALERT] SISMO EN RANGO - {place} - M{mag} a {dist}km del nodo!")
-                    eventos_detectados.append({
-                        "id": eq_id,
-                        "time": props.get("time") / 1000 if props.get("time") else time.time(),
-                        "latitude": lat,
-                        "longitude": lon,
-                        "depth": depth,
-                        "magnitude": mag,
-                        "place": place,
-                        "distance": dist
-                    })
         except Exception as e:
-            print(f"[SISMOS] Error al decodificar la trama geojson ({e})")
+            print(f"[SISMOS] Error al decodificar la trama geojson de {source} ({e})")
+            return []
+        for feature in data.get("features", []):
+            evento = parse_earthquake_feature(feature, station_lat, station_lon)
+            if evento and evento["distance"] <= FILTER_RADIUS_KM:
+                print(f"  [ALERT] SISMO EN RANGO - {evento['place']} - M{evento['magnitude']} a {evento['distance']}km del nodo!")
+                eventos_detectados.append(evento)
             
     return eventos_detectados
+
+def _parse_event_time(raw):
+    """Acepta milisegundos epoch (USGS) o una fecha ISO 8601 (IGN). Devuelve epoch o None."""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) / 1000.0
+    try:
+        texto = str(raw).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(texto)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+def parse_earthquake_feature(feature, station_lat, station_lon):
+    """
+    Normaliza un evento GeoJSON de FDSN. Devuelve None si le falta algún dato
+    imprescindible: un evento defectuoso no debe detener al resto del agente.
+    """
+    try:
+        geom = feature.get("geometry") or {}
+        props = feature.get("properties") or {}
+        coords = geom.get("coordinates") or []
+        if len(coords) < 2 or coords[0] is None or coords[1] is None:
+            return None
+        lon = float(coords[0])
+        lat = float(coords[1])
+        depth = float(coords[2]) if len(coords) > 2 and coords[2] is not None else 0.0
+        mag = props.get("mag")
+        if mag is None:
+            return None
+        mag = float(mag)
+        event_time = _parse_event_time(props.get("time"))
+        if event_time is None:
+            return None
+        eq_id = feature.get("id") or props.get("code") or props.get("evid") or f"{event_time:.0f}_{lat:.2f}_{lon:.2f}"
+        return {
+            "id": str(eq_id),
+            "time": event_time,
+            "latitude": lat,
+            "longitude": lon,
+            "depth": depth,
+            "magnitude": mag,
+            "place": props.get("place") or "Peninsula Iberica",
+            "distance": haversine(station_lat, station_lon, lat, lon),
+        }
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+def should_announce_earthquake(sismo, now=None):
+    """Solo se anuncian sismos nuevos, recientes y por encima de la magnitud mínima."""
+    now = time.time() if now is None else now
+    if sismo["id"] in transmitidos_sismos:
+        return False
+    if sismo["magnitude"] < MIN_MAGNITUDE:
+        return False
+    if now - sismo["time"] > MAX_QUAKE_AGE_HOURS * 3600:
+        return False
+    return True
+
+def earthquake_object_name(sismo):
+    """Nombre de objeto único de 9 caracteres: EQ + hora UTC del evento (DDHHMM)."""
+    cuando = datetime.fromtimestamp(sismo["time"], tz=timezone.utc)
+    return "EQ" + cuando.strftime("%d%H%M")
 
 def query_noaa_space_weather():
     """
@@ -654,8 +735,6 @@ def query_noaa_space_weather():
     url_noaa = "https://services.swpc.noaa.gov/products/alerts.json"
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         
         req = urllib.request.Request(url_noaa, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
@@ -665,8 +744,7 @@ def query_noaa_space_weather():
                 
                 # Expresión regular para capturar G-Scale, R-Scale o S-Scale
                 # E.g., "Geomagnetic Storm Category G4", "Radio Blackout R3", etc.
-                import re
-                match = re.search(r'(Geomagnetic Storm|Solar Radiation Storm|Radio Blackout) (Level |Scale )?([G|R|S])([2-5])', message, re.IGNORECASE)
+                match = re.search(r'(Geomagnetic Storm|Solar Radiation Storm|Radio Blackout) (Category |Level |Scale )?([GRS])([2-5])', message, re.IGNORECASE)
                 if match:
                     scale = match.group(3).upper() # G, R, o S
                     level = int(match.group(4))    # Nivel (2 a 5)
@@ -676,7 +754,7 @@ def query_noaa_space_weather():
                     if level >= 3:
                         desc = "TORMENTA GEOMAGNETICA EXTREMA" if scale == 'G' else "APAGON RADIO HF EXTREMO" if scale == 'R' else "TORMENTA RADIACION FUERTE"
                         return {
-                            "id": f"{scale}{level}_{issue_time.split()[0]}",
+                            "id": f"{scale}{level}_{(issue_time.split() or ['?'])[0]}",
                             "scale": scale,
                             "level": level,
                             "time": issue_time,
@@ -704,8 +782,6 @@ def obtener_indice_gfz(index_name):
         url = f"https://kp.gfz.de/app/json/?{urllib.parse.urlencode(params)}"
 
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(url, headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
             res_json = json.loads(response.read().decode('utf-8'))
@@ -828,8 +904,6 @@ def obtener_pronostico_3h():
         import ssl
         import re
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request("https://services.swpc.noaa.gov/text/3-day-forecast.txt", headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
             texto = response.read().decode('utf-8', errors='ignore')
@@ -963,8 +1037,6 @@ def get_detailed_forecast():
     """Extrae las tendencias de Kp y alertas para las próximas horas desde el pronóstico oficial de NOAA."""
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request("https://services.swpc.noaa.gov/text/3-day-forecast.txt", headers={'User-Agent': 'APRS_SAT_Agent/2.0'})
         with urllib.request.urlopen(req, context=ctx, timeout=6) as response:
             texto = response.read().decode('utf-8', errors='ignore')
@@ -1090,8 +1162,6 @@ def obtener_clima_espacial_avanzado():
     print("[CLIMA ESPACIAL] Iniciando procesamiento de telemetría unificada avanzada (NOAA/GFZ Potsdam)...")
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
 
         plasma_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
         mag_url = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"
@@ -1342,86 +1412,105 @@ def obtener_clima_espacial_avanzado():
 # ==============================================================================
 # TRANSPORTE DE DATOS (APRS-IS por internet y KISS de Direwolf vía radio)
 # ==============================================================================
-def transmit_aprs_packet(packet_string):
+def tx_readiness():
     """
-    Realiza transmisión dual redundante del paquete APRS con alta estabilidad y control de puertos:
-    1. APRS-IS (Servidor de Internet principal) - Con reintento automático y backoff de contingencia
-    2. KISS sobre TCP (Hardware Direwolf / aprx local para irradiar por radio VHF) - Sockets seguros frente a caídas
+    Comprueba si la estación puede transmitir. Devuelve (is_ok, rf_ok, motivos):
+      - is_ok: se puede inyectar en APRS-IS (indicativo válido + passcode correcto).
+      - rf_ok: se puede emitir por RF (indicativo válido).
     """
-    print(f"\n[APRS TX] Preparando envio de paquete:\n{packet_string}")
-    
-    # 1. Enviar a APRS-IS (con reintento automático rápido en caso de microcorte de red)
-    is_success = False
-    for attempt in range(1, 3):
-        is_sock = None
-        try:
-            is_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            is_sock.settimeout(4.0)
-            is_sock.connect((APRS_IS_SERVER, APRS_IS_PORT))
-            
-            # Enviar login de APRS-IS
-            login_string = f"user {CALLSIGN} pass {APRS_PASSCODE} vers APRS_SAT_Agent 2.0\r\n"
-            is_sock.sendall(login_string.encode('ascii'))
-            
-            # Recibir línea de autenticación de forma controlada
-            is_sock.recv(512)
-            
-            # Enviar el paquete real
-            full_packet = f"{packet_string}\r\n"
-            is_sock.sendall(full_packet.encode('utf-8'))
-            print(f"[APRS-IS SUCCESS] Paquete inyectado correctamente en {APRS_IS_SERVER}:{APRS_IS_PORT} (Intento {attempt}).")
-            is_success = True
-            break
-        except socket.timeout:
-            print(f"[APRS-IS WARNING] Tiempo de espera agotado al conectar a {APRS_IS_SERVER}:{APRS_IS_PORT} (Intento {attempt}/2).")
-        except ConnectionRefusedError:
-            print(f"[APRS-IS WARNING] Conexión rechazada por el servidor APRS-IS {APRS_IS_SERVER}:{APRS_IS_PORT}. ¿Filtro activo?")
-        except Exception as e:
-            print(f"[APRS-IS WARNING] Error de red en puerto {APRS_IS_PORT} ({e}) (Intento {attempt}/2).")
-        finally:
-            if is_sock:
-                try:
-                    is_sock.close()
-                except Exception:
-                    pass
-        if attempt < 2:
-            time.sleep(1.5) # Espera rápida antes del reintento de contingencia
-            
-    if not is_success:
-        print(f"[APRS-IS ERROR CRÍTICO] Imposible conectar al canal APRS-IS ({APRS_IS_SERVER}:{APRS_IS_PORT}) tras todos los intentos.")
+    motivos = []
+    if not aprs_proto.is_valid_callsign(CALLSIGN):
+        motivos.append(f"indicativo no válido o de plantilla ({CALLSIGN!r}): configure el suyo en config.ini")
+        return False, False, motivos
+    is_ok = APRS_IS_ENABLED
+    if is_ok and not aprs_proto.passcode_matches(CALLSIGN, APRS_PASSCODE):
+        is_ok = False
+        motivos.append("el passcode de APRS-IS no corresponde al indicativo: no se inyecta en APRS-IS")
+    return is_ok, RF_ENABLED, motivos
 
-    # 2. Enviar a Direwolf por KISS sobre TCP
-    # Formato KISS Frame:
-    # FEND (0xC0), Command Byte (0x00 para datos en puerto 0), Datos (TNC2 Packet), FEND (0xC0)
-    # Algunas integraciones con Direwolf se configuran por KISS sobre TCP
-    kiss_sock = None
+def _send_aprs_is(packet):
+    """Abre sesión en APRS-IS, comprueba que el servidor verifica el login y envía la trama."""
+    sock = socket.create_connection((APRS_IS_SERVER, APRS_IS_PORT), timeout=6.0)
     try:
-        kiss_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        kiss_sock.settimeout(2.0)
-        kiss_sock.connect((DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT))
-        
-        # El paquete requiere preámbulo AX.25, pero Direwolf en KISS TCP
-        # acepta tramas crudas o KISS encapsuladas. Mandamos encapsulación KISS estándar:
-        raw_packet_bytes = packet_string.encode('utf-8', errors='ignore')
-        
-        # Encapsulado KISS simple: 0xC0 (FEND) + 0x00 (Port 0, Data) + Payload + 0xC0 (FEND)
-        kiss_frame = bytearray([0xC0, 0x00]) + bytearray(raw_packet_bytes) + bytearray([0xC0])
-        
-        kiss_sock.sendall(kiss_frame)
-        print(f"[DIREWOLF KISS SUCCESS] Paquete enviado al TNC local en puerto {DIREWOLF_KISS_PORT} (144.800 MHz RF).")
-    except socket.timeout:
-        print(f"[DIREWOLF KISS DEBUG] Timeout de conexión con Direwolf en {DIREWOLF_KISS_HOST}:{DIREWOLF_KISS_PORT}.")
-    except ConnectionRefusedError:
-        print(f"[DIREWOLF KISS DEBUG] Puerto local {DIREWOLF_KISS_PORT} inactivo/ocupado. Direwolf o APRX no están listos.")
-    except Exception as e:
-        # Esto es esperable si se corre en un entorno que no tiene una TNC local física
-        print(f"[DIREWOLF KISS DEBUG] Canal RF local en puerto {DIREWOLF_KISS_PORT} inaccesible ({e}). Omisión RF.")
+        sock.settimeout(6.0)
+        reader = sock.makefile("r", encoding="utf-8", errors="replace", newline="\n")
+        login = f"user {CALLSIGN} pass {APRS_PASSCODE} vers SAT-APRS-Agent 2.1\r\n"
+        sock.sendall(login.encode("ascii"))
+        verified = False
+        for _ in range(6):                      # cabecera del servidor + respuesta de login
+            line = reader.readline()
+            if not line:
+                break
+            if "logresp" in line:
+                verified = " verified" in line and "unverified" not in line
+                break
+        if not verified:
+            raise ConnectionError("el servidor APRS-IS no ha verificado el login")
+        sock.sendall((packet + "\r\n").encode("ascii", errors="replace"))
+        time.sleep(0.5)                         # deja que el servidor procese antes de cerrar
     finally:
-        if kiss_sock:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+def _send_kiss(frame):
+    """Entrega una trama AX.25 al TNC (Direwolf) por KISS sobre TCP."""
+    with socket.create_connection((DIREWOLF_KISS_HOST, DIREWOLF_KISS_PORT), timeout=3.0) as sock:
+        sock.sendall(aprs_proto.kiss_encode(frame))
+        time.sleep(0.2)
+
+def transmit_aprs(info, description=""):
+    """
+    Transmisión dual del campo de información APRS `info`:
+      1. APRS-IS, como «INDICATIVO>APZSAT,TCPIP*:info» (el servidor añade la construcción q).
+      2. RF, como trama AX.25 UI real por KISS con la ruta de radio configurada.
+    Devuelve True si salió por al menos un canal. En --dry-run solo muestra las tramas.
+    """
+    is_packet = aprs_proto.build_packet(CALLSIGN, aprs_proto.IS_PATH, info)
+    rf_packet = aprs_proto.build_packet(CALLSIGN, RF_PATH, info)
+    etiqueta = f" ({description})" if description else ""
+
+    if DRY_RUN:
+        print(f"\n[DRY-RUN]{etiqueta} No se transmite. Tramas que se emitirían:\n  IS: {is_packet}\n  RF: {rf_packet}")
+        return False
+
+    is_ok, rf_ok, motivos = tx_readiness()
+    for motivo in motivos:
+        print(f"[APRS TX INHIBIDO] {motivo}")
+    if not is_ok and not rf_ok:
+        return False
+
+    print(f"\n[APRS TX]{etiqueta} {is_packet}")
+    enviado = False
+
+    # 1. APRS-IS (con un reintento rápido ante microcortes de red)
+    if is_ok:
+        for attempt in (1, 2):
             try:
-                kiss_sock.close()
-            except Exception:
-                pass
+                _send_aprs_is(is_packet)
+                print(f"[APRS-IS SUCCESS] Paquete inyectado en {APRS_IS_SERVER}:{APRS_IS_PORT} (intento {attempt}).")
+                enviado = True
+                break
+            except Exception as e:
+                print(f"[APRS-IS WARNING] Fallo en {APRS_IS_SERVER}:{APRS_IS_PORT} ({e}) (intento {attempt}/2).")
+                if attempt == 1:
+                    time.sleep(1.5)
+
+    # 2. RF: trama AX.25 UI por KISS. Direwolf espera AX.25 binario, no texto TNC2.
+    if rf_ok:
+        try:
+            frame = aprs_proto.encode_ax25_ui(CALLSIGN, aprs_proto.TOCALL, RF_PATH, info)
+            _send_kiss(frame)
+            print(f"[DIREWOLF KISS SUCCESS] Trama AX.25 entregada al TNC en puerto {DIREWOLF_KISS_PORT} (ruta {RF_PATH}).")
+            enviado = True
+        except ValueError as e:
+            print(f"[DIREWOLF KISS ERROR] Trama no válida para RF ({e}). Revise rfPath en config.ini.")
+        except Exception as e:
+            # Esperable en un equipo sin TNC local
+            print(f"[DIREWOLF KISS DEBUG] TNC en {DIREWOLF_KISS_HOST}:{DIREWOLF_KISS_PORT} inaccesible ({e}). Omisión RF.")
+
+    return enviado
 
 # ==============================================================================
 # MONITOREO METEOROLÓGICO LOCAL Y ALERTAS DE UMBRAL PERSONALIZADAS
@@ -1430,15 +1519,22 @@ def fetch_local_weather_data():
     """
     Obtiene los datos meteorológicos locales según la fuente configurada.
     Soporta:
-      - 'simulated': Simula lecturas realistas con posibilidad de variaciones dinámicas.
+      - 'simulated': lecturas de prueba; solo con --simulate (que nunca transmite).
+        En operación normal equivale a «sin estación local» y devuelve None.
       - HTTP/HTTPS URLs (e.g. 'http://...'): Realiza un request GET y parsea un JSON con campos climáticos estándar.
       - Archivo local (e.g. 'local_weather.json'): Carga y parsea el archivo JSON.
     Retorna un diccionario con: {temp_c, humidity, wind_kts, wind_dir, pressure, rain_mm} o None si falla.
     """
     global last_local_weather
     
-    # 1. Simulación
+    # 0. Sin fuente configurada
+    if not LOCAL_WEATHER_SOURCE or LOCAL_WEATHER_SOURCE.lower() in ("none", "off", "disabled"):
+        return None
+
+    # 1. Simulación (nunca en operación real: generaría alertas falsas en el aire)
     if LOCAL_WEATHER_SOURCE.lower() == "simulated":
+        if not SIMULATE:
+            return None
         import random
         # Drifting from last readings to maintain realism
         last_temp, last_hum, last_wind, last_dir, last_press, last_rain = last_local_weather
@@ -1571,33 +1667,32 @@ def monitorear_clima_local():
     if wind >= LOCAL_THRESHOLD_WIND_KTS:
         alertas_disparadas.append({
             "tipo": "VIENTO_LOCAL",
-            "msg": f"Viento fuerte detectado de {wind} kts (Umbral: {LOCAL_THRESHOLD_WIND_KTS} kts)"
+            "msg": f"Viento {wind} kts (umbral {LOCAL_THRESHOLD_WIND_KTS} kts)"
         })
         
     # 2. Temperatura Maxima (Ola de calor)
     if temp >= LOCAL_THRESHOLD_TEMP_MAX_C:
         alertas_disparadas.append({
             "tipo": "TEMPERATURA_MAX_LOCAL",
-            "msg": f"Ola de calor detectada de {temp}°C (Umbral: {LOCAL_THRESHOLD_TEMP_MAX_C}°C)"
+            "msg": f"Temp. alta {temp} C (umbral {LOCAL_THRESHOLD_TEMP_MAX_C} C)"
         })
         
     # 3. Temperatura Minima (Helada / Frio extremo)
     if temp <= LOCAL_THRESHOLD_TEMP_MIN_C:
         alertas_disparadas.append({
             "tipo": "TEMPERATURA_MIN_LOCAL",
-            "msg": f"Helada extrema detectada de {temp}°C (Umbral: {LOCAL_THRESHOLD_TEMP_MIN_C}°C)"
+            "msg": f"Temp. baja {temp} C (umbral {LOCAL_THRESHOLD_TEMP_MIN_C} C)"
         })
         
     # 4. Lluvia Intensa/Torrencial
     if rain >= LOCAL_THRESHOLD_RAIN_MM:
         alertas_disparadas.append({
             "tipo": "LLUVIA_LOCAL",
-            "msg": f"Lluvia torrencial detectada de {rain} mm (Umbral: {LOCAL_THRESHOLD_RAIN_MM} mm)"
+            "msg": f"Lluvia {rain} mm (umbral {LOCAL_THRESHOLD_RAIN_MM} mm)"
         })
         
     # Procesar y transmitir las alertas disparadas
-    import datetime
-    today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
     for alerta in alertas_disparadas:
         # Generar clave unica para evitar saturacion/spam del boletin en el mismo dia
@@ -1606,30 +1701,56 @@ def monitorear_clima_local():
         if alert_key not in transmitidas_alertas_locales:
             msg = alerta["msg"]
             
-            # Boletin APRS (BLN) estandar marcado para distribucion del S.A.T.
-            # Identificador de boletin especial 'BLN3METEO' de 9 caracteres
-            bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN3METEO: [ALERTA SAT LOCAL] {msg}"
+            # Boletin APRS (BLN) estandar: destinatario 'BLN3METEO' de 9 caracteres
+            info = aprs_proto.format_bulletin_info("BLN3METEO", f"ALERTA LOCAL: {msg}")
             
             print(f"\n[ALERTA METEOROLOGICA LOCAL DISPARADA] Emitiendo Boletin APRS: {msg}")
-            transmit_aprs_packet(bulletin_packet)
-            transmitidas_alertas_locales.add(alert_key)
+            if transmit_aprs(info, "alerta meteo local"):
+                transmitidas_alertas_locales[alert_key] = time.time()
+                save_state()
 
 # ==============================================================================
 # HILO PRINCIPAL DE OPERACIÓN (Loop de control permanente)
 # ==============================================================================
-def main():
-    global transmitido_sw_id, ultima_baliza_wx, transmitidas_alertas_meteo, ultima_consulta_pronostico, ultima_consulta_clima_local
-    global transmitidas_alertas_multi_servicios, ultima_consulta_multi_servicios
-    
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="S.A.T.-APRS Sentinel: agente de alerta temprana por APRS")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="no transmite nada: muestra las tramas que se emitirían")
+    parser.add_argument("--simulate", action="store_true",
+                        help="usa fuentes simuladas para pruebas (implica --dry-run)")
+    parser.add_argument("--once", action="store_true",
+                        help="ejecuta un único ciclo y termina (útil para pruebas)")
+    return parser.parse_args(argv)
+
+def main(argv=None):
+    global transmitido_sw_id, ultima_baliza_wx, ultima_consulta_pronostico, ultima_consulta_clima_local
+    global ultima_consulta_multi_servicios, DRY_RUN, SIMULATE
+
+    args = parse_args(argv)
+    SIMULATE = args.simulate
+    DRY_RUN = args.dry_run or args.simulate   # los datos simulados jamás salen al aire
+
+    # Carga inicial de configuración unificada e historial de anuncios
+    sync_local_config()
+    load_state()
+
     print("======================================================================")
     print("     APRS S.A.T. INICIADO - CONSOLA DE EMERGENCIAS REMER")
-    print(f"     Callsign: {CALLSIGN} | Rango Crítico: {FILTER_RADIUS_KM} km")
+    print(f"     Callsign: {CALLSIGN} | Rango Crítico: {FILTER_RADIUS_KM} km | Mag. mínima: {MIN_MAGNITUDE}")
     print("======================================================================")
-    
-    # Carga inicial de configuración unificada
-    sync_local_config()
-    
+    if SIMULATE:
+        print("[MODO SIMULACIÓN] Fuentes de prueba activas. No se transmite nada.")
+    elif DRY_RUN:
+        print("[MODO DRY-RUN] No se transmite nada: solo se muestran las tramas.")
+    else:
+        is_ok, rf_ok, motivos = tx_readiness()
+        for motivo in motivos:
+            print(f"[APRS TX INHIBIDO] {motivo}")
+        print(f"[APRS TX] Canales activos -> APRS-IS: {'sí' if is_ok else 'no'} | RF: {'sí' if rf_ok else 'no'}")
+
     ultima_lectura_clima_espacial = 0
+    ultima_consulta_sismos = 0
+    ultima_consulta_noaa = 0
     
     while True:
         try:
@@ -1638,73 +1759,59 @@ def main():
             
             # 1. Consultar geoposicionamiento en tiempo real desde gpsd
             lat, lon, alt, is_fallback = get_gpsd_coordinates()
-            aprs_lat = decdeg_to_aprs_lat(lat)
-            aprs_lon = decdeg_to_aprs_lon(lon)
             
             # Formatear sellado temporal APRS en coordenadas UTC
             utc_now = datetime.now(timezone.utc)
-            timestamp = utc_now.strftime("%d%H%Mz") # Formato APRS DDHHMMz
+            timestamp = aprs_proto.format_timestamp(utc_now) # Formato APRS DDHHMMz
+            hoy_str = utc_now.strftime("%Y-%m-%d")
             
             # 2. Telemetría de Clima (Intervalo de 15 minutos / 900 segs)
             curr_time = time.time()
             if curr_time - ultima_baliza_wx >= 900 or ultima_baliza_wx == 0:
-                print("\n[SENSOR CLIMA] Adquiriendo telemetría actual de sensores integrados...")
-                weather_metrics = get_weather_data(lat, lon)
-                wx_payload = format_aprs_wx_payload(*weather_metrics)
-                
-                # Baliza meteorológica APRS (Símbolo _ en la posición de la estación)
-                # Sintaxis: @ <timestamp> <lat> / <lon> _ <wx_payload>
-                wx_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,GATEWAY:@{timestamp}{aprs_lat}/{aprs_lon}{wx_payload}"
-                transmit_aprs_packet(wx_packet)
+                print("\n[SENSOR CLIMA] Adquiriendo telemetría meteorológica real...")
+                wx = get_weather_data(lat, lon)
+                if wx:
+                    # Baliza meteorológica APRS: @hora + posición + símbolo _ + datos
+                    info = aprs_proto.format_wx_info(timestamp, lat, lon, comment="SAT-APRS", **wx)
+                    transmit_aprs(info, "baliza WX")
                 ultima_baliza_wx = curr_time
                 
             # 3. Procesamiento y Alerta Geofísica (IGN España)
-            sismos_en_rango = query_ign_earthquakes(lat, lon)
-            for sismo in sismos_en_rango:
-                eq_id = sismo["id"]
-                if eq_id not in transmitidos_sismos:
+            if curr_time - ultima_consulta_sismos >= QUAKE_POLL_INTERVAL or ultima_consulta_sismos == 0:
+                ultima_consulta_sismos = curr_time
+                for sismo in query_ign_earthquakes(lat, lon):
+                    if not should_announce_earthquake(sismo, curr_time):
+                        continue
                     mag = sismo["magnitude"]
                     dist = sismo["distance"]
-                    place = sismo["place"]
-                    depth = sismo["depth"]
-                    
-                    # Generar Objeto APRS de Sismo (Símbolo [ o o)
-                    # El nombre del objeto debe tener exactamente 9 caracteres
-                    obj_name = f"EQ_M{int(mag*10)}".ljust(9)
-                    
-                    # Timestamp del evento sísmico
                     eq_time = datetime.fromtimestamp(sismo["time"], tz=timezone.utc)
-                    eq_timestamp = eq_time.strftime("%d%H%Mz")
-                    
-                    eq_lat = decdeg_to_aprs_lat(sismo["latitude"])
-                    eq_lon = decdeg_to_aprs_lon(sismo["longitude"])
-                    
-                    comment = f"SISMO M{mag} {place} Prof:{depth}km a {dist}km - REMER S.A.T."
-                    
-                    # Objeto APRS: ; <9_NAME> * <timestamp> <lat> / <lon> [ <comment>
-                    eq_object_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,SISMOS:;{obj_name}*{eq_timestamp}{eq_lat}/{eq_lon}[{comment}"
-                    
-                    # Inyección dual urgente
-                    print(f"\n[ALERTA GEOLÓGICA CRÍTICA] Terremoto a {dist}km! Transmitiendo objeto sísmico...")
-                    transmit_aprs_packet(eq_object_packet)
-                    transmitidos_sismos.add(eq_id)
+                    comment = f"M{mag:.1f} {sismo['place']} Prof:{sismo['depth']:.0f}km"
+
+                    # Objeto APRS con el símbolo de terremoto (tabla alternativa \ + Q)
+                    info = aprs_proto.format_object_info(
+                        earthquake_object_name(sismo), aprs_proto.format_timestamp(eq_time),
+                        sismo["latitude"], sismo["longitude"], "\\", "Q", comment)
+
+                    print(f"\n[ALERTA GEOLÓGICA] Terremoto M{mag:.1f} a {dist}km. Transmitiendo objeto sísmico...")
+                    if transmit_aprs(info, "objeto sísmico") or DRY_RUN:
+                        transmitidos_sismos[sismo["id"]] = curr_time
+                        save_state()
             
             # 4. Alertas Clima Espacial NOAA
-            noaa_alert = query_noaa_space_weather()
-            if noaa_alert:
-                alert_id = noaa_alert["id"]
-                if alert_id != transmitido_sw_id:
+            if curr_time - ultima_consulta_noaa >= NOAA_POLL_INTERVAL or ultima_consulta_noaa == 0:
+                ultima_consulta_noaa = curr_time
+                noaa_alert = query_noaa_space_weather()
+                if noaa_alert and noaa_alert["id"] != transmitido_sw_id:
                     scale = noaa_alert["scale"]
                     level = noaa_alert["level"]
-                    desc = noaa_alert["desc"]
-                    
+
                     # Alerta emitida mediante un Boletín APRS (BLN)
-                    # Sintaxis: CALLSIGN > APRS,TCPIP*: BLN <N> <ASOCIACION>: Mensaje
-                    bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN1REMER: NOAA SPACE CLIMA:{scale}{level} - {desc}"
-                    
+                    info = aprs_proto.format_bulletin_info("BLN1REMER", f"NOAA {scale}{level}: {noaa_alert['desc']}")
+
                     print(f"\n[ALERTA CLIMA ESPACIAL NOAA] Escala {scale}{level} detectada! Emitiendo boletín...")
-                    transmit_aprs_packet(bulletin_packet)
-                    transmitido_sw_id = alert_id
+                    if transmit_aprs(info, "boletín NOAA") or DRY_RUN:
+                        transmitido_sw_id = noaa_alert["id"]
+                        save_state()
             
             # 5. Adquisición de Clima Espacial Avanzado y Alineamiento (Intervalo de 5 minutos / 300 segs)
             if curr_time - ultima_lectura_clima_espacial >= 300 or ultima_lectura_clima_espacial == 0:
@@ -1714,66 +1821,55 @@ def main():
             # 6. Alertas de Pronóstico Meteorológico Avanzado (WeatherAPI) - Intervalo de 30 minutos (1800 segs)
             if curr_time - ultima_consulta_pronostico >= 1800 or ultima_consulta_pronostico == 0:
                 print("\n[PRONÓSTICO METEO] Consultando pronóstico avanzado de 24-72 horas...")
-                alertas_meteo = get_weatherapi_forecast(lat, lon)
-                
-                for alerta in alertas_meteo:
-                    # Crear una clave única que combine tipo, proyección en horas y fecha de hoy para no repetir el mismo día
-                    hoy_str = utc_now.strftime("%Y-%m-%d")
+                for alerta in get_weatherapi_forecast(lat, lon):
+                    # Clave única (tipo + proyección + fecha) para no repetir el mismo día
                     alert_key = f"{alerta['tipo']}_{alerta['tiempo_h']}_{hoy_str}"
-                    
-                    if alert_key not in transmitidas_alertas_meteo:
-                        msg = alerta["mensaje"]
-                        
-                        # Boletín APRS (BLN) con identificador de Boletín Meteo exclusivo "BLN2METEO"
-                        bulletin_packet = f"{CALLSIGN}>APRS,TCPIP*,qAC,WEATHER:BLN2METEO: ALERTA METEO: {msg}"
-                        
-                        print(f"  [ALERTA METEO] Emitiendo Boletín APRS para alerta: {msg}")
-                        transmit_aprs_packet(bulletin_packet)
-                        transmitidas_alertas_meteo.add(alert_key)
-                        
+                    if alert_key in transmitidas_alertas_meteo:
+                        continue
+                    msg = alerta["mensaje"]
+                    # Boletín APRS (BLN) con identificador de Boletín Meteo "BLN2METEO"
+                    info = aprs_proto.format_bulletin_info("BLN2METEO", msg)
+                    print(f"  [ALERTA METEO] Emitiendo Boletín APRS para alerta: {msg}")
+                    if transmit_aprs(info, "alerta de pronóstico") or DRY_RUN:
+                        transmitidas_alertas_meteo[alert_key] = curr_time
+                        save_state()
                 ultima_consulta_pronostico = curr_time
                 
             # 7. Monitoreo de Estación Meteorológica Local y Alertas de Umbral Personalizadas
             if curr_time - ultima_consulta_clima_local >= LOCAL_WEATHER_INTERVAL or ultima_consulta_clima_local == 0:
-                print("\n[MONITOREO CLIMA LOCAL] Evaluando condiciones de la estación local...")
                 monitorear_clima_local()
                 ultima_consulta_clima_local = curr_time
                 
-            # 8. Alertas Meteorológicas de Múltiples Servicios Nacionales/Regionales (AEMET, MeteoAlarm, DWD, Met Office)
+            # 8. Avisos meteorológicos oficiales (MeteoAlarm / AEMET y fuentes configurables)
             if curr_time - ultima_consulta_multi_servicios >= 1200 or ultima_consulta_multi_servicios == 0:
                 if WeatherAlertsManager is not None:
-                    print("\n[SERVICIOS METEO ADICIONALES] Consultando alertas meteorológicas de múltiples agencias...")
+                    print("\n[SERVICIOS METEO ADICIONALES] Consultando avisos meteorológicos oficiales...")
                     try:
-                        manager = WeatherAlertsManager(fallback_lat=lat, fallback_lon=lon)
-                        manager.set_station_coords(lat, lon)
+                        manager = WeatherAlertsManager(fallback_lat=lat, fallback_lon=lon,
+                                                       area_filter=METEO_AREA_FILTER, allow_simulated=SIMULATE)
                         
                         aemet_key_config = ""
                         if os.path.exists("sat_config.json"):
                             try:
                                 with open("sat_config.json", "r", encoding="utf-8") as jf:
-                                    ui_cfg = json.load(jf)
-                                    aemet_key_config = ui_cfg.get("aemetApiKey", "")
+                                    aemet_key_config = json.load(jf).get("aemetApiKey", "")
                             except Exception:
                                 pass
                         
-                        alertas_multi = manager.poll_all_services(aemet_key=aemet_key_config)
-                        
                         bulletin_idx = 4
-                        for alerta in alertas_multi:
-                            alert_id = alerta["id"]
-                            hoy_str = utc_now.strftime("%Y-%m-%d")
-                            alert_key = f"{alert_id}_{hoy_str}"
-                            
-                            if alert_key not in transmitidas_alertas_multi_servicios:
-                                bulletin_packet = generate_aprs_weather_bulletin(CALLSIGN, alerta, bulletin_index=bulletin_idx)
-                                print(f"  [ALERTA MULTI-AGENCIA] Emitiendo Boletín APRS desde {alerta['source_name']}: {alerta['event']}")
-                                transmit_aprs_packet(bulletin_packet)
-                                transmitidas_alertas_multi_servicios.add(alert_key)
-                                
-                                bulletin_idx = bulletin_idx + 1 if bulletin_idx < 9 else 4
+                        for alerta in manager.poll_all_services(aemet_key=aemet_key_config):
+                            alert_key = f"{alerta['id']}_{hoy_str}"
+                            if alert_key in transmitidas_alertas_multi_servicios:
+                                continue
+                            info = generate_aprs_weather_bulletin(alerta, bulletin_index=bulletin_idx)
+                            print(f"  [AVISO OFICIAL] Emitiendo Boletín APRS desde {alerta['source_name']}: {alerta['event']}")
+                            if transmit_aprs(info, "aviso meteo oficial") or DRY_RUN:
+                                transmitidas_alertas_multi_servicios[alert_key] = curr_time
+                                save_state()
+                            bulletin_idx = bulletin_idx + 1 if bulletin_idx < 9 else 4
                                 
                     except Exception as ex:
-                        print(f"[SYSTEM WARNING] Error procesando alertas meteorológicas multi-agencia: {ex}")
+                        print(f"[SYSTEM WARNING] Error procesando avisos meteorológicos oficiales: {ex}")
                 else:
                     print("\n[SYSTEM WARNING] Módulo weather_services.py no disponible.")
                 
@@ -1786,9 +1882,16 @@ def main():
             print(f"[LOOP ERROR] Error imprevisto en el bus del sistema ({e}). Auto-recuperación en 30s...")
             time.sleep(30)
             continue
+
+        if args.once:
+            return
             
-        # Tasa de sondeo del bucle (cada 30 segundos) como exige el IGN y NOAA
-        time.sleep(30)
+        # Tasa del bucle: 30 s. Cada fuente tiene además su propio intervalo de sondeo.
+        try:
+            time.sleep(30)
+        except KeyboardInterrupt:
+            print("\n[INFO] Sistema APRS S.A.T. detenido de forma controlada por el operador.")
+            sys.exit(0)
 
 if __name__ == "__main__":
     main()

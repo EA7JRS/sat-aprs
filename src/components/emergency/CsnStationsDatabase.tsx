@@ -261,7 +261,7 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan
               <button
                 onClick={async () => {
                   try {
-                    await fetch('/api/radiological/rar-ran/simulate', {
+                    await customFetch('/api/radiological/rar-ran/simulate', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ valueUsVh: null })
@@ -287,7 +287,7 @@ export default function CsnStationsDatabase({ stations, gpsd, onRelocate, rarRan
               onChange={async (e) => {
                 const val = parseFloat(e.target.value);
                 try {
-                  await fetch('/api/radiological/rar-ran/simulate', {
+                  await customFetch('/api/radiological/rar-ran/simulate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ valueUsVh: val })

@@ -380,7 +380,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
     let active = true;
     const loadStations = async () => {
       try {
-        const res = await fetch('/api/ica/stations');
+        const res = await customFetch('/api/ica/stations');
         if (res.ok) {
           const data = await res.json();
           if (active && Array.isArray(data) && data.length > 0) {
@@ -1705,7 +1705,7 @@ export default function IcaAirQualityMonitor({ gpsd, config, onInjectRaw, iqair 
         if (onInjectRaw) {
           ok = await onInjectRaw(packet);
         } else {
-          const resp = await fetch('/api/aprs/inject', {
+          const resp = await customFetch('/api/aprs/inject', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'RAW_PACKET', payload: packet })

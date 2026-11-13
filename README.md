@@ -5,14 +5,15 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescript.org/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
 El **S.A.T. APRS Dashboard** es una estación de trabajo digital unificada para operadores de radioafición (IARU/ITU) y redes de telecomunicaciones de emergencia en entornos de catástrofe y misiones críticas. Emula y visualiza el comportamiento de componentes de software de radio esenciales, permitiendo el monitoreo interactivo de señales de RF, la calibración de hardware de audio en tiempo real y la gestión operativa ante catástrofes.
 
-S.A.T.- APRS es un Servicio de Alerta Tempara por radio APRS, es una verdadera estación APRS y herramienta de gestion para grupos voluntariados y gubernamentales dedicados al área de emeregencias.
+S.A.T.-APRS es un Servicio de Alerta Temprana por radio APRS: una verdadera estación APRS y herramienta de gestión para grupos de voluntariado y gubernamentales dedicados al área de emergencias.
 
-Se trata de un centro avanzado robusto y eficiente completamente autónomo que integra geolocalización y sincronización horaria vía satélite en tiempo real, una estación meteorológica, una pasarela SMS, sistema de correo electronico Winlink y receptores SDR y/o físicos para AIS, NAVTEX y SafeNet II de Inmarsat.
+Se trata de un centro avanzado robusto y eficiente completamente autónomo que integra geolocalización y sincronización horaria vía satélite en tiempo real, una estación meteorológica, una pasarela SMS, sistema de correo electrónico Winlink y receptores SDR y/o físicos para AIS, NAVTEX y SafeNet II de Inmarsat.
 
-Además, es una herramienta para grupos de emergencias ante situaciones severas y criticas para la gestión y coordinación supervisada que se encarga de proporcionar mensajes de difusión tipo bolentines informativos y mensajes de alertas integrales sobre condiciones adversas actuales para su información y difusión via radio. 
+Además, es una herramienta para grupos de emergencias ante situaciones severas y críticas para la gestión y coordinación supervisada, que se encarga de proporcionar mensajes de difusión tipo boletines informativos y mensajes de alerta integrales sobre condiciones adversas actuales para su información y difusión vía radio.
 
 S.A.T.-APRS como estación de radio desatendida operando las 24/7, permite generar paquetes de datos APRS con un campo de información definido por el usuario y transmitirlos a intervalos específicos. Esto posibilita la transmisión de balizas, objetos, datos meteorológicos y telemetría, así como la difusión inteligente de boletines informativos o mensajes de alerta.
 
@@ -69,246 +70,253 @@ Consola táctica unificada para la gestión de emergencias:
 ## 🚀 Arquitectura de Desarrollo
 
 Este proyecto está construido sobre un stack moderno y eficiente diseñado para baja latencia e interfaces tácticas de alta fidelidad:
-- **Framework Principal**: React 18+ con TypeScript.
+- **Framework Principal**: React 19 con TypeScript.
 - **Sistema de Compilación**: Vite (HMR desactivado en la plataforma de desarrollo interactivo).
 - **Estilos Visuales**: Tailwind CSS integrado mediante arquitectura de temas de alto contraste.
 - **Animaciones e Interacciones**: Motion (`motion/react`) para efectos fluidos y de transición CRT-phosphor.
 - **Detección de Coordenadas**: Geolocalización integrada en navegador con visualizadores de cartografía locales hiperprecisos.
 
+## 📡 Seguridad de emisión (léalo antes de transmitir)
+
+S.A.T.-APRS es una estación real: lo que emite llega a la red APRS-IS mundial y al aire con su indicativo. Por eso el sistema aplica estas reglas y **no hay forma de saltárselas desde la interfaz**:
+
+1. **Nada simulado sale al aire.** Los datos de demostración (sismos de prueba, radiación modelada, incendios de ejemplo, meteorología simulada, avisos de ejemplo) se muestran en pantalla pero nunca se transmiten. En el registro aparecen marcados como `[NO EMITIDO: datos simulados o de prueba]`.
+2. **Sin indicativo válido no se transmite.** Con el indicativo de plantilla (`N0CALL`) o uno mal formado, el sistema no emite ni por Internet ni por radio.
+3. **APRS-IS exige su passcode.** Si el passcode no corresponde al indicativo, no se inyecta nada en APRS-IS (la RF no lo necesita).
+4. **La consola web no transmite por defecto.** Hay que activarla expresamente con `SAT_APRS_TX=on` en `.env`. Con la emisión activada, solo un administrador verificado puede modificar la estación o provocar transmisiones.
+5. **Un solo transmisor.** El agente `aprs_sat.py` es quien emite las balizas y boletines automáticos. Si lo ejecuta, deje la consola con `SAT_APRS_TX=off` para no duplicar el tráfico.
+
+Las tramas se emiten con el destino experimental `APZSAT`, la ruta `TCPIP*` hacia APRS-IS y la ruta de radio configurada (por defecto `WIDE1-1,WIDE2-1`) como tramas AX.25 reales por KISS.
+
+---
+
 ## 💾 Instalación y Actualización en Debian 13 (Trixie)
 
-Este sistema avanzado está diseñado para operar de manera autónoma las 24/7 en servidores o dispositivos integrados que ejecuten **Debian 13 (Trixie)** o **Raspberry Pi OS (Trixie)**.
+Este sistema está diseñado para operar de manera autónoma las 24/7 en servidores o dispositivos integrados que ejecuten **Debian 13 (Trixie)** o **Raspberry Pi OS (Trixie)**.
 
 ### 📋 Requisitos del Sistema
 * **Sistema Operativo:** Debian 13.x o Raspberry Pi OS (Trixie) de 64 bits.
-* **Memoria RAM:** Mínimo 4 GB (Se recomiendan 8 GB o más para un rendimiento óptimo).
-* **Conectividad:** Conexión permanente a Internet (Fibra, LTE/5G o Satélite) para la descarga automática de boletines oficiales, alertas del IGN/AEMET e inyección/extracción de datos APRS-IS.
+* **Memoria RAM:** Mínimo 4 GB (se recomiendan 8 GB o más).
+* **Conectividad:** Conexión a Internet para la descarga de boletines oficiales (IGN, AEMET/MeteoAlarm, NOAA) y el enlace con APRS-IS.
 * **Hardware de Radio (Opcional):** TNC de audio (SDR, tarjeta de sonido externa, interfaces EasyDigi o transceptores con módem integrado).
 
 ---
 
 ## 🛠️ Guía de Instalación desde Cero
 
-La arquitectura se divide en dos componentes independientes que operan en paralelo:
-1. **Consola Web Táctica (React + Express):** El panel de control y visor táctil accesible en el puerto `3000`.
-2. **Agente S.A.T. Sentinel (`aprs_sat.py`):** Un demonio/script en Python que se ejecuta en segundo plano recopilando sensores físicos (GPSD, WX) y APIs de emergencia para emitir las balizas y boletines vía RF (APRS) y APRS-IS.
+La arquitectura se divide en dos componentes independientes:
+1. **Consola Web (React + Express):** el panel de control, accesible en el puerto `3000`.
+2. **Agente S.A.T. Sentinel (`aprs_sat.py`):** un demonio en Python que recopila sensores (GPSD) y fuentes oficiales, y emite las balizas y boletines vía RF y APRS-IS.
 
 ### 📦 Fase 0: Preparación del Sistema Operativo
-Ejecute los siguientes comandos en su terminal para actualizar la base del sistema e instalar las herramientas de compilación, red y dependencias de radioaficionados:
 
 ```bash
-# 0.1- Actualizar repositorios y el núcleo de Debian
-sudo apt update && sudo apt upgrade -y
-sudo apt full-upgrade -y
+# 0.1- Actualizar el sistema
+sudo apt update && sudo apt full-upgrade -y
 
-# 0.2- Instalar utilidades esenciales de compilación, python y redes
-sudo apt install -y git build-essential net-tools python3 python3-pip python3-venv
+# 0.2- Utilidades esenciales
+sudo apt install -y git build-essential net-tools python3 python3-venv
 
-# 0.3- Herramientas para sincronización horaria de precisión y posicionamiento (Receptor GPS)
+# 0.3- Sincronización horaria de precisión y posicionamiento (receptor GPS)
 sudo apt install -y gpsd gpsd-clients pps-tools ntpsec
 
-# 0.4- Ecosistema de Radioafición y Redes AX.25 (Módem y Enrutador)
+# 0.4- Ecosistema de radioafición y redes AX.25
 sudo apt install -y ax25-tools aprx direwolf
 
-# 0.5- Siga las instrucciones oficiales de WeeWX (Estación Meteorológica) para Debian 13:
-# https://www.weewx.com/docs/5.3/quickstarts/debian/
-
-# 0.6- Siga las instrucciones de instalación de AIS-Catcher (Receptor Marítimo AIS):
-# https://www.aiscatcher.org/quickstart
+# 0.5- WeeWX (estación meteorológica): https://www.weewx.com/docs/5.3/quickstarts/debian/
+# 0.6- AIS-Catcher (receptor marítimo AIS): https://www.aiscatcher.org/quickstart
 ```
 
 ---
 
 ### 🖥️ Fase 1: Despliegue de la Consola Web (Node.js)
 
-La consola web unifica el backend de Express y el frontend de React sobre un único proceso Node.js escuchando en el puerto `3000`.
-
 ```bash
-# 1.1- Descargar el repositorio oficial
-git clone https://github.com/EA7JRS/sat-aprs.git
-cd sat-aprs
+# 1.1- Descargar el repositorio
+sudo git clone https://github.com/EA7JRS/sat-aprs.git /opt/sat-aprs
+cd /opt/sat-aprs
 
-# 1.2- Instalar Node.js v20 (LTS Recomendada para Debian 13)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# 1.2- Instalar Node.js 20 LTS o superior
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# 1.3- Instalar dependencias del proyecto
-npm install
-npm install-scripts approve --all
+# 1.3- Instalar dependencias
+npm ci
 
-# 1.4- Configurar Variables de Entorno (.env)
-# Copie la plantilla de configuración e introduzca sus credenciales privadas:
+# 1.4- Variables de entorno
 cp .env.example .env
-nano .env
+nano .env        # SAT_ADMIN_EMAILS, SAT_ADMIN_TOKEN, SAT_APRS_TX...
 
-# 1.5- Compilación para Producción
-# Genera el bundle optimizado del frontend y empaqueta el servidor Express:
+# 1.5- Compilar y arrancar
 npm run build
-
-# 1.6- Iniciar el Servicio en Producción
 npm run start
 ```
 
+Variables principales de `.env` (todas documentadas en `.env.example`):
+
+| Variable | Para qué sirve |
+| :--- | :--- |
+| `SAT_APRS_TX` | `on` permite que la consola transmita. Por defecto `off`. |
+| `SAT_ADMIN_EMAILS` | Correos de las cuentas (verificadas) que administran la estación. |
+| `SAT_ADMIN_TOKEN` | Token local de administrador, para operar sin Internet. |
+| `SAT_TRUST_LOCALHOST` | `on` trata como administrador al navegador del propio equipo. |
+| `HOST` / `PORT` | Interfaz y puerto de escucha (`HOST=127.0.0.1` tras un proxy con TLS). |
+
+> La identidad del operador se verifica en el servidor (token de Firebase firmado o token local). Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
+
 ---
 
-### 🐍 Fase 2: Configuración del Agente de Telemetría (Python)
+### 🐍 Fase 2: Configuración del Agente (Python)
 
-El agente de telemetría `aprs_sat.py` automatiza la adquisición de datos de sensores y APIs en tiempo real. Se recomienda aislarlo en un entorno virtual de Python (`venv`).
+El agente solo usa la biblioteca estándar de Python 3: no hay dependencias que instalar.
 
 ```bash
-# 2.1- Crear e inicializar el entorno virtual de Python
-python3 -m venv venv
-source venv/bin/activate
-
-# 2.2- Instalar dependencias requeridas por el agente
-pip install --upgrade pip
-pip install requests urllib3
+# 2.1- Crear su configuración a partir de la plantilla
+cp config.ini.example config.ini
+nano config.ini
 ```
 
-#### 2.3- Configuración del Operador
-Abra el archivo `aprs_sat.py` con su editor de texto favorito y ajuste los parámetros de su estación:
-```python
-# ==============================================================================
-# CONFIGURACIÓN DE LA ESTACIÓN (Modificar según necesidad)
-# ==============================================================================
-CALLSIGN = "CALLSING-13"          # Su indicativo de llamada de radioaficionado con SSID
-APRS_PASSCODE = "12345"         # Su código APRS-IS (passcode de validación)
-FILTER_RADIUS_KM = 200.0        # Cobertura crítica de monitoreo sísmico
-OWM_API_KEY = "SU_API_KEY_AQUÍ" # Clave de API de OpenWeatherMap (Opcional)
+Lo imprescindible en `config.ini`:
+
+```ini
+[APRS]
+callsign = EA7XXX-13        ; su indicativo con SSID
+passcode = 12345            ; el passcode de APRS-IS de SU indicativo
+rfPath = WIDE1-1,WIDE2-1
+
+[Fallback]
+latitude = 37.3891          ; posición de la estación sin GPS
+longitude = -5.9845
+
+[Alerts]
+minMagnitude = 3.0          ; magnitud mínima de los sismos anunciados
+meteoAreaFilter = Sevilla,Cadiz   ; zonas de los avisos meteorológicos oficiales
 ```
 
-#### 2.4- Automatización y Persistencia con Systemd (Servicio del Sistema)
-Para garantizar que el agente de telemetría funcione de manera ininterrumpida las 24/7 y se recupere automáticamente de reinicios o fallos del sistema, regístrelo como un servicio del sistema:
+```bash
+# 2.2- Comprobar qué emitiría, sin transmitir nada
+python3 aprs_sat.py --dry-run --once
 
-2.4.1.- Cree el archivo de configuración del servicio:
+# 2.3- Probar toda la cadena con datos simulados (tampoco transmite)
+python3 aprs_sat.py --simulate --once
+```
+
+#### 2.4- Servicios del sistema (systemd)
+
+Dos unidades, una por componente (sustituya `/opt/sat-aprs` y el usuario si procede):
+
 ```bash
 sudo nano /etc/systemd/system/sat-aprs.service
 ```
-
-2.4.2.- Introduzca el siguiente contenido (asegúrese de reemplazar `/opt/sat-aprs` por la ruta absoluta de su instalación):
 ```ini
 [Unit]
-Description=S.A.T. - APRS Sentinel Agent
-After=network.target gpsd.service
+Description=S.A.T.-APRS Consola Web
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-Group=root
-Environment=PYTHONUNBUFFERED=1
+User=satapr
 WorkingDirectory=/opt/sat-aprs
-ExecStart=/opt/sat-aprs/venv/bin/python3 aprs_sat.py
+ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=aprs-sat
+SyslogIdentifier=sat-aprs
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-2.4.3.- Cree el archivo de configuración del servicio:
 ```bash
 sudo nano /etc/systemd/system/sat-aprs-agent.service
 ```
-
-2.4.4- Introduzca el siguiente contenido
-
-```bash
+```ini
 [Unit]
-Description=S.A.T.-APRS Agent
-After=gpsd.service network.target
+Description=S.A.T.-APRS Agente Sentinel
+After=network-online.target gpsd.service
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=satapr
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/opt/sat-aprs
-ExecStart=/opt/sat-aprs/venv/bin/python3 aprs_sat.py
+ExecStart=/usr/bin/python3 aprs_sat.py
 Restart=always
 RestartSec=10
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=aprs-sat
+SyslogIdentifier=sat-aprs-agent
 
 [Install]
 WantedBy=multi-user.target
 ```
-2.4.5.- Registre, active y arranque el servicio de sistema:
+
 ```bash
+# Usuario de servicio sin privilegios, dueño de la instalación
+sudo useradd --system --home /opt/sat-aprs --shell /usr/sbin/nologin satapr
+sudo chown -R satapr: /opt/sat-aprs
+
 sudo systemctl daemon-reload
-sudo systemctl enable sat-aprs.service sat-aprs-agent.service
-sudo systemctl start sat-aprs.service sat-aprs-agent.service
+sudo systemctl enable --now sat-aprs.service sat-aprs-agent.service
+sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service sat-aprs-agent.service
 ```
-2.4.5.- Verifique
-```bash
-sudo systemctl status gpsd ntpsec aprx direwolf pat sat-aprs.service sat-aprs-agent.service
-```
+
+> Se recomienda no ejecutar los servicios como `root`. Si quiere que la consola edite los archivos de `/etc` (Direwolf, aprx, WeeWX), conceda al usuario de servicio solo las órdenes `sudo` necesarias (`tee`, `cat`, `test`, `truncate`, `journalctl`) en `/etc/sudoers.d/`.
 
 ---
 
-## 🔄 Procedimiento de Actualización (Upgrade) en Debian 13
-
-Si ya tiene una versión de S.A.T.-APRS corriendo en producción sobre Debian 13, siga estos pasos detallados para realizar una actualización limpia y sin pérdida de configuraciones locales:
+## 🔄 Procedimiento de Actualización
 
 ```bash
-# 1. Acceder al directorio de instalación
 cd /opt/sat-aprs
+sudo systemctl stop sat-aprs.service sat-aprs-agent.service
 
-# 2. Detener los servicios en ejecución para evitar bloqueos de archivos
-sudo systemctl stop sat-aprs.service
-# Si tiene configurado pm2 o systemd para la consola web, deténgalos (ej. pm2 stop sat-aprs)
-
-# 3. Guardar una copia de seguridad de sus archivos de configuración locales
+# Copia de seguridad de su configuración local
 cp .env .env.bak
-cp aprs_sat.py aprs_sat.py.bak
+cp config.ini config.ini.bak 2>/dev/null
+cp sat_config.json sat_config.json.bak 2>/dev/null
 
-# 4. Descargar los últimos cambios del repositorio oficial de GitHub
-git fetch --all
-git reset --hard origin/main
+git pull --ff-only
 
-# 5. Restaurar sus configuraciones locales (.env y parámetros del agente)
-# Puede comparar los archivos guardados para aplicar nuevos parámetros si existieran:
-cp .env.bak .env
-# Nota: Si el archivo aprs_sat.py ha tenido cambios estructurales significativos,
-# aplique manualmente sus constantes (CALLSIGN, PASSCODE) en el nuevo aprs_sat.py.
-
-# 6. Actualizar las dependencias de Node.js e iniciar la compilación
-npm install
-npm install-scripts approve --all
+npm ci
 npm run build
-npm run start
 
-# 7. Actualizar las dependencias de Python dentro del entorno virtual
-source venv/bin/activate
-pip install --upgrade -r requirements.txt 2>/dev/null || pip install --upgrade requests urllib3
-deactivate
+sudo systemctl start sat-aprs.service sat-aprs-agent.service
+journalctl -u sat-aprs-agent.service -f -n 50
+```
 
-# 8. Recargar configuraciones de systemd y reiniciar los servicios
-sudo systemctl daemon-reload
-sudo systemctl restart sat-aprs.service
+> **Al actualizar desde una versión anterior a la 1.5.0:** `config.ini` y `sat_config.json` han dejado de estar versionados en git, y git los borrará al traer esta versión. Haga la copia de seguridad de arriba y restáurela después (`cp config.ini.bak config.ini`). A partir de entonces las actualizaciones ya no tocan su configuración.
 
-# 9. Verificar que el agente de telemetría está operando correctamente
-sudo systemctl status sat-aprs.service
-# Ver los registros de telemetría en vivo:
-journalctl -u sat-aprs.service -f -n 50
+---
+
+## 🧪 Pruebas
+
+```bash
+npm run lint       # comprobación de tipos (TypeScript)
+npm test           # protocolo APRS, política de emisión y autenticación
+npm run test:py    # agente: tramas, filtros de sismos, avisos y seguridad de emisión
 ```
 
 ---
 
-## 🛠️ Resumen de Archivos de Configuración Incluidos
-El repositorio incluye plantillas optimizadas para el despliegue de software nativo de radioaficionados en los directorios de configuración de Debian (`/etc` o `/etc/ax25/`):
-* **`direwolf.conf`:** Configuración del módem de software para decodificación AFSK de 1200 baudios y GMSK de 9600 baudios.
-* **`aprx.conf`:** Configuración del enrutador como digipeater/I-Gate APRS inteligente.
-* **`weewx.conf`:** Estructura para captar telemetría meteorológica y propagarla.
-* **`pat-config.json` y `axports`:** Estructuras completas de puertos radio TNC para Winlink / AX.25.
-* **`ais-catcher`:** Directivas para decodificar tramas NMEA de seguridad marítima AIS.
+## 🛠️ Archivos de Configuración de los Servicios de Radio
+La consola genera y valida, desde el panel de configuración, las plantillas de los servicios nativos de Debian (`/etc` o `/etc/ax25/`):
+* **`direwolf.conf`:** módem de software AFSK 1200 baudios / GMSK 9600 baudios.
+* **`aprx.conf`:** digipeater / I-Gate APRS.
+* **`weewx.conf`:** telemetría meteorológica.
+* **`pat` (`config.json`) y `axports`:** puertos de radio para Winlink / AX.25.
 
 ---
 
 ## 🛡️ Estándares de Seguridad de Radioaficionados
 Esta consola promueve el uso ético del espectro electromagnético. Las emulaciones de tramas de balizas AX.25 generadas por el simulador se adhieren a la normativa internacional de la UIT y la legislación local de telecomunicaciones:
-- **Identificación Obligatoria**: Todas las tramas salientes inyectan indicativos de llamada de estación de radioaficionado válidos (ej. `EA1URG-13`).
+- **Identificación Obligatoria**: Todas las tramas salientes llevan el indicativo de la estación, y el sistema se niega a transmitir si no es un indicativo válido.
 - **Uso sin Cifrado**: Conforme al reglamento de radioaficionados, las transmisiones se realizan en texto claro y legible por cualquier estación de escucha terrestre o satelital (ISS / Satélites LEO).
+
+---
+
+## ☕ Apoya el proyecto
+S.A.T.-APRS es un proyecto personal de EA7JRS. Si te resulta útil, puedes invitarme a un café:
+
+[![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal.me%2Fea7jrs-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
+
+© 2026 Manuel - EA7JRS

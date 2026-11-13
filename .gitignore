@@ -6,3 +6,18 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Configuración y estado locales de cada estación (no se versionan)
+config.ini
+sat_config.json
+sat_state.json
+last_gps.json
+scheduled_notifications.json
+weather_alerts_sources.json
+local_weather.json

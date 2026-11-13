@@ -3545,7 +3545,17 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className="bg-slate-950 border-t border-slate-900 py-3 text-center text-[10px] text-slate-500 font-mono flex flex-col lg:flex-row items-center justify-between px-4 gap-2 gap-y-3">
-        <span>© 2026 S.A.T.-APRS by EA7JRS • Todos los derechos reservados • Licencia SPDX • IARU / ITU / BOE-A-2013-7624</span>
+        <span>
+          © 2026 S.A.T.-APRS by EA7JRS • Todos los derechos reservados • Licencia SPDX • IARU / ITU / BOE-A-2013-7624 •{' '}
+          <a
+            href="https://paypal.me/ea7jrs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline underline-offset-2"
+          >
+            Donar con PayPal
+          </a>
+        </span>
         <NtpSyncStatus ntp={data?.ntp} />
         
         {/* FIREBASE SYNC STATUS */}

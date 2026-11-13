@@ -1,12 +1,23 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import dns from 'dns';
 import dgram from 'dgram';
 import fs from 'fs';
-import { exec } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 import net from 'net';
+import {
+  DEFAULT_RF_PATH,
+  decideTransmission,
+  isValidCallsign,
+  kissEncode,
+  latToAprs,
+  lonToAprs,
+  toIsPacket,
+  toRfFrame
+} from './server/aprs';
+import { AuthInfo, createAuthenticator, parseList } from './server/auth';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -37,13 +48,66 @@ import {
 dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10) || 3000;
+// HOST=127.0.0.1 limita la consola al propio equipo (recomendado tras un proxy inverso)
+const HOST = process.env.HOST || '0.0.0.0';
 
-app.use(express.json());
+// ---------------------------------------------------------------------------
+// POLÍTICA DE EMISIÓN
+// La consola NO transmite nada salvo que se active expresamente con
+// SAT_APRS_TX=on en el archivo .env. Aun activada, solo salen al aire tramas
+// con datos reales, con un indicativo válido y (en APRS-IS) con su passcode.
+// ---------------------------------------------------------------------------
+const TX_ENABLED = ['on', '1', 'true', 'yes'].includes((process.env.SAT_APRS_TX || '').trim().toLowerCase());
 
-// Parse initial callsign and passcode from config.ini or aprs_sat.py for single-source-of-truth
-let initialCallsign = 'EA1URG-13';
-let initialPasscode = '18023';
+// ---------------------------------------------------------------------------
+// AUTENTICACIÓN: la identidad se verifica en el servidor (ver server/auth.ts)
+// ---------------------------------------------------------------------------
+function readFirebaseProjectId(): string | undefined {
+  if (process.env.FIREBASE_PROJECT_ID) return process.env.FIREBASE_PROJECT_ID.trim();
+  try {
+    const raw = fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf8');
+    return JSON.parse(raw).projectId;
+  } catch {
+    return undefined;
+  }
+}
+
+const TRUST_LOCALHOST = ['on', '1', 'true', 'yes'].includes((process.env.SAT_TRUST_LOCALHOST || '').trim().toLowerCase());
+
+const authenticator = createAuthenticator({
+  projectId: readFirebaseProjectId(),
+  adminEmails: parseList(process.env.SAT_ADMIN_EMAILS),
+  adminToken: process.env.SAT_ADMIN_TOKEN,
+  trustLocalhost: TRUST_LOCALHOST
+});
+
+type AuthedRequest = express.Request & { auth?: AuthInfo | null };
+
+app.use(express.json({ limit: '1mb' }));
+
+app.use('/api', async (req: AuthedRequest, res, next) => {
+  try {
+    req.auth = await authenticator.authenticate(req);
+  } catch {
+    req.auth = null;
+  }
+  // Con la emisión activada la consola gobierna una estación real: solo un
+  // administrador verificado puede cambiar su estado o provocar transmisiones.
+  const isReadOnly = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+  if (TX_ENABLED && !isReadOnly && !isAuthorizedRequest(req)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Operación reservada al administrador de la estación. Inicie sesión con una cuenta autorizada.'
+    });
+  }
+  next();
+});
+
+// Parse initial callsign and passcode from config.ini or aprs_sat.py for single-source-of-truth.
+// N0CALL es el indicativo «sin configurar»: con él nunca se transmite.
+let initialCallsign = 'N0CALL';
+let initialPasscode = '';
 
 const parseConfigIni = (filePath: string) => {
   const iniContent = fs.readFileSync(filePath, 'utf8');
@@ -68,18 +132,27 @@ const parseConfigIni = (filePath: string) => {
   return parsed;
 };
 
-// Helper to determine if a write request is authenticated
+// Una petición está autorizada a escribir en disco, ejecutar órdenes del sistema
+// o gobernar la estación solo si procede de un administrador verificado.
 function isAuthorizedRequest(req: express.Request): boolean {
-  // If the request carries an X-User-UID or X-User-Email, it's authenticated by the frontend
-  const uid = req.headers['x-user-uid'] || req.headers['authorization'];
-  const email = req.headers['x-user-email'];
-  
-  if (email === 'usuario@example.org') {
-    // Developers & Creators always have complete full access and bypass demo locks
-    return true;
+  return (req as AuthedRequest).auth?.admin === true;
+}
+
+// Claves y credenciales que solo puede ver un administrador
+const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey'] as const;
+const SECRET_MASK = '********';
+
+function isMaskedSecret(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() === SECRET_MASK;
+}
+
+function configForRequest(req: express.Request): TelemetryConfig {
+  if (isAuthorizedRequest(req)) return config;
+  const redacted: any = { ...config };
+  for (const key of SECRET_CONFIG_KEYS) {
+    if (redacted[key]) redacted[key] = SECRET_MASK;
   }
-  
-  return !!uid;
+  return redacted;
 }
 
 // In-Memory Database / State Manager (Durable civil configuration)
@@ -202,30 +275,30 @@ try {
       if (iniData.APRS.icaTemplateMuyDesfavorable) config.icaTemplateMuyDesfavorable = iniData.APRS.icaTemplateMuyDesfavorable.trim();
       if (iniData.APRS.icaTemplateExtremadamente) config.icaTemplateExtremadamente = iniData.APRS.icaTemplateExtremadamente.trim();
     }
-    if (iniData.OpenWeatherMap && iniData.OpenWeatherMap.apiKey) {
-      config.owmApiKey = iniData.OpenWeatherMap.apiKey.trim();
+    if (iniData.OPENWEATHERMAP && iniData.OPENWEATHERMAP.apiKey) {
+      config.owmApiKey = iniData.OPENWEATHERMAP.apiKey.trim();
     }
-    if (iniData.WeatherAPI) {
-      if (iniData.WeatherAPI.apiKey) config.weatherApiKey = iniData.WeatherAPI.apiKey.trim();
-      if (iniData.WeatherAPI.thresholdWindKts) config.thresholdWindKts = parseFloat(iniData.WeatherAPI.thresholdWindKts) || config.thresholdWindKts;
-      if (iniData.WeatherAPI.thresholdTempMinC) config.thresholdTempMinC = parseFloat(iniData.WeatherAPI.thresholdTempMinC) || config.thresholdTempMinC;
-      if (iniData.WeatherAPI.thresholdRainMm) config.thresholdRainMm = parseFloat(iniData.WeatherAPI.thresholdRainMm) || config.thresholdRainMm;
-      if (iniData.WeatherAPI.forecastDays) config.forecastDays = parseInt(iniData.WeatherAPI.forecastDays) || config.forecastDays;
+    if (iniData.WEATHERAPI) {
+      if (iniData.WEATHERAPI.apiKey) config.weatherApiKey = iniData.WEATHERAPI.apiKey.trim();
+      if (iniData.WEATHERAPI.thresholdWindKts) config.thresholdWindKts = parseFloat(iniData.WEATHERAPI.thresholdWindKts) || config.thresholdWindKts;
+      if (iniData.WEATHERAPI.thresholdTempMinC) config.thresholdTempMinC = parseFloat(iniData.WEATHERAPI.thresholdTempMinC) || config.thresholdTempMinC;
+      if (iniData.WEATHERAPI.thresholdRainMm) config.thresholdRainMm = parseFloat(iniData.WEATHERAPI.thresholdRainMm) || config.thresholdRainMm;
+      if (iniData.WEATHERAPI.forecastDays) config.forecastDays = parseInt(iniData.WEATHERAPI.forecastDays) || config.forecastDays;
     }
-    if (iniData.LocalWeather) {
-      if (iniData.LocalWeather.source) config.localWeatherSource = iniData.LocalWeather.source.trim();
-      if (iniData.LocalWeather.thresholdWindKts) config.localThresholdWindKts = parseFloat(iniData.LocalWeather.thresholdWindKts) || config.localThresholdWindKts;
-      if (iniData.LocalWeather.thresholdTempMaxC) config.localThresholdTempMaxC = parseFloat(iniData.LocalWeather.thresholdTempMaxC) || config.localThresholdTempMaxC;
-      if (iniData.LocalWeather.thresholdTempMinC) config.localThresholdTempMinC = parseFloat(iniData.LocalWeather.thresholdTempMinC) || config.localThresholdTempMinC;
-      if (iniData.LocalWeather.thresholdRainMm) config.localThresholdRainMm = parseFloat(iniData.LocalWeather.thresholdRainMm) || config.localThresholdRainMm;
-      if (iniData.LocalWeather.interval) config.localWeatherInterval = parseInt(iniData.LocalWeather.interval) || config.localWeatherInterval;
+    if (iniData.LOCALWEATHER) {
+      if (iniData.LOCALWEATHER.source) config.localWeatherSource = iniData.LOCALWEATHER.source.trim();
+      if (iniData.LOCALWEATHER.thresholdWindKts) config.localThresholdWindKts = parseFloat(iniData.LOCALWEATHER.thresholdWindKts) || config.localThresholdWindKts;
+      if (iniData.LOCALWEATHER.thresholdTempMaxC) config.localThresholdTempMaxC = parseFloat(iniData.LOCALWEATHER.thresholdTempMaxC) || config.localThresholdTempMaxC;
+      if (iniData.LOCALWEATHER.thresholdTempMinC) config.localThresholdTempMinC = parseFloat(iniData.LOCALWEATHER.thresholdTempMinC) || config.localThresholdTempMinC;
+      if (iniData.LOCALWEATHER.thresholdRainMm) config.localThresholdRainMm = parseFloat(iniData.LOCALWEATHER.thresholdRainMm) || config.localThresholdRainMm;
+      if (iniData.LOCALWEATHER.interval) config.localWeatherInterval = parseInt(iniData.LOCALWEATHER.interval) || config.localWeatherInterval;
     }
-    if (iniData.Fallback) {
-      if (iniData.Fallback.latitude) config.fallbackLat = parseFloat(iniData.Fallback.latitude) || config.fallbackLat;
-      if (iniData.Fallback.longitude) config.fallbackLon = parseFloat(iniData.Fallback.longitude) || config.fallbackLon;
+    if (iniData.FALLBACK) {
+      if (iniData.FALLBACK.latitude) config.fallbackLat = parseFloat(iniData.FALLBACK.latitude) || config.fallbackLat;
+      if (iniData.FALLBACK.longitude) config.fallbackLon = parseFloat(iniData.FALLBACK.longitude) || config.fallbackLon;
     }
-    if (iniData.Alerts && iniData.Alerts.filterRadiusKm) {
-      config.filterRadiusKm = parseInt(iniData.Alerts.filterRadiusKm) || config.filterRadiusKm;
+    if (iniData.ALERTS && iniData.ALERTS.filterRadiusKm) {
+      config.filterRadiusKm = parseInt(iniData.ALERTS.filterRadiusKm) || config.filterRadiusKm;
     }
     console.log(`[SYS CONFIG] Sincronización prioritaria con config.ini completada: callsign=${config.callsign}`);
   } else {
@@ -276,6 +349,13 @@ let lastValidGps = {
   device: '/dev/ttyUSB0 (ublox MAX-M8 GNSS receiver)'
 };
 
+// Sin posición GPS guardada, la estación arranca en las coordenadas de respaldo
+// configuradas ([Fallback] de config.ini / panel), no en un punto fijo del código.
+if (Number.isFinite(config.fallbackLat) && Number.isFinite(config.fallbackLon)) {
+  lastValidGps.lat = gpsdState.lat = config.fallbackLat;
+  lastValidGps.lon = gpsdState.lon = config.fallbackLon;
+}
+
 // Load saved coordinates from last_gps.json if it exists, otherwise use config defaults
 try {
   const lastGpsPath = path.join(process.cwd(), 'last_gps.json');
@@ -303,6 +383,8 @@ try {
   console.warn("[GPSD INITIALIZATION] No se pudo cargar last_gps.json (archivo corrupto o vacío). Usando coordenadas por defecto.");
 }
 
+let lastGpsSaveTime = 0;
+
 function handleGpsdStateUpdate(newGps: Partial<GPSDStatus>) {
   if (newGps.lat !== undefined) gpsdState.lat = parseFloat(newGps.lat.toString());
   if (newGps.lon !== undefined) gpsdState.lon = parseFloat(newGps.lon.toString());
@@ -310,6 +392,8 @@ function handleGpsdStateUpdate(newGps: Partial<GPSDStatus>) {
   if (newGps.mode !== undefined) gpsdState.mode = parseInt(newGps.mode.toString());
   if (newGps.speedKmh !== undefined) gpsdState.speedKmh = parseFloat(newGps.speedKmh.toString());
   if (newGps.isFallback !== undefined) gpsdState.isFallback = !!newGps.isFallback;
+  if (newGps.satellitesUsed !== undefined) gpsdState.satellitesUsed = newGps.satellitesUsed;
+  if (newGps.satellitesVisible !== undefined) gpsdState.satellitesVisible = newGps.satellitesVisible;
   gpsdState.time = new Date().toISOString();
 
   // Mode >= 2 means valid 2D/3D fix. If valid fix and not explicit fallback, update our lastValidGps!
@@ -318,12 +402,14 @@ function handleGpsdStateUpdate(newGps: Partial<GPSDStatus>) {
     lastValidGps.lon = gpsdState.lon;
     lastValidGps.alt = gpsdState.alt;
     
-    // Save to disk for durability!
-    try {
-      const lastGpsPath = path.join(process.cwd(), 'last_gps.json');
-      fs.writeFileSync(lastGpsPath, JSON.stringify(lastValidGps), 'utf8');
-    } catch (e) {
-      console.error("Error guardando last_gps.json:", e);
+    // Guardar en disco, pero no en cada trama: gpsd informa cada segundo y eso
+    // desgasta la tarjeta SD. Se escribe como mucho una vez por minuto.
+    const nowMs = Date.now();
+    if (nowMs - lastGpsSaveTime >= 60000) {
+      lastGpsSaveTime = nowMs;
+      fs.writeFile(path.join(process.cwd(), 'last_gps.json'), JSON.stringify(lastValidGps), 'utf8', (err) => {
+        if (err) console.error("Error guardando last_gps.json:", err);
+      });
     }
   } else if (gpsdState.mode <= 1 || gpsdState.isFallback) {
     // SIGNAL LOST (mode <= 1) or forced fallback! Use the last obtained valid coordinates as coordinates de respaldo
@@ -586,134 +672,101 @@ function decodeAx25Frame(buffer: Buffer): string | null {
   }
 }
 
-function encodeAx25Frame(packetStr: string): Buffer | null {
-  try {
-    const match = packetStr.match(/^([^>]+)>([^,:]+)([^:]*):(.*)$/);
-    if (!match) return null;
-
-    const sourceStr = match[1].trim().toUpperCase();
-    const destStr = match[2].trim().toUpperCase();
-    const pathStr = match[3] ? match[3].replace(/^,/, '').trim().toUpperCase() : '';
-    const payloadStr = match[4];
-
-    const encodeAddress = (callsignWithSsid: string, isLast: boolean): Buffer => {
-      const parts = callsignWithSsid.split('-');
-      const call = parts[0];
-      const ssid = parts[1] ? parseInt(parts[1]) : 0;
-      
-      const buf = Buffer.alloc(7);
-      const paddedCall = call.padEnd(6, ' ');
-      for (let i = 0; i < 6; i++) {
-        buf[i] = paddedCall.charCodeAt(i) << 1;
-      }
-      
-      let ssidByte = (ssid & 0x0F) << 1;
-      ssidByte |= 0x60;
-      if (isLast) {
-        ssidByte |= 0x01;
-      }
-      buf[6] = ssidByte;
-      return buf;
+/** Abre sesión en APRS-IS, espera a que el servidor verifique el login y envía la trama. */
+function sendToAprsIs(packet: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const sock = new net.Socket();
+    let settled = false;
+    let sent = false;
+    let buffer = '';
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      if (err) reject(err); else resolve();
     };
-
-    const addressBuffers: Buffer[] = [];
-    const pathParts = pathStr ? pathStr.split(',').filter(x => x.length > 0) : [];
-    
-    const isLastInHeader = pathParts.length === 0;
-    addressBuffers.push(encodeAddress(destStr, false));
-    addressBuffers.push(encodeAddress(sourceStr, isLastInHeader));
-
-    for (let i = 0; i < pathParts.length; i++) {
-      const isLast = i === pathParts.length - 1;
-      addressBuffers.push(encodeAddress(pathParts[i], isLast));
-    }
-
-    const headerBuffer = Buffer.concat(addressBuffers);
-    const controlBuffer = Buffer.from([0x03, 0xF0]);
-    const payloadBuffer = Buffer.from(payloadStr, 'utf8');
-
-    return Buffer.concat([headerBuffer, controlBuffer, payloadBuffer]);
-  } catch (err) {
-    return null;
-  }
+    sock.setTimeout(8000);
+    sock.setEncoding('utf8');
+    sock.on('timeout', () => finish(new Error('Timeout de conexión a APRS-IS')));
+    sock.on('error', (err) => finish(err));
+    sock.on('close', () => finish(sent ? undefined : new Error('APRS-IS cerró la conexión antes de verificar el login')));
+    sock.on('data', (chunk: string) => {
+      buffer += chunk;
+      const line = buffer.split('\n').find((l) => l.includes('logresp'));
+      if (!line) return;
+      if (!/ verified/.test(line) || /unverified/.test(line)) {
+        return finish(new Error('APRS-IS no ha verificado el login (revise indicativo y passcode)'));
+      }
+      if (sent) return;
+      sent = true;
+      sock.write(`${packet}\r\n`, () => setTimeout(() => finish(), 500));
+    });
+    sock.connect(config.aprscPort, config.serverIp, () => {
+      sock.write(`user ${config.callsign} pass ${config.aprsPasscode} vers SAT-APRS 2.1\r\n`);
+    });
+  });
 }
 
-async function transmitRealAprsPacket(packetString: string): Promise<boolean> {
-  console.log(`[APRS TRANSMIT] Real transmission requested for packet: ${packetString}`);
-  let aprsIsSuccess = false;
-  let kissSuccess = false;
-
-  // 1. APRS-IS Transmission
-  try {
-    const isSock = new net.Socket();
-    isSock.setTimeout(5000);
-    await new Promise<void>((resolve, reject) => {
-      isSock.connect(config.aprscPort, config.serverIp, () => {
-        const loginStr = `user ${config.callsign} pass ${config.aprsPasscode || '18023'} vers SAT-APRS 2.0\r\n`;
-        isSock.write(loginStr, () => {
-          isSock.write(`${packetString}\r\n`, () => {
-            isSock.end();
-            resolve();
-          });
-        });
-      });
-      isSock.on('error', reject);
-      isSock.on('timeout', () => {
-        isSock.destroy();
-        reject(new Error('Timeout de conexión a APRS-IS'));
+/** Entrega una trama AX.25 (ya codificada) al TNC/Direwolf por KISS sobre TCP. */
+function sendToKiss(frame: Buffer): Promise<void> {
+  const kissFrame = kissEncode(frame);
+  if (kissClient && !kissClient.destroyed && kissClient.writable) {
+    kissClient.write(kissFrame);
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const tempSock = new net.Socket();
+    tempSock.setTimeout(3000);
+    tempSock.on('error', reject);
+    tempSock.on('timeout', () => {
+      tempSock.destroy();
+      reject(new Error('Timeout de conexión a KISS'));
+    });
+    tempSock.connect(config.kissTcpPort, '127.0.0.1', () => {
+      tempSock.write(kissFrame, () => {
+        tempSock.end();
+        resolve();
       });
     });
-    aprsIsSuccess = true;
-    console.log(`[APRS TRANSMIT] Enviado con éxito a APRS-IS (${config.serverIp}:${config.aprscPort})`);
-  } catch (err: any) {
-    console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a APRS-IS: ${err.message}`);
+  });
+}
+
+/**
+ * Único punto de salida al aire de la consola. Devuelve el motivo por el que
+ * la trama NO se emite (cadena vacía si se intenta emitir por algún canal).
+ */
+function transmitRealAprsPacket(packetString: string, simulated: boolean = false): string {
+  const decision = decideTransmission(packetString, {
+    txEnabled: TX_ENABLED,
+    callsign: config.callsign,
+    passcode: config.aprsPasscode,
+    simulated
+  });
+  if (!decision.packet || (!decision.aprsIs && !decision.rf)) {
+    return decision.reason;
+  }
+  const packet = decision.packet;
+
+  // 1. APRS-IS: ORIGEN>DESTINO,TCPIP*:info (el servidor añade la construcción q)
+  if (decision.aprsIs) {
+    sendToAprsIs(toIsPacket(packet))
+      .then(() => console.log(`[APRS TRANSMIT] Enviado a APRS-IS (${config.serverIp}:${config.aprscPort})`))
+      .catch((err: any) => console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a APRS-IS: ${err.message}`));
   }
 
-  // 2. Direwolf KISS Transmission
-  try {
-    const rawFrame = encodeAx25Frame(packetString);
-    if (rawFrame) {
-      if (kissClient && !kissClient.destroyed && kissClient.writable) {
-        const kissFrame = Buffer.concat([
-          Buffer.from([0xC0, 0x00]),
-          rawFrame,
-          Buffer.from([0xC0])
-        ]);
-        kissClient.write(kissFrame);
-        kissSuccess = true;
-        console.log(`[APRS TRANSMIT] Enviado con éxito a TNC/Direwolf KISS en puerto ${config.kissTcpPort}`);
-      } else {
-        const tempSock = new net.Socket();
-        tempSock.setTimeout(3000);
-        await new Promise<void>((resolve, reject) => {
-          tempSock.connect(config.kissTcpPort, '127.0.0.1', () => {
-            const kissFrame = Buffer.concat([
-              Buffer.from([0xC0, 0x00]),
-              rawFrame,
-              Buffer.from([0xC0])
-            ]);
-            tempSock.write(kissFrame, () => {
-              tempSock.end();
-              resolve();
-            });
-          });
-          tempSock.on('error', reject);
-          tempSock.on('timeout', () => {
-            tempSock.destroy();
-            reject(new Error('Timeout de conexión a KISS'));
-          });
-        });
-        kissSuccess = true;
-        console.log(`[APRS TRANSMIT] Enviado con éxito a TNC/Direwolf KISS (conexión temporal)`);
-      }
-    } else {
-      console.warn(`[APRS TRANSMIT WARNING] No se pudo codificar el paquete APRS en formato AX.25: ${packetString}`);
+  // 2. RF: trama AX.25 UI con la ruta de radio (nunca TCPIP*/qAC) por KISS
+  if (decision.rf) {
+    try {
+      const frame = toRfFrame(packet, config.aprsPath || DEFAULT_RF_PATH);
+      sendToKiss(frame)
+        .then(() => console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`))
+        .catch((err: any) => console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a KISS: ${err.message}`));
+    } catch (err: any) {
+      console.warn(`[APRS TRANSMIT WARNING] Trama no apta para RF: ${err.message}`);
     }
-  } catch (err: any) {
-    console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a KISS: ${err.message}`);
   }
 
-  return aprsIsSuccess || kissSuccess;
+  return decision.aprsIs ? '' : decision.reason;
 }
 
 let ntpsecState: NTPSECStatus = {
@@ -921,10 +974,10 @@ loadSchedules();
 
 // Function to trigger a schedule
 function triggerSchedule(schedule: ScheduledNotification) {
-  const call = config.callsign || 'EA1URG-13';
+  const call = config.callsign || 'N0CALL';
   const cleanMsg = schedule.message.trim().toUpperCase();
   const randId = Math.floor(1 + Math.random() * 9);
-  const tag = schedule.type === 'drill' ? '⚠️ SIMULACRO' : 'ℹ️ ACTUALIZACION';
+  const tag = schedule.type === 'drill' ? 'SIMULACRO' : 'ACTUALIZACION'; // ASCII: los emojis no se emiten por APRS
   
   // Format as standard APRS Object report if message starts with semicolon, else use Bulletin format
   const packet = cleanMsg.startsWith(';') 
@@ -1471,7 +1524,7 @@ setInterval(() => {
 }, 60000);
 
 // Helper functions for formatting logs (with extended types)
-function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, destination: string, path: string, payload: string, success: boolean, remarks: string) {
+function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, destination: string, path: string, payload: string, success: boolean, remarks: string, opts: { simulated?: boolean } = {}) {
   const newLog: AprsPacketLog = {
     id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     timestamp: new Date().toLocaleTimeString('es-ES', { hour12: false }),
@@ -1490,11 +1543,13 @@ function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, d
     logs.splice(maxLogs);
   }
 
-  // Real-world transmitter hook for TX type logs
+  // Salida real al aire de las tramas TX, sujeta a la política de emisión.
+  // Si la trama no se emite, el registro lo dice: la consola no finge transmisiones.
   if (type === 'TX') {
-    transmitRealAprsPacket(payload).catch((err) => {
-      console.error(`[APRS TRANSMIT EXCEPTION] ${err.message}`);
-    });
+    const notSent = transmitRealAprsPacket(payload, opts.simulated === true);
+    if (notSent) {
+      newLog.remarks = `[NO EMITIDO: ${notSent}] ${remarks}`;
+    }
   }
 
   // Increment real-time Traffic Counts of the current minute
@@ -1508,38 +1563,18 @@ function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, d
   }
 }
 
-// Coordinate convertors for standard APRS representation
-// Lat: DDMM.hhD, DD degrees, MM.hh minutes, D is N or S
-function latToAprs(lat: number): string {
-  const hemi = lat >= 0 ? 'N' : 'S';
-  const val = Math.abs(lat);
-  const deg = Math.floor(val);
-  const min = (val - deg) * 60;
-  const degStr = deg.toString().padStart(2, '0');
-  const minStr = min.toFixed(2).padStart(5, '0'); // MM.hh
-  return `${degStr}${minStr}${hemi}`;
-}
-
-// Lon: DDDMM.hhD, DDD degrees, MM.hh minutes, D is E or W
-function lonToAprs(lon: number): string {
-  const hemi = lon >= 0 ? 'E' : 'W';
-  const val = Math.abs(lon);
-  const deg = Math.floor(val);
-  const min = (val - deg) * 60;
-  const degStr = deg.toString().padStart(3, '0');
-  const minStr = min.toFixed(2).padStart(5, '0'); // MM.hh
-  return `${degStr}${minStr}${hemi}`;
-}
+// Los conversores de coordenadas APRS (latToAprs / lonToAprs) están en server/aprs.ts
 
 // Format WX string according to APRS single line specification
 function generateWxPayload(w: WeatherTelemetry): string {
-  // WX format: ccrrgggttthhbbbbbpPPPrr
-  // ccc = wind direction, sss = wind speed in knots
-  const dir = w.windDirDeg.toString().padStart(3, '0');
-  const speed = Math.round(w.windSpeedKts).toString().padStart(3, '0');
+  // Formato: _DIR/VELgRAFtTTTrRRRpPPPhHHbBBBBB
+  // La especificación APRS expresa viento y racha en millas por hora (no en nudos).
+  const KTS_TO_MPH = 1.150779;
+  const dir = (Math.round(w.windDirDeg || 0) % 360).toString().padStart(3, '0');
+  const speed = Math.min(999, Math.round((w.windSpeedKts || 0) * KTS_TO_MPH)).toString().padStart(3, '0');
   
   // gust
-  const gust = `g${Math.round(w.gustKts || 0).toString().padStart(3, '0')}`;
+  const gust = `g${Math.min(999, Math.round((w.gustKts || 0) * KTS_TO_MPH)).toString().padStart(3, '0')}`;
   
   // temp in fahrenheit: t = temp, fahrenheit padded to 3 characters
   const tempF = Math.round((w.tempC * 9/5) + 32);
@@ -1553,7 +1588,7 @@ function generateWxPayload(w: WeatherTelemetry): string {
   const rain24 = `p${Math.round(w.rain24hIn * 100).toString().padStart(3, '0')}`;
   
   // humidity
-  let humVal = w.humidityPct;
+  let humVal = Math.max(1, Math.min(100, Math.round(w.humidityPct)));
   if (humVal === 100) humVal = 0; // APRS represents 100% humidity as h00
   const hum = `h${humVal.toString().padStart(2, '0')}`;
   
@@ -1740,6 +1775,9 @@ function getClosestAemetStation(lat: number, lon: number) {
   return closest;
 }
 
+// Pronósticos generados por el simulador local (nunca se emiten por APRS)
+const mockForecasts = new WeakSet<ForecastDay[]>();
+
 function generateMockForecast(lat: number, lon: number): ForecastDay[] {
   const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const today = new Date();
@@ -1780,11 +1818,13 @@ function generateMockForecast(lat: number, lon: number): ForecastDay[] {
       pop: popVal
     });
   }
+  mockForecasts.add(list);
   return list;
 }
 
 function broadcastForecastBulletin(forecast: ForecastDay[]) {
   if (!config.enableForecastBulletin) return;
+  const simulated = mockForecasts.has(forecast);
   if (!forecast || forecast.length === 0) return;
   // Construct a concise forecast summary (3 days)
   const summaryDays = forecast.slice(0, 3).map(day => {
@@ -1796,7 +1836,7 @@ function broadcastForecastBulletin(forecast: ForecastDay[]) {
   }).join('; ');
   
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3    :NUEVO PRONOSTICO PROSPECCION: ${summaryDays}. REMER S.A.T.`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de Pronóstico Meteorológico Prospectivo (3-5 días) emitido.');
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de Pronóstico Meteorológico Prospectivo (3-5 días) emitido.', { simulated });
 }
 
 // Weather Simulator / Refresher (Updates weather based on simulated drift or OWM or AEMET)
@@ -1991,6 +2031,15 @@ let lastIcaStatusLabel = '';
 let lastRarRanBeaconTime = 0;
 let lastRarRanStatusLabel = '';
 
+// Procedencia de los datos de calidad del aire. Solo son reales (y por tanto
+// emitibles por APRS) las mediciones completas de Open-Meteo: con IQAir los
+// contaminantes se estiman y, sin ninguna API, todo es un simulador local.
+let icaDataSimulated = true;
+
+function icaDataIsSimulated(): boolean {
+  return icaDataSimulated;
+}
+
 function getNearestIcaStation() {
   const originLat = gpsdState.lat || 40.416775;
   const originLon = gpsdState.lon || -3.703790;
@@ -2144,11 +2193,13 @@ function transmitSeismoBeacon(force: boolean = false) {
     const packet = generateEarthquakePacket(target);
     target.aprsPacket = packet;
 
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo M${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km).`);
+    // Un sismo inyectado como prueba (test_eq_/sim_eq_) nunca se emite
+    const isTestQuake = /^(test_eq_|sim_eq_)/.test(String(target.id));
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo M${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km).`, { simulated: isTestQuake });
 
     if (config.autoGenerarBoletinEmergencia && target.magnitud >= (config.minMagnitudBaliza || 3.0)) {
       const emergencyBulletin = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1    :EMERGENCIA SISMICA! SEISMO MAG:${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km)`;
-      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.');
+      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.', { simulated: isTestQuake });
     }
   }
 }
@@ -2199,7 +2250,7 @@ function transmitAirQualityBeacon(force: boolean = false) {
       ? `Cambio de estado ICA detectado en estación cercana '${stationName}' (${label}). Baliza APRS AIR-QUAL transmitida inmediatamente.`
       : `Baliza de Posición APRS para Calidad de Aire (AIR-QUAL) transmitida con éxito (Estación cercana: ${stationName}).`;
 
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks, { simulated: icaDataIsSimulated() });
     
     // Difundir el boletín APRS respetando la cadencia de emisión
     broadcastAirQualityBulletin(aqi, label, pm25, pm10, co, no2, o3, stationName, force);
@@ -2314,7 +2365,7 @@ function broadcastAirQualityBulletin(
   
   const content = formatIcaBulletinTemplate(finalLabel, finalAqi, pm25, pm10, co, no2, o3, name);
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${content}`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Calidad del Aire (ICA) difundido para la estación ${name}.`);
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Calidad del Aire (ICA) difundido para la estación ${name}.`, { simulated: icaDataIsSimulated() });
 }
 
 // IQAir Air Quality Index Fetcher & Refresher
@@ -2333,8 +2384,11 @@ async function refreshIQAir() {
     } catch (omErr: any) {
       console.error("Open-Meteo Air Quality API failed, attempting fallbacks:", omErr.message);
     }
+    // Salvo que Open-Meteo responda más abajo, lo que quede en iqairState no es una medición real
+    icaDataSimulated = true;
 
     if (omData && omData.current) {
+      icaDataSimulated = false;
       const cur = omData.current;
       const pm25Val = cur.pm2_5 || 8.0;
       const pm10Val = cur.pm10 || 12.0;
@@ -2682,7 +2736,8 @@ function transmitRarRanBeacon(force: boolean = false) {
       ? `Cambio de nivel de radiación detectado en estación cercana '${rarRanState.name}' (${rarRanState.status}). Baliza APRS RAD-RAR transmitida inmediatamente.`
       : `Baliza de Posición APRS para Radiación Ambiental (RAD-RAR) transmitida con éxito (Estación cercana: ${rarRanState.name}).`;
 
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+    // Los valores REA de la consola son un modelo local (no hay lectura real del CSN): no se emiten.
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks, { simulated: true });
     
     // Difundir boletín de radiación en la red APRS si es superior a 0.30 uSv/h
     if (rarRanState.valueUsVh > 0.30) {
@@ -2703,12 +2758,12 @@ function broadcastRarRanBulletin() {
   
   // 1. Send the standard APRS bulletin for radiation (addressee: BLN4RAD  , exactly 9 chars)
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4RAD  :MEDICION RADIACTIVIDAD - REA: ${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) en CSN-${rarRanState.name}`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Radiación Ambiental (REA) difundido para la estación CSN-${rarRanState.name}.`);
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Radiación Ambiental (REA) difundido para la estación CSN-${rarRanState.name}.`, { simulated: true });
 
   // 2. If radiation is > 1.00 uSv/h, send an alert message to CQ (exactly 9 chars)
   if (rarRanState.valueUsVh > 1.00) {
     const alertMessageStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::CQ       :ALERTA CIVIL CRITICA: Radiacion extrema (${rarRanState.valueUsVh.toFixed(3)} uSv/h) en CSN-${rarRanState.name}. active plan de emergencia civil en el radio de influencia.`;
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, alertMessageStr, true, `Mensaje APRS de Alerta de Emergencia Radiológica Civil difundido a la red (CQ).`);
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, alertMessageStr, true, `Mensaje APRS de Alerta de Emergencia Radiológica Civil difundido a la red (CQ).`, { simulated: true });
   }
 }
 
@@ -3013,7 +3068,9 @@ function transmitWildfireBeacon(force: boolean = false) {
     const intervalMin = Math.round(currentWildfireBeaconIntervalMs / 60000);
     const remarks = `Baliza APRS (FOCO-INC) retransmitida a la red (Foco: ${fire.region}, FRP: ${fire.frpMw.toFixed(0)}MW). Próximo intervalo programado: ${intervalMin} min.`;
 
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks);
+    // Solo los focos detectados por NASA FIRMS son reales; los de base y los inyectados son simulados
+    const isRealFirmsFire = cachedFirmsFires.includes(fire);
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks, { simulated: !isRealFirmsFire });
   }
 }
 
@@ -3128,6 +3185,8 @@ async function formatSpaceWeatherAprsBulletin() {
 
   return {
     packet,
+    // Solo es real si el pronóstico de NOAA se descargó de verdad (sin valores por defecto)
+    real: prop.noaa?.real === true,
     rScale,
     sScale,
     gScale,
@@ -3198,7 +3257,7 @@ async function transmitSpaceWeatherAprsBulletin(force: boolean = false) {
 
     const remarks = `Boletín APRS Clima Espacial & Propagación HF retransmitido [${reason}] (${data.rScale} ${data.sScale} ${data.gScale} | SFI:${data.sfi} Kp:${data.kp} HF:${data.status}).`;
 
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, data.packet, true, remarks);
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, data.packet, true, remarks, { simulated: !data.real });
 
     const historyItem = {
       timestamp: new Date().toISOString(),
@@ -3852,13 +3911,13 @@ setInterval(() => {
     
     for (const [key, unitName] of Object.entries(servicesToQuery)) {
       try {
-        const status = require('child_process').execSync(`systemctl is-active ${unitName}`, { encoding: 'utf8' }).trim();
+        const status = execFileSync('systemctl', ['is-active', unitName], { encoding: 'utf8', timeout: 3000 }).trim();
         nucStats.services[key as keyof typeof nucStats.services] = (status === 'active') ? 'active' : 'inactive';
       } catch (e) {
         // Fallback for custom service naming on standard Debian
         if (key === 'aiscatcher') {
           try {
-            const status = require('child_process').execSync(`systemctl is-active ais-catcher`, { encoding: 'utf8' }).trim();
+            const status = execFileSync('systemctl', ['is-active', 'ais-catcher'], { encoding: 'utf8', timeout: 3000 }).trim();
             nucStats.services.aiscatcher = (status === 'active') ? 'active' : 'inactive';
             continue;
           } catch (e2) {}
@@ -4315,6 +4374,8 @@ function executeAgpsSync() {
   }
 }
 
+let timerWildfireBeacon: NodeJS.Timeout | null = null;
+
 function startSchedules() {
   if (timerWeather) clearInterval(timerWeather);
   if (timerEarthquakes) clearInterval(timerEarthquakes);
@@ -4361,9 +4422,12 @@ function startSchedules() {
   checkAndRunAgpsSync(); // Run once immediately on boot
 
   // Activate automatic APRS Wildfire Beacon schedule (checks every 60s, transmits every 20-30 min while fire active)
-  setInterval(() => {
-    transmitWildfireBeacon(false);
-  }, 60000);
+  // startSchedules() se vuelve a llamar al guardar la configuración: un único temporizador
+  if (!timerWildfireBeacon) {
+    timerWildfireBeacon = setInterval(() => {
+      transmitWildfireBeacon(false);
+    }, 60000);
+  }
 }
 
 startSchedules();
@@ -4394,7 +4458,8 @@ app.get('/api/telemetry', async (req, res) => {
   }
   
   res.json({
-    config,
+    config: configForRequest(req),
+    txEnabled: TX_ENABLED,
     gpsd: gpsdState,
     ntp: ntpsecState,
     weather: weatherState,
@@ -5591,10 +5656,13 @@ app.post('/api/telemetry/clear-logs', (req, res) => {
   res.json({ success: true, msg: 'Búfer de logs del Terminal TNC borrado exitosamente.' });
 });
 
+// Servicios cuyos registros puede vaciar la consola
+const CLEARABLE_SERVICES = new Set(['all', 'aprx', 'direwolf', 'weewx', 'gpsd', 'ntpsec', 'aprsc', 'aiscatcher', 'pat', 'sat-aprs']);
+
 app.post('/api/system/clear-service-logs', (req, res) => {
-  const { service } = req.body;
-  if (!service) {
-    return res.status(400).json({ success: false, error: 'Parámetro "service" es requerido.' });
+  const service = String(req.body?.service || '');
+  if (!CLEARABLE_SERVICES.has(service)) {
+    return res.status(400).json({ success: false, error: 'Parámetro "service" ausente o no admitido.' });
   }
 
   const isAuth = isAuthorizedRequest(req);
@@ -5602,41 +5670,32 @@ app.post('/api/system/clear-service-logs', (req, res) => {
     return res.json({ success: true, msg: `[DEMO PÚBLICA] Se simula el vaciado de logs para el servicio: ${service}` });
   }
 
-  // Define commands to truncate logs or clean journal for the requested service on Debian 13
-  let commands: string[] = [];
+  // Órdenes con argumentos fijos y sin intérprete de órdenes. El nombre del
+  // servicio ya está validado contra CLEARABLE_SERVICES: nunca se interpola
+  // texto de la petición en una línea de órdenes.
+  const commands: string[][] = [];
   if (service === 'aprx' || service === 'all') {
-    commands.push('sudo truncate -s 0 /var/log/aprx/aprx-rf.log || true');
-    commands.push('sudo truncate -s 0 /var/log/aprx/aprx-rf.log.1 || true');
-    commands.push('sudo truncate -s 0 /var/log/aprx.log || true');
+    commands.push(['truncate', '-s', '0', '/var/log/aprx/aprx-rf.log']);
+    commands.push(['truncate', '-s', '0', '/var/log/aprx/aprx-rf.log.1']);
+    commands.push(['truncate', '-s', '0', '/var/log/aprx.log']);
   }
   if (service === 'weewx' || service === 'all') {
-    commands.push('sudo truncate -s 0 /var/log/weewx.log || true');
+    commands.push(['truncate', '-s', '0', '/var/log/weewx.log']);
   }
-  if (service === 'all') {
-    commands.push('sudo truncate -s 0 /var/log/syslog || true');
-    commands.push('sudo truncate -s 0 /var/log/daemon.log || true');
-    commands.push('sudo truncate -s 0 /var/log/messages || true');
-    commands.push('sudo journalctl --rotate && sudo journalctl --vacuum-time=1s || true');
-  } else {
-    // If specific service is cleared, vacuum journal logs for its systemd unit
-    commands.push(`sudo journalctl --rotate --unit=${service}.service && sudo journalctl --vacuum-time=1s --unit=${service}.service || true`);
-    commands.push(`sudo journalctl --rotate --unit=${service} && sudo journalctl --vacuum-time=1s --unit=${service} || true`);
-  }
+  // journald no permite purgar una sola unidad: se rota y se compacta el diario
+  commands.push(['journalctl', '--rotate']);
+  commands.push(['journalctl', '--vacuum-time=1s']);
 
-  // Execute commands sequentially
-  const { exec } = require('child_process');
-  const execCmd = (cmd: string) => {
-    return new Promise<void>((resolve) => {
-      exec(cmd, (err: any) => {
-        if (err) console.warn(`[SYS LOG CLEAR] Failed cmd '${cmd}':`, err.message);
-        resolve();
-      });
+  const runSudo = (args: string[]) => new Promise<void>((resolve) => {
+    execFile('sudo', ['-n', ...args], { timeout: 10000 }, (err) => {
+      if (err) console.warn(`[SYS LOG CLEAR] Falló 'sudo ${args.join(' ')}': ${err.message}`);
+      resolve();
     });
-  };
+  });
 
   (async () => {
-    for (const cmd of commands) {
-      await execCmd(cmd);
+    for (const args of commands) {
+      await runSudo(args);
     }
     // Also clear the general server logs in-memory array if it matches
     if (service === 'all' || service === 'direwolf') {
@@ -7424,7 +7483,7 @@ app.post('/api/jrc/remap-stations/trigger-alert', (req, res) => {
     
     // Inject emergency bulletin into APRS logs
     const pack = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;REMAP-RAD*192200z${latToAprs(station.lat)}/${lonToAprs(station.lon)}[CRITICAL REMAP EURDEP ERROR: ALERT RADIATION ${station.name} SENS_VAL:3.50uSv/h`;
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, pack, true, `Urgente: Alerta por radiación gamma emitida para ${station.name}`);
+    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, pack, true, `Urgente: Alerta por radiación gamma emitida para ${station.name}`, { simulated: true });
     addLog('SYS', 'SIREN_ALERT', 'LOCAL', 'REMAP', `ALERTA DE SEGURIDAD NUCLEAR: Nivel de radiación por encima de umbral de riesgo en estación ${station.name}. Sirenas de evacuación civil simuladas activadas.`, false, 'CRÍTICO');
   } else {
     addLog('SYS', 'SIREN_ALERT', 'LOCAL', 'REMAP', 'Fin de escenario de prueba de seguridad nuclear. Niveles radiológicos regresando a la normalidad.', true, 'INFO');
@@ -7473,10 +7532,12 @@ app.post('/api/config', (req, res) => {
       config.callsign = updated.callsign.toUpperCase().trim();
       patState.localCallsign = config.callsign;
     }
-    if (updated.aprsPasscode) config.aprsPasscode = updated.aprsPasscode.trim();
-    if (updated.owmApiKey !== undefined) config.owmApiKey = updated.owmApiKey.trim();
-    if (updated.aemetApiKey !== undefined) config.aemetApiKey = updated.aemetApiKey.trim();
-    if (updated.iqAirApiKey !== undefined) config.iqAirApiKey = updated.iqAirApiKey.trim();
+    // Un valor enmascarado (********) es el que el servidor entregó a un usuario
+    // sin privilegios: se ignora para no sobrescribir la credencial real.
+    if (updated.aprsPasscode && !isMaskedSecret(updated.aprsPasscode)) config.aprsPasscode = String(updated.aprsPasscode).trim();
+    if (updated.owmApiKey !== undefined && !isMaskedSecret(updated.owmApiKey)) config.owmApiKey = updated.owmApiKey.trim();
+    if (updated.aemetApiKey !== undefined && !isMaskedSecret(updated.aemetApiKey)) config.aemetApiKey = updated.aemetApiKey.trim();
+    if (updated.iqAirApiKey !== undefined && !isMaskedSecret(updated.iqAirApiKey)) config.iqAirApiKey = updated.iqAirApiKey.trim();
     if (updated.fallbackLat) config.fallbackLat = parseFloat(updated.fallbackLat.toString());
     if (updated.fallbackLon) config.fallbackLon = parseFloat(updated.fallbackLon.toString());
     if (updated.filterRadiusKm) config.filterRadiusKm = parseInt(updated.filterRadiusKm.toString());
@@ -7518,7 +7579,7 @@ app.post('/api/config', (req, res) => {
     }
 
     // WeatherAPI settings
-    if (updated.weatherApiKey !== undefined) config.weatherApiKey = updated.weatherApiKey.trim();
+    if (updated.weatherApiKey !== undefined && !isMaskedSecret(updated.weatherApiKey)) config.weatherApiKey = updated.weatherApiKey.trim();
     if (updated.thresholdWindKts !== undefined) config.thresholdWindKts = parseFloat(updated.thresholdWindKts.toString());
     if (updated.thresholdTempMinC !== undefined) config.thresholdTempMinC = parseFloat(updated.thresholdTempMinC.toString());
     if (updated.thresholdRainMm !== undefined) config.thresholdRainMm = parseFloat(updated.thresholdRainMm.toString());
@@ -7611,6 +7672,17 @@ app.post('/api/config', (req, res) => {
 
         // Sincronizar también con el archivo config.ini
         const iniPath = path.join(process.cwd(), 'config.ini');
+        // Claves que solo usa el agente Python: se conservan tal como estén en el archivo
+        let previousIni: any = {};
+        try {
+          if (fs.existsSync(iniPath)) previousIni = parseConfigIni(iniPath);
+        } catch {
+          previousIni = {};
+        }
+        const keepIni = (section: string, key: string, fallback: string): string => {
+          const found = Object.entries(previousIni[section] || {}).find(([k]) => k.toLowerCase() === key.toLowerCase());
+          return found && String(found[1]).trim() !== '' ? String(found[1]).trim() : fallback;
+        };
         const iniContent = `# S.A.T-APRS - Archivo de Configuración Externa de la Estación
 # Gestiona parámetros clave de hardware, radio, red de satélites y APIs críticas.
 
@@ -7653,6 +7725,12 @@ altitude = 657.0
 [Alerts]
 # Radio de filtrado geodésico Haversine (en km) para la inyección de alertas de sismos
 filterRadiusKm = ${config.filterRadiusKm}.0
+# Magnitud mínima para anunciar un sismo por APRS
+minMagnitude = ${config.minMagnitudBaliza !== undefined ? config.minMagnitudBaliza : 3.0}
+# Antigüedad máxima (horas) de un sismo para anunciarlo
+maxQuakeAgeHours = ${keepIni('ALERTS', 'maxQuakeAgeHours', '24.0')}
+# Zonas (separadas por comas) de los avisos meteorológicos oficiales. Ej: Sevilla,Cadiz
+meteoAreaFilter = ${keepIni('ALERTS', 'meteoAreaFilter', '')}
 
 [APRS]
 # Indicativo oficial con SSID (ej. CALLSING-13)
@@ -7667,6 +7745,10 @@ serverPort = ${config.aprscPort}
 kissTcpHost = localhost
 # Puerto KISS TCP del Direwolf
 kissTcpPort = ${config.kissTcpPort}
+# Canales de emisión del agente y ruta de radio
+aprsIsEnabled = ${keepIni('APRS', 'aprsIsEnabled', 'true')}
+rfEnabled = ${keepIni('APRS', 'rfEnabled', 'true')}
+rfPath = ${config.aprsPath || keepIni('APRS', 'rfPath', DEFAULT_RF_PATH)}
 # Intervalo de transmisión de telemetría de calidad del aire en minutos
 pollIntervalIca = ${config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30}
 # Activar o desactivar manualmente la transmisión de calidad del aire
@@ -7696,7 +7778,7 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
     refreshEarthquakes();
     refreshAisVessels();
 
-    res.json({ success: true, config });
+    res.json({ success: true, config: configForRequest(req) });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -7883,7 +7965,12 @@ app.get('/api/wiresx/status', async (req, res) => {
 
 // GET Debian real configuration files (reads from actual paths /etc/ or fallback local directories)
 app.get('/api/files/configs', (req, res) => {
+  // Los archivos reales del sistema pueden contener credenciales (passcode,
+  // contraseña de Winlink...): solo se leen para un administrador verificado.
+  // El resto de visitantes recibe las plantillas por defecto.
+  const canReadSystemFiles = isAuthorizedRequest(req);
   const getFileContent = (paths: string[], defaultSkeleton: string): string => {
+    if (!canReadSystemFiles) return defaultSkeleton;
     let bestPath = '';
     let newestTime = -1;
     for (const p of paths) {
@@ -7907,7 +7994,7 @@ app.get('/api/files/configs', (req, res) => {
         // fallback to sudo cat if standard read fails
         if (bestPath.startsWith('/')) {
           try {
-            const content = require('child_process').execSync(`sudo cat "${bestPath}"`, { encoding: 'utf8' });
+            const content = execFileSync('sudo', ['-n', 'cat', bestPath], { encoding: 'utf8', timeout: 5000 });
             if (content) return content;
           } catch (sudoErr) {
             // ignore
@@ -7920,7 +8007,7 @@ app.get('/api/files/configs', (req, res) => {
       const primaryPath = paths[0];
       if (primaryPath && primaryPath.startsWith('/')) {
         try {
-          const content = require('child_process').execSync(`sudo cat "${primaryPath}"`, { encoding: 'utf8' });
+          const content = execFileSync('sudo', ['-n', 'cat', primaryPath], { encoding: 'utf8', timeout: 5000 });
           if (content) return content;
         } catch (sudoErr) {
           // ignore
@@ -8052,7 +8139,7 @@ function performConfigsVerification() {
       for (const p of paths) {
         if (p.startsWith('/')) {
           try {
-            require('child_process').execSync(`sudo test -f "${p}"`);
+            execFileSync('sudo', ['-n', 'test', '-f', p], { timeout: 5000 });
             exists = true;
             foundPath = p;
             break;
@@ -8072,7 +8159,7 @@ function performConfigsVerification() {
           content = fs.readFileSync(foundPath, 'utf8');
         } catch (readErr) {
           if (foundPath.startsWith('/')) {
-            content = require('child_process').execSync(`sudo cat "${foundPath}"`, { encoding: 'utf8' });
+            content = execFileSync('sudo', ['-n', 'cat', foundPath], { encoding: 'utf8', timeout: 5000 });
           } else {
             throw readErr;
           }
@@ -8221,10 +8308,8 @@ app.post('/api/files/configs', (req, res) => {
       // Fallback: If we failed writing to a system path starting with '/', try using sudo + tee!
       if (p.startsWith('/')) {
         try {
-          // Escape single quotes safely for the echo statement
-          const escapedContent = content.replace(/'/g, "'\\''");
-          const cmd = `echo '${escapedContent}' | sudo tee "${p}" > /dev/null`;
-          require('child_process').execSync(cmd);
+          // El contenido viaja por la entrada estándar: nunca pasa por un intérprete de órdenes
+          execFileSync('sudo', ['-n', 'tee', p], { input: content, stdio: ['pipe', 'ignore', 'pipe'], timeout: 5000 });
           savedPath = p;
           break; // successfully wrote via sudo!
         } catch (sudoErr: any) {
@@ -8319,7 +8404,7 @@ app.post('/api/aprs/inject', (req, res) => {
       
       // Inject to lists
       earthquakes.unshift(customEq);
-      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, customEq.aprsPacket, true, `INYECCION PROBATORIA: Sismo M${magmaStr}!`);
+      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, customEq.aprsPacket, true, `INYECCION PROBATORIA: Sismo M${magmaStr}!`, { simulated: true });
       return res.json({ success: true, earthquake: customEq });
     }
 
@@ -8337,7 +8422,7 @@ app.post('/api/aprs/inject', (req, res) => {
         aprsPacket: `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:BLN3REMER: PRUEBA NOAA ${scale}${lvl} INTRODUCIDA`
       };
       noaaAlerts.unshift(customNoaa);
-      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, customNoaa.aprsPacket, true, `INYECCION PROBATORIA: NOAA ${scale}${lvl}!`);
+      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, customNoaa.aprsPacket, true, `INYECCION PROBATORIA: NOAA ${scale}${lvl}!`, { simulated: true });
       return res.json({ success: true, noaa: customNoaa });
     }
 
@@ -8394,7 +8479,7 @@ app.post('/api/aprs/schedules', (req, res) => {
         type: type || 'drill',
         name,
         message,
-        callsign: config.callsign || 'EA1URG-13',
+        callsign: config.callsign || 'N0CALL',
         scheduleType,
         targetTime,
         intervalMinutes: intervalMinutes ? parseInt(intervalMinutes.toString(), 10) : undefined,
@@ -8534,7 +8619,9 @@ app.post('/api/nuc/service', (req, res) => {
 
 // GET journalctl logs for systemd service
 app.get('/api/system/journal', (req, res) => {
-  exec('journalctl -u sat-aprs.service -n 50 --no-pager', (error, stdout, stderr) => {
+  // El diario real del sistema solo se muestra a un administrador verificado
+  const journalArgs = ['-u', 'sat-aprs.service', '-n', '50', '--no-pager'];
+  execFile(isAuthorizedRequest(req) ? 'journalctl' : 'false', isAuthorizedRequest(req) ? journalArgs : [], { timeout: 5000 }, (error, stdout, stderr) => {
     if (error) {
       // Fallback pseudo-logs for local sandbox / environment without journalctl
       const mockLog = `jun 22 20:16:30 aprs systemd[1]: Started sat-aprs.service - Console S.A.T-APRS Dashboard Service.
@@ -8663,6 +8750,7 @@ try {
 // Serve compiled build assets, router setup for development environment
 async function initServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -8676,8 +8764,14 @@ async function initServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[APRS S.A.T. SERVER] Running on port ${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`[APRS S.A.T. SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
+    console.log(TX_ENABLED
+      ? `[APRS TX] Emisión ACTIVADA para ${config.callsign}${isValidCallsign(config.callsign) ? '' : ' (indicativo no válido: no se transmitirá hasta configurarlo)'}.`
+      : '[APRS TX] Emisión DESACTIVADA: la consola no transmite. Active SAT_APRS_TX=on en .env para emitir.');
+    if (TX_ENABLED && parseList(process.env.SAT_ADMIN_EMAILS).length === 0 && !(process.env.SAT_ADMIN_TOKEN || '').trim() && !TRUST_LOCALHOST) {
+      console.warn('[AUTH] No hay ningún administrador configurado (SAT_ADMIN_EMAILS / SAT_ADMIN_TOKEN): nadie podrá modificar la estación.');
+    }
     
     // Execute configuration verification on startup (tras reinicio del NUC)
     try {

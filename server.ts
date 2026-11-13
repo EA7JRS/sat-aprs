@@ -23,6 +23,7 @@ import { Politica, RegistroAvisos, evaluar } from './server/core/reglas';
 import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
 import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
+import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -774,14 +775,15 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
   return decision.aprsIs ? '' : decision.reason;
 }
 
-let ntpsecState: NTPSECStatus = {
-  stratum: 1, // High precision hardware stratum (GPS/PPS locked)
-  offsetMs: 0.003,
-  delayMs: 0.118,
-  jitterMs: 0.002,
-  peer: 'SHM(0) (PPS GPS-synchronized)',
-  status: 'synchronized'
-};
+// Estado REAL del servidor de hora de la estación (ntpsec disciplinado por gpsd/PPS).
+// Hasta la primera lectura, y siempre que ntpq no responda, consta como no sincronizado.
+let ntpsecState: NTPSECStatus = { ...NTP_SIN_DATOS };
+
+async function refreshNtp() {
+  ntpsecState = await consultarNtp();
+}
+refreshNtp();
+setInterval(refreshNtp, 30000);
 
 let weatherState: WeatherTelemetry = {
   tempC: 22.5,
@@ -3764,8 +3766,6 @@ setInterval(() => {
   }
   
   // Minor NTPSEC microsecond jitter
-  ntpsecState.offsetMs = parseFloat((0.002 + Math.random() * 0.006).toFixed(4));
-  ntpsecState.jitterMs = parseFloat((0.001 + Math.random() * 0.002).toFixed(4));
 
   // Dynamic Intel NUC 5i3 Broadwell (i3-5010U, 14nm Broadwell) telemetry updates
   nucStats.cpuUsagePct = Math.round(8 + Math.random() * 22);

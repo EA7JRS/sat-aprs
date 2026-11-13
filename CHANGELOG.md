@@ -9,6 +9,7 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 - **Formato APRS por tipo de emergencia** (`server/core/aprsAvisos.ts`): objeto con la posición, el símbolo y los datos del suceso, más boletín de emergencia (`BLNnGRUPO`, línea según la gravedad).
 - **Cola única de emisión** (`server/core/emisor.ts`): todas las transmisiones de la consola salen de una en una, con pausa entre ellas y las urgentes primero.
 - **Sismos sobre la nueva cadena** (`server/fuentes/sismos.ts`): un sismo oficial dentro del radio y sobre la magnitud configurada emite un objeto propio (`EQddhhmm`) y un boletín de emergencia, y se refresca durante 6 horas. Antes se repetía indefinidamente el último sismo de toda España, aunque estuviera fuera del radio o fuese muy débil. Los sismos sin magnitud o sin hora en la fuente se muestran pero no se anuncian.
+- **Estado real del servidor de hora** (`server/sistema/ntp.ts`): la consola lee ntpsec con `ntpq` (stratum, par seleccionado, offset, jitter). Antes mostraba siempre «Stratum 1 sincronizado» con valores aleatorios, hubiera o no sincronización.
 - `docs/ARQUITECTURA.md`: los tres flujos del sistema, la cadena de avisos, cómo añadir una fuente y el estado de la reorganización.
 
 ---

@@ -10,7 +10,6 @@ export default function NtpSyncStatus({ ntp }: NtpSyncStatusProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [rtt, setRtt] = useState<number | null>(null);
-  const [driftSimulation, setDriftSimulation] = useState<number>(0);
   const [customStatus, setCustomStatus] = useState<'synchronized' | 'unsynchronized' | 'hold' | null>(null);
 
   // Play a soft high-tech double beep for NTP synchronization confirmation
@@ -68,14 +67,14 @@ export default function NtpSyncStatus({ ntp }: NtpSyncStatusProps) {
       // Calculate microsecond drift simulation based on network jitter
       const microDrift = (Math.random() - 0.5) * 0.005;
       setDriftSimulation(microDrift);
-      setCustomStatus('synchronized');
+      setCustomStatus(null); // vuelve a mostrarse el estado real que da el servidor
       
       playNtpBeep(2600, 0.07);
     } catch {
       // Fallback
       setTimeout(() => {
         setRtt(parseFloat((15 + Math.random() * 8).toFixed(2)));
-        setCustomStatus('synchronized');
+        setCustomStatus(null); // vuelve a mostrarse el estado real que da el servidor
         playNtpBeep(2200, 0.07);
       }, 700);
     } finally {
@@ -85,26 +84,14 @@ export default function NtpSyncStatus({ ntp }: NtpSyncStatusProps) {
     }
   };
 
-  // Periodically add micro drift adjustments to the UI to keep it looking dynamic and live
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setDriftSimulation(prev => {
-        const val = prev + (Math.random() - 0.5) * 0.0003;
-        // Keep within bounds of reference clock
-        return Math.max(-0.01, Math.min(0.01, val));
-      });
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
-
   // Use values from server telemetry if available, layer with current dynamic client calculations
-  const stratum = ntp?.stratum ?? 1;
-  const rawOffset = ntp?.offsetMs ?? 0.003;
-  const offsetMs = parseFloat((rawOffset + driftSimulation).toFixed(5));
-  const delayMs = ntp?.delayMs ?? 0.118;
-  const jitterMs = ntp?.jitterMs ?? 0.002;
-  const peer = ntp?.peer ?? 'SHM(0) (PPS GPS-synchronized)';
-  const status = customStatus ?? ntp?.status ?? 'synchronized';
+  // Valores reales de ntpsec; sin datos del servidor, consta como no sincronizado
+  const stratum = ntp?.stratum ?? 16;
+  const offsetMs = ntp?.offsetMs ?? 0;
+  const delayMs = ntp?.delayMs ?? 0;
+  const jitterMs = ntp?.jitterMs ?? 0;
+  const peer = ntp?.peer ?? 'sin datos';
+  const status = customStatus ?? ntp?.status ?? 'unsynchronized';
 
   // Sincronización crítica thresholds
   // Safe limits for tactical telecom standards: offset < 10ms is green, < 100ms is warning, > 1000ms or unsynced is red

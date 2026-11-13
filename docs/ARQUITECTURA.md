@@ -15,6 +15,13 @@ APRS y meteorológica, y muestra en un mapa todo lo que tiene coordenadas.
 | **2. Estación APRS y meteorológica** | GPS (posición fija o móvil), estación meteorológica propia, datos de Internet (OWM, IQAir, AEMET) | Baliza de posición y parte meteorológico APRS, según el perfil de usuario |
 | **3. Mapa** | AIS, ADS-B, APRS recibido, tráfico de carreteras y cualquier dato con coordenadas | Capas sobre el mapa base de la consola. **No se retransmite.** |
 
+## Posición y hora
+
+El NUC integra **gpsd** (posición, fija o móvil) y **ntpsec** disciplinado por
+el GPS, y es el servidor NTP de la red. La consola lee la posición de gpsd y
+el estado real de ntpsec; las reglas de difusión usan siempre la posición
+actual, así que el radio de avisos acompaña a la estación si se mueve.
+
 ## Un solo servicio, en TypeScript
 
 Todo corre en un único servicio Node.js escrito en TypeScript:
@@ -70,6 +77,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Autenticación local | Hecho (`server/auth.ts`) |
 | Cadena de avisos y cola de emisión | Hecho (`server/core/`) |
 | Sismos (IGN, respaldo USGS) | Hecho: primera fuente sobre la cadena |
+| Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
 | Avisos meteorológicos (AEMET, MeteoAlarm) | Pendiente de portar del agente Python |
 | Clima espacial (NOAA), incendios (FIRMS), calidad del aire | En `server.ts`; pendientes de pasar a `server/fuentes/` |
 | Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía |

@@ -64,9 +64,6 @@ export default function NtpSyncStatus({ ntp }: NtpSyncStatusProps) {
       const computedRtt = endTime - startTime;
       setRtt(parseFloat(computedRtt.toFixed(2)));
       
-      // Calculate microsecond drift simulation based on network jitter
-      const microDrift = (Math.random() - 0.5) * 0.005;
-      setDriftSimulation(microDrift);
       setCustomStatus(null); // vuelve a mostrarse el estado real que da el servidor
       
       playNtpBeep(2600, 0.07);

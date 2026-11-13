@@ -18,6 +18,11 @@ import {
   toRfFrame
 } from './server/aprs';
 import { AuthInfo, createAuthenticator } from './server/auth';
+import { Evento } from './server/core/evento';
+import { Politica, RegistroAvisos, evaluar } from './server/core/reglas';
+import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
+import { ColaEmision } from './server/core/emisor';
+import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -730,7 +735,9 @@ function sendToKiss(frame: Buffer): Promise<void> {
  * Único punto de salida al aire de la consola. Devuelve el motivo por el que
  * la trama NO se emite (cadena vacía si se intenta emitir por algún canal).
  */
-function transmitRealAprsPacket(packetString: string, simulated: boolean = false): string {
+const colaEmision = new ColaEmision(4000);
+
+function transmitRealAprsPacket(packetString: string, simulated: boolean = false, urgente: boolean = false): string {
   const decision = decideTransmission(packetString, {
     txEnabled: TX_ENABLED,
     callsign: config.callsign,
@@ -742,24 +749,27 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
   }
   const packet = decision.packet;
 
-  // 1. APRS-IS: ORIGEN>DESTINO,TCPIP*:info (el servidor añade la construcción q)
-  if (decision.aprsIs) {
-    sendToAprsIs(toIsPacket(packet))
-      .then(() => console.log(`[APRS TRANSMIT] Enviado a APRS-IS (${config.serverIp}:${config.aprscPort})`))
-      .catch((err: any) => console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a APRS-IS: ${err.message}`));
-  }
-
-  // 2. RF: trama AX.25 UI con la ruta de radio (nunca TCPIP*/qAC) por KISS
-  if (decision.rf) {
-    try {
-      const frame = toRfFrame(packet, config.aprsPath || DEFAULT_RF_PATH);
-      sendToKiss(frame)
-        .then(() => console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`))
-        .catch((err: any) => console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a KISS: ${err.message}`));
-    } catch (err: any) {
-      console.warn(`[APRS TRANSMIT WARNING] Trama no apta para RF: ${err.message}`);
+  // Las tramas se emiten de una en una, con pausa entre ellas (server/core/emisor.ts)
+  colaEmision.encolar(async () => {
+    // 1. APRS-IS: ORIGEN>DESTINO,TCPIP*:info (el servidor añade la construcción q)
+    if (decision.aprsIs) {
+      try {
+        await sendToAprsIs(toIsPacket(packet));
+        console.log(`[APRS TRANSMIT] Enviado a APRS-IS (${config.serverIp}:${config.aprscPort})`);
+      } catch (err: any) {
+        console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a APRS-IS: ${err.message}`);
+      }
     }
-  }
+    // 2. RF: trama AX.25 UI con la ruta de radio (nunca TCPIP*/qAC) por KISS
+    if (decision.rf) {
+      try {
+        await sendToKiss(toRfFrame(packet, config.aprsPath || DEFAULT_RF_PATH));
+        console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`);
+      } catch (err: any) {
+        console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a RF: ${err.message}`);
+      }
+    }
+  }, urgente);
 
   return decision.aprsIs ? '' : decision.reason;
 }
@@ -1519,7 +1529,7 @@ setInterval(() => {
 }, 60000);
 
 // Helper functions for formatting logs (with extended types)
-function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, destination: string, path: string, payload: string, success: boolean, remarks: string, opts: { simulated?: boolean } = {}) {
+function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, destination: string, path: string, payload: string, success: boolean, remarks: string, opts: { simulated?: boolean; urgente?: boolean } = {}) {
   const newLog: AprsPacketLog = {
     id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     timestamp: new Date().toLocaleTimeString('es-ES', { hour12: false }),
@@ -1541,7 +1551,7 @@ function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, d
   // Salida real al aire de las tramas TX, sujeta a la política de emisión.
   // Si la trama no se emite, el registro lo dice: la consola no finge transmisiones.
   if (type === 'TX') {
-    const notSent = transmitRealAprsPacket(payload, opts.simulated === true);
+    const notSent = transmitRealAprsPacket(payload, opts.simulated === true, opts.urgente === true);
     if (notSent) {
       newLog.remarks = `[NO EMITIDO: ${notSent}] ${remarks}`;
     }
@@ -1624,16 +1634,19 @@ function getAprsTimestamp(date: Date): string {
   return `${day}${hour}${min}z`;
 }
 
-// Generate APRS earthquake packet object
+// Objeto APRS de un sismo (el mismo formato que emite la cadena de avisos)
+function earthquakeToEvento(eq: EarthquakeEvent, real: boolean = true): Evento {
+  return {
+    ...sismoAEvento({
+      id: eq.id, time: eq.time, latitude: eq.latitude, longitude: eq.longitude, depthKm: eq.depthKm,
+      magnitud: eq.magnitud, magType: eq.magType, localizacion: eq.localizacion, fuente: 'IGN', datosCompletos: real
+    }),
+    real
+  };
+}
+
 function generateEarthquakePacket(eq: EarthquakeEvent): string {
-  // Sismos APRS object always headed with the name SEISMO (padded with spaces to 9 characters)
-  const name = "SEISMO   ";
-  const timestamp = getAprsTimestamp(new Date(eq.time));
-  const aprsLat = latToAprs(eq.latitude);
-  const aprsLon = lonToAprs(eq.longitude);
-  
-  const comment = `MAG:${eq.magnitud.toFixed(1)} ${eq.localizacion} (Prof:${eq.depthKm}km)`;
-  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}Q${comment}`;
+  return objetoAprs(config.callsign, earthquakeToEvento(eq)) || '';
 }
 
 // Generate coastal AIS vessels tracked by the Comar SLR200G dual receiver via local dynamic spawner
@@ -2150,8 +2163,6 @@ function getIcaIntervalForLevel(label: string, userInterval: number = 30): numbe
 }
 
 let lastIcaBulletinTime = 0;
-let lastSeismoBeaconTime = 0;
-let lastSeismoTargetId = '';
 
 function getMainPollutantName(pm25: number, pm10: number, coVal: number, no2: number, o3: number): string {
   const pollutants = [
@@ -2167,36 +2178,87 @@ function getMainPollutantName(pm25: number, pm10: number, coVal: number, no2: nu
   return `${top.name}: ${top.value.toFixed(1)}${top.unit}`;
 }
 
-function transmitSeismoBeacon(force: boolean = false) {
-  if (!force && (config.systemPower === false || config.ignSeismoEnabled === false)) {
-    return;
-  }
+// ---------------------------------------------------------------------------
+// CADENA DE AVISOS: fuente -> Evento -> reglas -> objeto + boletín APRS -> emisor
+// Común a todos los tipos de emergencia (server/core). Cada fuente solo tiene
+// que entregar sus avisos como `Evento[]` y declarar su política de difusión.
+// ---------------------------------------------------------------------------
+const AVISOS_FILE = path.join(process.cwd(), 'sat_avisos.json');
+let registroAvisos = new RegistroAvisos();
+try {
+  if (fs.existsSync(AVISOS_FILE)) registroAvisos = new RegistroAvisos(JSON.parse(fs.readFileSync(AVISOS_FILE, 'utf8')));
+} catch (e) {
+  console.warn('[AVISOS] No se pudo leer sat_avisos.json; se empieza con el registro vacío.');
+}
 
-  const target = earthquakes.find(e => e.enRango) || earthquakes[0];
-  if (!target) return;
+function guardarRegistroAvisos() {
+  registroAvisos.purgar(Date.now(), 7 * 24 * 3600_000);
+  fs.writeFile(AVISOS_FILE, JSON.stringify(registroAvisos), 'utf8', (err) => {
+    if (err) console.warn(`[AVISOS] No se pudo guardar sat_avisos.json: ${err.message}`);
+  });
+}
 
-  const now = Date.now();
-  const timeSinceLast = now - lastSeismoBeaconTime;
-  const isNewTarget = target.id !== lastSeismoTargetId;
-  const intervalMin = config.ignSeismoInterval || 30;
-  const intervalMs = intervalMin * 60 * 1000;
+/**
+ * Difunde los avisos que cumplen su política: un objeto APRS con la posición
+ * y los datos del suceso y, si procede, un boletín de emergencia. Devuelve
+ * cuántos avisos se han puesto en emisión.
+ */
+function difundirAvisos(eventos: Evento[], politica: Politica, forzar: boolean = false): number {
+  if (config.systemPower === false) return 0;
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon }; // posición actual: vale para estación fija o móvil
+  let difundidos = 0;
 
-  if (force || isNewTarget || lastSeismoBeaconTime === 0 || timeSinceLast >= intervalMs) {
-    lastSeismoBeaconTime = now;
-    lastSeismoTargetId = target.id;
+  for (const evento of eventos) {
+    const decision = evaluar(evento, politica, estacion, ahora);
+    if (!decision.emitir) continue;
+    if (!forzar && !registroAvisos.toca(evento.id, ahora, politica.repetirCadaMs)) continue;
 
-    const packet = generateEarthquakePacket(target);
-    target.aprsPacket = packet;
+    const nuevo = registroAvisos.esNuevo(evento.id);
+    const urgente = evento.gravedad === 'rojo' || evento.gravedad === 'naranja';
+    const destino = `${config.serverIp}:${config.aprscPort}`;
+    const resumen = `${evento.detalle || ''} ${evento.titulo}`.trim();
+    const aKm = decision.distanciaKm !== undefined ? ` a ${Math.round(decision.distanciaKm)} km` : '';
 
-    // Un sismo inyectado como prueba (test_eq_/sim_eq_) nunca se emite
-    const isTestQuake = /^(test_eq_|sim_eq_)/.test(String(target.id));
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, `Baliza SEISMO transmitida para sismo M${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km).`, { simulated: isTestQuake });
-
-    if (config.autoGenerarBoletinEmergencia && target.magnitud >= (config.minMagnitudBaliza || 3.0)) {
-      const emergencyBulletin = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN1    :EMERGENCIA SISMICA! SEISMO MAG:${target.magnitud.toFixed(1)} en ${target.localizacion} (Prof:${target.depthKm}km)`;
-      addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, emergencyBulletin, true, 'Boletín APRS Emergencia Sismológica emitido con prioridad crítica.', { simulated: isTestQuake });
+    const objeto = objetoAprs(config.callsign, evento);
+    if (objeto) {
+      addLog('TX', config.callsign, 'APRS-IS', destino, objeto, true, `Objeto APRS ${nuevo ? 'nuevo' : 'refrescado'} (${evento.fuente}): ${resumen}${aKm}.`, { urgente });
     }
+    if (politica.boletin) {
+      addLog('TX', config.callsign, 'APRS-IS', destino, boletinAprs(config.callsign, evento, decision.distanciaKm), true, `Boletín de emergencia (${evento.fuente}): ${resumen}${aKm}.`, { urgente });
+    }
+    registroAvisos.anotar(evento.id, ahora);
+    difundidos++;
   }
+  if (difundidos > 0) guardarRegistroAvisos();
+  return difundidos;
+}
+
+// Sismos: dentro del radio de la estación y a partir de la magnitud configurada.
+// El objeto se refresca cada `ignSeismoInterval` minutos durante 6 horas.
+function politicaSismos(): Politica {
+  return {
+    radioKm: config.filterRadiusKm || 200,
+    gravedadMinima: 'info',
+    vigenciaMs: 6 * 3600_000,
+    repetirCadaMs: (config.ignSeismoInterval || 30) * 60_000,
+    boletin: config.autoGenerarBoletinEmergencia !== false,
+    filtro: (e) => (e.datos?.magnitud ?? 0) >= (config.minMagnitudBaliza ?? 4.0)
+  };
+}
+
+// Avisos de sismos reales de la última descarga (los inyectados como prueba no entran aquí)
+let eventosSismos: Evento[] = [];
+
+function transmitSeismoBeacon(force: boolean = false): number {
+  if (!force && config.ignSeismoEnabled === false) return 0;
+  if (!force) return difundirAvisos(eventosSismos, politicaSismos());
+  // Emisión manual: solo el sismo más reciente que cumple la política, sin esperar a la cadencia
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const candidato = [...eventosSismos]
+    .sort((a, b) => b.inicio - a.inicio)
+    .find((e) => evaluar(e, politicaSismos(), estacion, Date.now()).emitir);
+  return candidato ? difundirAvisos([candidato], politicaSismos(), true) : 0;
 }
 
 function transmitAirQualityBeacon(force: boolean = false) {
@@ -3276,180 +3338,39 @@ async function transmitSpaceWeatherAprsBulletin(force: boolean = false) {
 async function refreshEarthquakes() {
   if (config.systemPower === false || config.ignSeismoEnabled === false) {
     earthquakes = [];
+    eventosSismos = [];
     return;
   }
   try {
-    let fetchedSismos: any[] = [];
-    const tProximosUrl = 'https://www.ign.es/web/resources/sismologia/tproximos/todos_visualizadores.js';
-    
-    addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', 'Consultando sismografía oficial (tproximos) de IGN España...', true, 'Sincronización');
-    
-    try {
-      const response = await fetch(tProximosUrl, { 
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        signal: AbortSignal.timeout(8000) 
-      });
-      if (response.ok) {
-        const rawText = await response.text();
-        const matches = [...rawText.matchAll(/var\s+([a-zA-Z0-9_]+)\s*=\s*(\{[\s\S]*?\});/g)];
-        const seenEvids = new Set<string>();
+    const sismos = await descargarSismos((origen, texto, ok) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Fallback'));
+    if (sismos.length === 0) return; // sin datos nuevos se conserva la última lista válida
 
-        for (const m of matches) {
-          const varName = m[1];
-          try {
-            const parsed = JSON.parse(m[2]);
-            if (parsed.features && Array.isArray(parsed.features)) {
-              for (const f of parsed.features) {
-                const id = f.properties?.evid || f.id;
-                if (id) {
-                  if (!seenEvids.has(id)) {
-                    seenEvids.add(id);
-                    fetchedSismos.push(f);
-                  }
-                } else {
-                  fetchedSismos.push(f);
-                }
-              }
-            }
-          } catch (e: any) {
-            console.error(`[IGN PARSE WARN] Error parseando variable ${varName}:`, e.message);
-          }
-        }
+    const limite = Date.now() - 30 * 24 * 3600_000;
+    const recientes = sismos.filter((s) => new Date(s.time).getTime() >= limite);
+    const lista = (recientes.length > 0 ? recientes : sismos)
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-        if (fetchedSismos.length > 0) {
-          addLog('SYS', 'IGN_VIS', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos en tiempo real desde IGN España (Península, Canarias y Mundial).`, true, 'Servicios');
-        }
-      } else {
-        throw new Error(`HTTP ${response.status}`);
-      }
-    } catch (e: any) {
-      addLog('SYS', 'IGN_VIS_ERR', 'LOCAL', 'API', `Fallo obteniendo sismos de tproximos (${e.message}). Probando RSS sismos IGN...`, false, 'Fallback');
-      
-      const ignXmlUrl = 'https://www.ign.es/ign/sismologia/sismos/sismos.xml';
-      try {
-        const response = await fetch(ignXmlUrl, { 
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(6000) 
-        });
-        if (response.ok) {
-          const xmlText = await response.text();
-          const itemMatches = [...xmlText.matchAll(/<item>([\s\S]*?)<\/item>/gi)];
-          for (const itemMatch of itemMatches) {
-            const itemContent = itemMatch[1];
-            const titleMatch = itemContent.match(/<title>([\s\S]*?)<\/title>/i);
-            const title = titleMatch ? titleMatch[1].trim() : '';
-            const latMatch = itemContent.match(/<geo:lat>([\s\S]*?)<\/geo:lat>/i) || itemContent.match(/<lat>([\s\S]*?)<\/lat>/i);
-            const lonMatch = itemContent.match(/<geo:long>([\s\S]*?)<\/geo:long>/i) || itemContent.match(/<long>([\s\S]*?)<\/long>/i);
-            const linkMatch = itemContent.match(/<link>([\s\S]*?)<\/link>/i);
-            const pubDateMatch = itemContent.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+    earthquakes = lista.map((s) => {
+      const distanciaKm = calculateDistance(gpsdState.lat, gpsdState.lon, s.latitude, s.longitude);
+      const eq: EarthquakeEvent = {
+        id: s.id,
+        time: s.time,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        depthKm: s.depthKm,
+        magnitud: s.magnitud,
+        magType: s.magType,
+        localizacion: s.localizacion,
+        distanciaKm,
+        enRango: distanciaKm <= (config.filterRadiusKm || 200)
+      };
+      eq.aprsPacket = generateEarthquakePacket(eq);
+      return eq;
+    });
+    eventosSismos = lista.map(sismoAEvento);
 
-            let mag = 2.0;
-            let loc = title;
-            if (title.includes('-')) {
-              const parts = title.split('-');
-              loc = parts.slice(1).join('-').trim();
-              const magStr = parts[0].replace(/[^0-9.]/g, '');
-              if (magStr) mag = parseFloat(magStr);
-            }
-
-            if (latMatch && lonMatch) {
-              fetchedSismos.push({
-                id: linkMatch ? linkMatch[1] : `xml_${Date.now()}_${Math.random()}`,
-                properties: {
-                  mag,
-                  loc,
-                  fecha: pubDateMatch ? pubDateMatch[1] : new Date().toISOString()
-                },
-                geometry: {
-                  coordinates: [parseFloat(lonMatch[1]), parseFloat(latMatch[1]), 10]
-                }
-              });
-            }
-          }
-          if (fetchedSismos.length > 0) {
-            addLog('SYS', 'IGN_XML', 'LOCAL', 'API', `Recuperados ${fetchedSismos.length} sismos desde el feed RSS XML de IGN España.`, true, 'Servicios');
-          }
-        }
-      } catch (err: any) {
-        addLog('SYS', 'IGN_FALLBACK', 'LOCAL', 'FDSN', `Fallo conexión RSS IGN (${err.message}). Intentando fallback USGS...`, false, 'Reintentando');
-        
-        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=27&maxlatitude=44&minlongitude=-18&maxlongitude=5&limit=200&minmagnitude=1.0`;
-        try {
-          const resUsgs = await fetch(usgsUrl, { signal: AbortSignal.timeout(6000) });
-          if (resUsgs.ok) {
-            const geoUsgs = await resUsgs.json();
-            if (geoUsgs.features && Array.isArray(geoUsgs.features)) {
-              fetchedSismos = geoUsgs.features;
-              addLog('SYS', 'USGS', 'LOCAL', 'FALLBACKAPI', `Recuperados ${fetchedSismos.length} sismos regionales mediante USGS.`, true, 'Aislado ok');
-            }
-          }
-        } catch (usgsErr: any) {
-          console.error("Fallo definitivo obteniendo sismos USGS:", usgsErr.message);
-        }
-      }
-    }
-
-    if (fetchedSismos.length > 0) {
-      const parsed: EarthquakeEvent[] = fetchedSismos.map((f: any) => {
-        const props = f.properties || {};
-        const geom = f.geometry || {};
-        const coordinates = geom.coordinates || [0, 0, 0];
-        const lon = coordinates[0];
-        const lat = coordinates[1];
-        
-        const depth = props.depth !== undefined ? parseFloat(props.depth) : (coordinates[2] || 0);
-        const mag = props.mag !== undefined ? parseFloat(props.mag) : (props.magnitud || 2.0);
-        
-        let loc = props.loc || props.place || 'Península Ibérica';
-        if (loc.includes('of')) {
-          loc = loc.split('of')[1].trim();
-        }
-
-        const dist = calculateDistance(gpsdState.lat, gpsdState.lon, lat, lon);
-        const enRango = dist <= (config.filterRadiusKm || 300);
-
-        let sismoTime = new Date().toISOString();
-        const rawFecha = props.fecha || props.fechalocal;
-        if (rawFecha && typeof rawFecha === 'string' && rawFecha.trim().length >= 8) {
-          const clean = rawFecha.trim().replace(/\//g, '-').replace(' ', 'T');
-          const d = new Date(clean.endsWith('Z') ? clean : clean + 'Z');
-          if (!isNaN(d.getTime())) {
-            sismoTime = d.toISOString();
-          }
-        } else if (props.time) {
-          const d = new Date(props.time);
-          if (!isNaN(d.getTime())) {
-            sismoTime = d.toISOString();
-          }
-        }
-
-        const eqEvent: EarthquakeEvent = {
-          id: f.id || props.evid || props.code || `eq_${Date.now()}_${Math.random()}`,
-          time: sismoTime,
-          latitude: lat,
-          longitude: lon,
-          depthKm: isNaN(depth) ? 0 : depth,
-          magnitud: isNaN(mag) ? 2.0 : mag,
-          magType: props.magtype || props.magType || 'mbLg',
-          localizacion: loc,
-          distanciaKm: dist,
-          enRango
-        };
-
-        eqEvent.aprsPacket = generateEarthquakePacket(eqEvent);
-        return eqEvent;
-      });
-
-      const limitTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      const sorted = parsed
-        .filter(e => new Date(e.time).getTime() >= limitTime)
-        .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-      
-      earthquakes = sorted.length > 0 ? sorted : parsed.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-      // Transmitir baliza SEISMO de forma sincronizada y respetando cadencia
-      transmitSeismoBeacon();
-    }
+    // Difundir por APRS los que cumplan la política (radio, magnitud, cadencia)
+    transmitSeismoBeacon();
   } catch (err: any) {
     console.error("Error refreshing Earthquakes:", err ? err.message : err);
   }
@@ -5597,20 +5518,12 @@ app.post('/api/ica/beacon/transmit', (req, res) => {
 
 app.post('/api/seismo/beacon/transmit', (req, res) => {
   try {
-    transmitSeismoBeacon(true);
-    addLog(
-      'SYS',
-      'SEISMO_TX_MANUAL',
-      'LOCAL',
-      'API',
-      'Transmisión manual de la baliza de posición SEISMO forzada por el operador.',
-      true,
-      'Transmisión Manual'
-    );
-    res.json({
-      success: true,
-      message: 'Transmisión manual de baliza de posición SEISMO completada con éxito.'
-    });
+    const difundidos = transmitSeismoBeacon(true);
+    const message = difundidos > 0
+      ? 'Sismo puesto en emisión: objeto APRS y boletín de emergencia.'
+      : `No hay ningún sismo reciente dentro de ${config.filterRadiusKm} km con magnitud ${config.minMagnitudBaliza} o superior: no se emite nada.`;
+    addLog('SYS', 'SEISMO_TX_MANUAL', 'LOCAL', 'API', `Emisión manual de avisos sísmicos solicitada por el operador. ${message}`, true, 'Transmisión Manual');
+    res.json({ success: true, difundidos, message });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

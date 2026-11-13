@@ -28,3 +28,4 @@ local_weather.json
 /weewx.conf
 /pat-config.json
 /axports
+sat_avisos.json

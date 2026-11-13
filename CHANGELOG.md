@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.7.0] - 2026-11-13
+### Nueva base: cadena común de avisos
+- **Modelo común de aviso** (`server/core/evento.ts`): cualquier fuente, oficial o de RF, entrega sus avisos en el mismo formato, con su procedencia y si el dato es real.
+- **Reglas de difusión** (`server/core/reglas.ts`): radio alrededor de la posición actual de la estación (fija o móvil), gravedad y umbral mínimos, vigencia y cadencia de repetición. Lo ya emitido se recuerda en `sat_avisos.json` y no se repite tras un reinicio.
+- **Formato APRS por tipo de emergencia** (`server/core/aprsAvisos.ts`): objeto con la posición, el símbolo y los datos del suceso, más boletín de emergencia (`BLNnGRUPO`, línea según la gravedad).
+- **Cola única de emisión** (`server/core/emisor.ts`): todas las transmisiones de la consola salen de una en una, con pausa entre ellas y las urgentes primero.
+- **Sismos sobre la nueva cadena** (`server/fuentes/sismos.ts`): un sismo oficial dentro del radio y sobre la magnitud configurada emite un objeto propio (`EQddhhmm`) y un boletín de emergencia, y se refresca durante 6 horas. Antes se repetía indefinidamente el último sismo de toda España, aunque estuviera fuera del radio o fuese muy débil. Los sismos sin magnitud o sin hora en la fuente se muestran pero no se anuncian.
+- `docs/ARQUITECTURA.md`: los tres flujos del sistema, la cadena de avisos, cómo añadir una fuente y el estado de la reorganización.
+
+---
+
 ## [v1.6.0] - 2026-11-13
 ### Eliminado: Firebase
 - **La consola ya no depende de Firebase** (Authentication ni Firestore) ni de ningún otro servicio en la nube. Eliminados el SDK (`firebase`), `firebase-applet-config.json`, `firebase-blueprint.json`, `firestore.rules` y `src/utils/firebase.ts`.

@@ -30,7 +30,7 @@ import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
 import { distanciaAZonaKm } from './server/core/zona';
-import { descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
+import { NivelEscala, descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
 import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { EstacionesOidas } from './server/estaciones';
@@ -42,7 +42,8 @@ import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
 import { Observacion, elegirObservacion, intervaloMeteoMs, leerArchivoWxnow, leerWeewx, parteMeteoAprs, validarParte } from './server/estacion/meteo';
 import { gcDistanceKm } from './server/formulas/geo';
-import { sunPosition, unixToUtc } from './server/formulas/astro';
+import { sunPosition, sunTimes, unixToUtc } from './server/formulas/astro';
+import { Ionosonda, descargarIonosondas, estadoBandas, ionosondaCercana, mejorBanda } from './server/propagacion';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -5636,6 +5637,76 @@ async function getPropagationData(isEco: boolean = false) {
   return cachedPropagation;
 }
 
+// ---------------------------------------------------------------------------
+// HF: resumen de propagación, con lo medido separado de lo estimado
+// ---------------------------------------------------------------------------
+let ionosondas: { lista: Ionosonda[]; cuando: number } | null = null;
+let descargaIonosondas = 0;
+
+async function ionosondaDeLaEstacion(): Promise<Ionosonda | null> {
+  const ahora = Date.now();
+  // Las ionosondas miden cada 5-15 minutos: se consultan cada 5
+  if (ahora - descargaIonosondas > 5 * 60_000) {
+    descargaIonosondas = ahora;
+    const lista = await descargarIonosondas();
+    if (lista) ionosondas = { lista, cuando: ahora };
+    anotarFuente('ionosonda', 'Ionosondas · GIRO', lista !== null, lista ? `${lista.length} estaciones` : 'Sin respuesta');
+  }
+  return ionosondas ? ionosondaCercana(ionosondas.lista, { lat: gpsdState.lat, lon: gpsdState.lon }, ahora) : null;
+}
+
+app.get('/api/hf', async (_req, res) => {
+  try {
+    const [prop, sonda] = await Promise.all([getPropagationData(false), ionosondaDeLaEstacion()]);
+    const n = prop.noaa;
+    const ahora = Date.now();
+    // Índices solares: solo valen si la NOAA los dio (sin respuesta, el servidor rellena con 150/110)
+    const solarReal = !!n.solar_updated;
+    const kpGfz = prop.gfz && prop.gfz.real !== false && Number.isFinite(prop.gfz.Hp30);
+    const viento = prop.rtsw && prop.rtsw.real && prop.rtsw.speed !== null ? prop.rtsw : null;
+    const oficiales = escalasOficiales && ahora - escalasOficiales.cuando < 2 * 3600_000 ? escalasOficiales.niveles : null;
+    const escala = (letra: 'R' | 'S' | 'G', derivada: string | undefined) => {
+      const o = oficiales?.find((x) => x.escala === letra);
+      if (o) return o.nivel;
+      const m = /^[RSG](\d)/.exec(derivada || '');
+      return m ? Number(m[1]) : null;
+    };
+    const mufMedida = sonda?.muf3000;
+    const ionosfera = { fof2: sonda?.fof2, muf3000: mufMedida ?? (solarReal ? n.muf : undefined), // La LUF es siempre una estimación (altura del sol y rayos X); sin flujo solar leído se calcula con uno medio
+      luf: n.luf };
+    const bandas = estadoBandas(ionosfera);
+    const { y, m, d, utcHours } = unixToUtc(ahora / 1000);
+    const sol = sunTimes(y, m, d, gpsdState.lat, gpsdState.lon, -0.833);
+    const hhmm = (min: number) => {
+      const t = ((Math.round(min) % 1440) + 1440) % 1440;
+      return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    };
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      actualizado: ahora,
+      sfi: solarReal ? Number(n.dia1) || null : null,
+      manchas: solarReal ? Number(n.ssn) || null : null,
+      fechaSolar: n.solar_updated || null,
+      kp: kpGfz ? { valor: Math.round(prop.gfz.Hp30 * 10) / 10, origen: 'GFZ (Hp30)' } : null,
+      rayosX: Number.isFinite(n.xrayFlux) && (n.xrayFlux as number) > 0 ? n.xrayClass : null,
+      escalas: { R: escala('R', n.rScale), S: escala('S', n.sScale), G: escala('G', n.gScale), oficiales: !!oficiales },
+      vientoSolar: viento ? { velocidad: viento.speed, bz: viento.bz, densidad: viento.density } : null,
+      ionosonda: sonda ? {
+        nombre: sonda.nombre, codigo: sonda.codigo, distanciaKm: Math.round(sonda.distanciaKm ?? 0),
+        fof2: sonda.fof2 ?? null, muf3000: sonda.muf3000 ?? null, hmf2: sonda.hmf2 ?? null, cuando: sonda.cuando,
+      } : null,
+      muf: ionosfera.muf3000 !== undefined ? { valor: Math.round(ionosfera.muf3000 * 10) / 10, medida: mufMedida !== undefined } : null,
+      luf: ionosfera.luf !== undefined ? Math.round(ionosfera.luf * 10) / 10 : null,
+      bandas,
+      mejorLocal: mejorBanda(bandas, 'nvis'),
+      mejorDx: mejorBanda(bandas, 'dx'),
+      sol: sol ? { orto: hhmm(sol.riseUtcMin), ocaso: hhmm(sol.setUtcMin), deDia: sunPosition(y, m, d, utcHours, gpsdState.lat, gpsdState.lon).altDeg > 0 } : null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/space-weather/propagacion', async (req, res) => {
   try {
     const isEco = req.query.eco === '1';
@@ -7241,6 +7312,8 @@ function programarAvisosMeteo() {
 // Clima espacial, focos de calor y calidad del aire sobre la cadena de avisos
 // ---------------------------------------------------------------------------
 let eventosEspacio: Evento[] = [];
+// Último estado oficial de las escalas R, S y G (para la pantalla de HF)
+let escalasOficiales: { niveles: NivelEscala[]; cuando: number } | null = null;
 let eventosFuego: Evento[] = [];
 let eventosAire: Evento[] = [];
 const registrarFuente = (origen: string, texto: string, ok: boolean) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Sin datos');
@@ -7272,7 +7345,10 @@ async function descargarClimaEspacialAvisos() {
   if (config.systemPower === false || config.climaEspacialEnabled === false) { eventosEspacio = []; return; }
   const niveles = await descargarClimaEspacial(registrarFuente);
   anotarFuente('espacio', 'Clima espacial · NOAA', niveles !== null, niveles ? niveles.map((n) => `${n.escala}${n.nivel}`).join(' ') : 'Sin respuesta');
-  if (niveles) eventosEspacio = niveles.map((n) => escalaAEvento(n)).filter((e): e is Evento => e !== null);
+  if (niveles) {
+    escalasOficiales = { niveles, cuando: Date.now() };
+    eventosEspacio = niveles.map((n) => escalaAEvento(n)).filter((e): e is Evento => e !== null);
+  }
   difundirAvisos(eventosEspacio, politicaEspacio());
 }
 
@@ -7300,7 +7376,7 @@ async function descargarAireAvisos() {
 
 function programarOtrasFuentes() {
   const seguro = (f: () => Promise<void>) => () => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
-  setInterval(seguro(descargarClimaEspacialAvisos), 15 * 60_000);
+  setInterval(seguro(descargarClimaEspacialAvisos), 5 * 60_000);
   setInterval(seguro(descargarFuegoAvisos), 30 * 60_000);
   setInterval(seguro(descargarAireAvisos), 30 * 60_000);
   setTimeout(seguro(descargarClimaEspacialAvisos), 8000);

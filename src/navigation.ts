@@ -30,7 +30,6 @@ export const SECCIONES: Seccion[] = [
       { id: 'incendios', nombre: 'Incendios' },
       { id: 'navareas', nombre: 'Marítimos' },
       { id: 'radiological', nombre: 'Radiación' },
-      { id: 'propagacion', nombre: 'Clima espacial' },
       { id: 'ica', nombre: 'Calidad del aire' },
       { id: 'salud', nombre: 'Salud' },
       { id: 'cecop-dashboard', nombre: 'Coordinación' },
@@ -53,6 +52,7 @@ export const SECCIONES: Seccion[] = [
   {
     id: 'radio', nombre: 'Radio', pantallas: [
       { id: 'direwolf-pillar', nombre: 'Direwolf' },
+      { id: 'propagacion', nombre: 'HF y propagación' },
       { id: 'aprx-pillar', nombre: 'aprx' },
       { id: 'aprs-adaptor', nombre: 'Tramas APRS' },
       { id: 'pat-pillar', nombre: 'Winlink' },

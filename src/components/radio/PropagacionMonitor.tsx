@@ -1763,11 +1763,11 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
       className="space-y-6"
     >
       {/* Upper Status Cards */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-800 pb-4 gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Radio className="text-cyan-500 animate-pulse" size={24} />
-            <h2 className="font-sans font-bold text-lg text-slate-800 tracking-tight">
+            <h2 className="font-sans font-bold text-lg text-slate-100 tracking-tight">
               Monitor de Propagación HF & Clima Espacial
             </h2>
           </div>

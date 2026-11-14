@@ -10,6 +10,7 @@ import { Dato, Nivel, Tarjeta } from '../components/shell/Etiquetas';
 import { distanciaLegible, haceCuanto, tituloAviso, horaUtc, useAvisos, vigenciaLegible } from '../utils/useAvisos';
 import { maidenhead } from '../../server/formulas/radio';
 import { customFetch } from '../utils/customFetch';
+import { ResumenHFBreve } from '../components/radio/ResumenHF';
 
 const RUMBOS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const rumbo = (grados: number) => RUMBOS[Math.round((((grados % 360) + 360) % 360) / 45) % 8];
@@ -112,6 +113,8 @@ export default function Inicio({ data, onIr }: { data: ServerTelemetryData; onIr
           </ul>
         </Tarjeta>
       </div>
+
+      <ResumenHFBreve onAbrir={() => onIr('propagacion')} />
 
       <Tarjeta aria-label="Fuentes de datos" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-slate-100">Fuentes</h2>

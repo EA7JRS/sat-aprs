@@ -2,6 +2,18 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.16.0] - 2026-11-14
+### HF y propagación, mejorado y en directo
+- **Se conserva todo** lo que había en la pantalla de propagación (índices, viento solar, escalas, previsión de la NOAA, boletín APRS y sus ajustes). Pasa a **Radio → HF y propagación** y se le antepone un resumen nuevo.
+- **Bandas ahora** (`server/propagacion.ts`): para cada banda de 160 a 10 m, si sirve para enlace **local y regional (NVIS, 0-400 km)** y para **larga distancia**, con la mejor banda de cada tipo. El enlace local es el que importa en una emergencia.
+- **Ionosfera medida**: foF2, MUF a 3000 km y altura de la capa F2 de la **ionosonda más cercana** (red GIRO), con su distancia y la antigüedad de la medida. Antes la MUF era solo una estimación a partir del flujo solar; ahora se usa la medida cuando la hay y se dice cuál de las dos es.
+- **Escalas R, S y G oficiales** de la NOAA en lugar de deducidas, cuando están disponibles.
+- **Lo que no se puede leer se muestra como «—»**: antes, si la NOAA no respondía, se enseñaban un flujo solar de 150 y 110 manchas como si fueran reales.
+- **En directo**: el resumen se relee cada 30 segundos, con un indicador de antigüedad; las ionosondas y las escalas se consultan cada 5 minutos. Nueva tarjeta **«HF ahora»** en la portada (`GET /api/hf`).
+- El panel antiguo sigue ahora al color de la consola: sus tarjetas blancas pasan a oscuras en los temas oscuros.
+
+---
+
 ## [v1.15.0] - 2026-11-14
 ### Clima espacial, focos de calor y calidad del aire en la cadena de avisos
 - **Clima espacial** (`server/fuentes/climaEspacial.ts`): estado actual de las escalas R (apagones de radio en HF), S (radiación solar) y G (tormentas geomagnéticas) de la NOAA. Boletín `BLNnESPAC` a partir de la escala 2, repetido cada 3 horas mientras dure; si sube de nivel se anuncia de nuevo.

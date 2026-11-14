@@ -8,6 +8,7 @@ import SubTabs from './components/shell/SubTabs';
 import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
+import ResumenHF from './components/radio/ResumenHF';
 import { useAvisos } from './utils/useAvisos';
 import { COLORES_TACTICO, useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
@@ -1606,7 +1607,10 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            {data && <PropagacionMonitor data={data.propagation} />}
+            <ResumenHF />
+            <h2 className="text-lg font-semibold text-slate-100 mt-2">Detalle: índices, viento solar y previsión de la NOAA</h2>
+            {/* Panel dibujado en claro: «sat-claro» hace que siga al color de la consola (src/index.css) */}
+            <div className="sat-claro flex flex-col gap-4">{data && <PropagacionMonitor data={data.propagation} />}</div>
           </motion.div>
         ) : activeTab === 'weewx-pillar' ? (
           /* PILAR DE CONTROL WEEWX EXCLUSIVO */

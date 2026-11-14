@@ -261,3 +261,34 @@
 /* Etiquetas de nivel, atenuadas */
 .theme-night .sat-nivel { filter: brightness(0.72) saturate(0.9); }
 .theme-day select, .theme-night select { color-scheme: inherit; }
+
+/* Tarjetas antiguas dibujadas en claro (fondo blanco y texto oscuro) dentro de «sat-claro»:
+   en los temas oscuros se invierte su escala de grises para que sigan al tema; en el claro
+   recuperan la escala original. (Bloque generado.) */
+.theme-standard .sat-claro .bg-white {
+  --color-white: #0f172a;
+  --color-slate-50: #020617; --color-slate-100: #0f172a; --color-slate-200: #1e293b; --color-slate-300: #334155; --color-slate-400: #475569; --color-slate-500: #64748b; --color-slate-600: #94a3b8; --color-slate-700: #cbd5e1; --color-slate-750: #cbd5e1; --color-slate-800: #e2e8f0; --color-slate-850: #e2e8f0; --color-slate-900: #f1f5f9; --color-slate-950: #f8fafc;
+}
+.theme-emergency .sat-claro .bg-white {
+  --color-white: #0f172a;
+  --color-slate-50: #020617; --color-slate-100: #0f172a; --color-slate-200: #1e293b; --color-slate-300: #334155; --color-slate-400: #475569; --color-slate-500: #64748b; --color-slate-600: #94a3b8; --color-slate-700: #cbd5e1; --color-slate-750: #cbd5e1; --color-slate-800: #e2e8f0; --color-slate-850: #e2e8f0; --color-slate-900: #f1f5f9; --color-slate-950: #f8fafc;
+}
+.theme-night .sat-claro .bg-white {
+  --color-white: #140804;
+  --color-slate-50: #0b0402; --color-slate-100: #140804; --color-slate-200: #38160a; --color-slate-300: #5f2611; --color-slate-400: #863518; --color-slate-500: #a9431e; --color-slate-600: #c86541; --color-slate-700: #d68c71; --color-slate-750: #d68c71; --color-slate-800: #dfa590; --color-slate-850: #dfa590; --color-slate-900: #e6b9a8; --color-slate-950: #efd2c8;
+}
+.theme-night.tac-rojo .sat-claro .bg-white {
+  --color-white: #150303;
+  --color-slate-50: #0c0202; --color-slate-100: #150303; --color-slate-200: #3a0808; --color-slate-300: #620e0e; --color-slate-400: #8a1414; --color-slate-500: #ae1919; --color-slate-600: #d03939; --color-slate-700: #dc6a6a; --color-slate-750: #dc6a6a; --color-slate-800: #e48b8b; --color-slate-850: #e48b8b; --color-slate-900: #eaa4a4; --color-slate-950: #f1c5c5;
+}
+.theme-night.tac-verde .sat-claro .bg-white {
+  --color-white: #051305;
+  --color-slate-50: #030b03; --color-slate-100: #051305; --color-slate-200: #0d350d; --color-slate-300: #165a16; --color-slate-400: #207e20; --color-slate-500: #289f28; --color-slate-600: #51b851; --color-slate-700: #7dca7d; --color-slate-750: #7dca7d; --color-slate-800: #9ad69a; --color-slate-850: #9ad69a; --color-slate-900: #afdeaf; --color-slate-950: #cceacc;
+}
+.theme-night.tac-azul .sat-claro .bg-white {
+  --color-white: #050b12;
+  --color-slate-50: #03060a; --color-slate-100: #050b12; --color-slate-200: #0f1e33; --color-slate-300: #193357; --color-slate-400: #24487b; --color-slate-500: #2d5a9a; --color-slate-600: #517cb8; --color-slate-700: #7d9dca; --color-slate-750: #7d9dca; --color-slate-800: #9ab3d6; --color-slate-850: #9ab3d6; --color-slate-900: #afc3de; --color-slate-950: #ccd9ea;
+}
+.theme-day .sat-claro .bg-white {
+  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1; --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155; --color-slate-750: #293548; --color-slate-800: #1e293b; --color-slate-850: #172033; --color-slate-900: #0f172a; --color-slate-950: #020617;
+}

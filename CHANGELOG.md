@@ -2,6 +2,15 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.18.0] - 2026-11-14
+### Limpieza de las pantallas antiguas de Avisos
+- **Retiradas** las pantallas de Sismos, Meteorología, Incendios y Calidad del aire: su función la hace ya la lista «En vigor», con datos de fuentes oficiales, sus reglas y sus tramas. Eran unas 12.000 líneas que mezclaban datos reales con otros de demostración. Siguen en el historial de git (hasta la v1.17.0) por si se quiere recuperar algo, como las gráficas estadísticas de sismos.
+- **Catálogo de sismos recientes** en Avisos: los sismos de los últimos días de la fuente oficial, se anuncien o no, con magnitud, profundidad, lugar y distancia.
+- **Demostración, señalada**: Marítimos (NAVTEX, Inmarsat) y Radiación llevan «(demo)» en su pestaña y una franja que explica que no tienen todavía una fuente real. Salud y Coordinación indican qué parte es de consulta o de demostración.
+- Los enlaces internos a una pantalla retirada llevan a la lista de avisos.
+
+---
+
 ## [v1.17.0] - 2026-11-14
 ### Limpieza de pantallas antiguas y de datos duplicados
 - **Estación y meteo** queda en lo que es: la meteorología de la estación. Se quitan el rótulo fijo «APRS-IS enlace activo» (el estado real está en la barra superior), el registro de tráfico (está en Radio) y las tres listas de alertas (están en Avisos).

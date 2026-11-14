@@ -6,7 +6,7 @@
 
 export type Pantalla =
   | 'inicio'
-  | 'avisos' | 'sismos-ign' | 'aemet-portal' | 'incendios' | 'navareas' | 'radiological' | 'propagacion' | 'ica' | 'salud' | 'cecop-dashboard'
+  | 'avisos' | 'navareas' | 'radiological' | 'propagacion' | 'salud' | 'cecop-dashboard'
   | 'monitor' | 'perfil' | 'weewx-pillar'
   | 'mapa' | 'dgt' | 'portus'
   | 'direwolf-pillar' | 'aprx-pillar' | 'aprs-adaptor' | 'pat-pillar'
@@ -25,12 +25,8 @@ export const SECCIONES: Seccion[] = [
   {
     id: 'avisos', nombre: 'Avisos', pantallas: [
       { id: 'avisos', nombre: 'En vigor' },
-      { id: 'sismos-ign', nombre: 'Sismos' },
-      { id: 'aemet-portal', nombre: 'Meteorología' },
-      { id: 'incendios', nombre: 'Incendios' },
-      { id: 'navareas', nombre: 'Marítimos' },
-      { id: 'radiological', nombre: 'Radiación' },
-      { id: 'ica', nombre: 'Calidad del aire' },
+      { id: 'navareas', nombre: 'Marítimos (demo)' },
+      { id: 'radiological', nombre: 'Radiación (demo)' },
       { id: 'salud', nombre: 'Salud' },
       { id: 'cecop-dashboard', nombre: 'Coordinación' },
     ],

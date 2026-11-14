@@ -36,3 +36,12 @@ export function Dato({ rotulo, children, grande = false }: { rotulo: string; chi
     </div>
   );
 }
+
+/** Franja que avisa de que una pantalla usa datos de demostración o es solo de consulta. */
+export function AvisoDemostracion({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="sat-aviso-demo border border-amber-700 bg-amber-950 text-amber-300 rounded-xl px-4 py-3 text-sm">
+      {children}
+    </p>
+  );
+}

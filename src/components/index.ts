@@ -4,7 +4,6 @@
 
 // Emergency & Response System Components
 export { default as CecopDashboard } from './emergency/CecopDashboard';
-export { default as WildfireMonitor } from './emergency/WildfireMonitor';
 export { default as RadiologicalNetworks } from './emergency/RadiologicalNetworks';
 export { default as AlertMonitor } from './emergency/AlertMonitor';
 export { default as CsnStationsDatabase } from './emergency/CsnStationsDatabase';
@@ -22,9 +21,6 @@ export { default as NucConsole } from './radio/NucConsole';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors
-export { default as AemetOpenDataPortal } from './environment/AemetOpenDataPortal';
-export { default as IcaAirQualityMonitor } from './environment/IcaAirQualityMonitor';
-export { default as IgnEarthquakeIndicators } from './environment/IgnEarthquakeIndicators';
 export { default as MeteosaludPortal } from './environment/MeteosaludPortal';
 export { default as NavareaMonitor, INITIAL_NAVAREA_WARNINGS } from './environment/NavareaMonitor';
 export type { NavareaWarning } from './environment/NavareaMonitor';

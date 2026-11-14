@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 import pkg from '../package.json';
-import { Pantalla, seccionDe } from './navigation';
+import { Pantalla, SECCIONES, seccionDe } from './navigation';
 import Sidebar from './components/shell/Sidebar';
 import StatusBar from './components/shell/StatusBar';
 import SubTabs from './components/shell/SubTabs';
@@ -9,6 +9,7 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import ResumenHF from './components/radio/ResumenHF';
+import { AvisoDemostracion } from './components/shell/Etiquetas';
 import { useAvisos } from './utils/useAvisos';
 import { COLORES_TACTICO, useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
@@ -21,7 +22,6 @@ import {
   ConsoleHeader,
   TelemetryStatus,
   WeatherStation,
-  IcaAirQualityMonitor,
   NucConsole,
   WeewxConsole,
   DirewolfConsole,
@@ -33,8 +33,6 @@ import {
   ScriptExporter,
   TransmissionTrafficTrends,
   DgtTrafficDatabase,
-  IgnEarthquakeIndicators,
-  AemetOpenDataPortal,
   PortusOceanData,
   NavareaMonitor,
   INITIAL_NAVAREA_WARNINGS,
@@ -43,7 +41,6 @@ import {
   RadiologicalNetworks,
   SyncScheduler,
   MeteosaludPortal,
-  WildfireMonitor,
   ThreatPollingEngine,
   CecopDashboard,
   AprsAdaptor,
@@ -162,9 +159,11 @@ export default function App() {
   useEffect(() => {
     const handleNavigation = (e: Event) => {
       const customEvent = e as CustomEvent<{ tab: string }>;
-      if (customEvent.detail?.tab) {
-        setActiveTab(customEvent.detail.tab as any);
-      }
+      const destino = customEvent.detail?.tab;
+      if (!destino) return;
+      // Las pantallas retiradas llevan a la lista de avisos
+      const existe = SECCIONES.some((sec) => sec.pantallas.some((p) => p.id === destino));
+      setActiveTab(existe ? (destino as Pantalla) : 'avisos');
     };
     window.addEventListener('navigate-to-tab', handleNavigation);
     return () => {
@@ -1145,7 +1144,7 @@ export default function App() {
         {activeTab === 'inicio' ? (
           <Inicio data={data} onIr={setActiveTab} />
         ) : activeTab === 'avisos' ? (
-          <Avisos config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
+          <Avisos sismos={data.earthquakes} config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'mapa' ? (
           <Mapa onIr={setActiveTab} config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'perfil' ? (
@@ -1211,6 +1210,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            <AvisoDemostracion>Herramienta de coordinación y simulacros. Parte de sus datos (por ejemplo, los incendios) son de <b>demostración</b>; los avisos reales están en «En vigor».</AvisoDemostracion>
             <CecopDashboard 
               earthquakes={data.earthquakes || []} 
               tsunamiAlerts={data.tsunamiAlerts || []} 
@@ -1273,6 +1273,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            <AvisoDemostracion>La vigilancia radiológica es de <b>demostración</b>: los valores son modelados, no hay todavía una fuente real. Nada de aquí se emite.</AvisoDemostracion>
             <RadiologicalNetworks 
               stations={data.csnStations || []} 
               gpsd={data.gpsd} 
@@ -1292,47 +1293,6 @@ export default function App() {
               gpsd={data.gpsd} 
               onRelocate={(lat, lon) => handleRelocate(lat, lon, 'Incidencia DGT')} 
             />
-          </motion.div>
-        ) : activeTab === 'sismos-ign' ? (
-          /* IGN EARTHQUAKE INDICATORS PANEL */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <IgnEarthquakeIndicators 
-              earthquakes={data.earthquakes || []} 
-              gpsd={data.gpsd} 
-              onRelocate={(lat, lon) => handleRelocate(lat, lon, 'Epicentro Sísmico IGN')} 
-              isRefreshing={isRefreshing}
-              onRefresh={() => fetchTelemetry(false)}
-            />
-          </motion.div>
-        ) : activeTab === 'aemet-portal' ? (
-          /* AEMET OPENDATA PRODUCT DOWNLOAD PORTAL */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AemetOpenDataPortal 
-              config={data.config}
-              weather={data.weather}
-              iqair={data.iqair}
-              onUpdateConfig={async (newConfig) => {
-                const updatedFull = { ...data.config, ...newConfig } as TelemetryConfig;
-                return handleSaveConfig(updatedFull);
-              }}
-            />
-          </motion.div>
-        ) : activeTab === 'incendios' ? (
-          /* REAL-TIME WILDFIRE SPAIN MONITOR BASED ON COPERNICUS & NASA LAND-NRT */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <WildfireMonitor gpsd={data.gpsd} config={data.config} />
           </motion.div>
         ) : activeTab === 'portus' ? (
           /* PORTUS OCEANOGRAPHIC PUERTOS DEL ESTADO DATABASE */
@@ -1356,6 +1316,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            <AvisoDemostracion>Los radioavisos marítimos (NAVTEX, Inmarsat SafetyNET, AIS de esta pantalla) son de <b>demostración</b>: todavía no hay un receptor real conectado. Nada de aquí se emite. Los barcos reales por AIS están en Mapa.</AvisoDemostracion>
             <NavareaMonitor 
               gpsd={data.gpsd} 
               onRelocate={(lat, lon, title) => handleRelocate(lat, lon, title)} 
@@ -1371,19 +1332,11 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            <AvisoDemostracion>Pantalla de consulta. Los avisos que la estación difunde por APRS son solo los de la pestaña «En vigor».</AvisoDemostracion>
             <MeteosaludPortal 
               gpsd={data.gpsd} 
               onInjectRaw={handleInjectRaw} 
             />
-          </motion.div>
-        ) : activeTab === 'ica' ? (
-          /* ICA AIR QUALITY MONITOR PORTAL */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            {data && <IcaAirQualityMonitor gpsd={data.gpsd} config={data.config} onInjectRaw={handleInjectRaw} iqair={data.iqair} />}
           </motion.div>
         ) : activeTab === 'propagacion' ? (
           /* HF PROPAGATION & SPACE WEATHER MONITOR */

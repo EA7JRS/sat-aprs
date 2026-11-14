@@ -8,7 +8,7 @@ import { Dato, Nivel, Tarjeta } from '../components/shell/Etiquetas';
 import { Aviso, NOMBRE_TIPO, distanciaLegible, tituloAviso, horaUtc, useAvisos, vigenciaLegible } from '../utils/useAvisos';
 import { customFetch } from '../utils/customFetch';
 import { useAdminSession } from '../utils/session';
-import { TelemetryConfig } from '../types';
+import { EarthquakeEvent, TelemetryConfig } from '../types';
 
 function Fila({ a, elegido, onElegir }: { a: Aviso; elegido: boolean; onElegir: () => void }) {
   return (
@@ -220,7 +220,51 @@ function Detalle({ a, txEnabled, onEmitido, config, onGuardar }: { a: Aviso; txE
   );
 }
 
-export default function Avisos({ config, onGuardar }: { config: TelemetryConfig; onGuardar: Guardar }) {
+/** Catálogo de los sismos recientes de la fuente oficial, se anuncien o no. */
+function CatalogoSismos({ sismos, radioKm }: { sismos: EarthquakeEvent[]; radioKm: number }) {
+  // Los sismos inyectados como prueba (Sistema → Pruebas y simulación) no son del catálogo
+  const reales = sismos.filter((q) => !String(q.id).startsWith('sim_')).sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
+  if (reales.length === 0) return null;
+  const cercanos = reales.filter((q) => q.enRango).length;
+  const fecha = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '—' : `${d.toISOString().slice(8, 10)}/${d.toISOString().slice(5, 7)} ${d.toISOString().slice(11, 16)}`;
+  };
+  return (
+    <details className="bg-slate-900 border border-slate-800 rounded-xl" id="catalogo-sismos">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-100 min-h-[44px]">
+        Sismos recientes <span className="font-normal text-slate-400">· {reales.length} en el catálogo, {cercanos} a menos de {radioKm} km</span>
+      </summary>
+      <div className="px-4 pb-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-slate-400">
+              <th className="font-normal py-1 pr-3">Fecha (UTC)</th>
+              <th className="font-normal py-1 pr-3">Magnitud</th>
+              <th className="font-normal py-1 pr-3">Prof.</th>
+              <th className="font-normal py-1 pr-3">Lugar</th>
+              <th className="font-normal py-1 text-right">Distancia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reales.slice(0, 60).map((q) => (
+              <tr key={q.id} className="border-t border-slate-800">
+                <td className="py-1.5 pr-3 font-mono text-slate-300 whitespace-nowrap">{fecha(q.time)}</td>
+                <td className="py-1.5 pr-3 font-mono text-slate-100 whitespace-nowrap">{q.magnitud.toFixed(1)} <span className="text-slate-400">{q.magType}</span></td>
+                <td className="py-1.5 pr-3 font-mono text-slate-300 whitespace-nowrap">{Math.round(q.depthKm)} km</td>
+                <td className="py-1.5 pr-3 text-slate-200">{q.localizacion}</td>
+                <td className={`py-1.5 text-right font-mono whitespace-nowrap ${q.enRango ? 'text-amber-300' : 'text-slate-400'}`}>{Math.round(q.distanciaKm)} km</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {reales.length > 60 && <p className="text-[13px] text-slate-400 mt-2">Se muestran los 60 más recientes.</p>}
+      </div>
+    </details>
+  );
+}
+
+export default function Avisos({ config, onGuardar, sismos }: { config: TelemetryConfig; onGuardar: Guardar; sismos: EarthquakeEvent[] }) {
   const { avisos, total, txEnabled, error, recargar } = useAvisos();
   const [tipo, setTipo] = useState<string>('todos');
   const [elegidoId, setElegidoId] = useState<string | null>(null);
@@ -282,6 +326,8 @@ export default function Avisos({ config, onGuardar }: { config: TelemetryConfig;
           </aside>
         )}
       </div>
+
+      <CatalogoSismos sismos={sismos} radioKm={config.filterRadiusKm ?? 200} />
     </div>
   );
 }

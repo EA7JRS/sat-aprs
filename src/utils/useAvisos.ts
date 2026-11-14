@@ -86,7 +86,7 @@ export function vigenciaLegible(inicio: number, fin: number, ahora = Date.now())
 }
 
 /** Qué es el aviso, sin el nivel ni la vigencia abreviada que ya se muestran aparte. */
-export function tituloAviso(a: Aviso): string {
+export function tituloAviso(a: { detalle: string; titulo: string }): string {
   const texto = (a.detalle || a.titulo)
     .replace(/^(ROJO|NARANJA|AMARILLO|INFO)\s+/i, '')
     .replace(/\s+\d{2}\/\d{2}-(\d{2}\/)?\d{2}z$/, '');

@@ -8,6 +8,7 @@ import { Dato, Nivel, Tarjeta } from '../components/shell/Etiquetas';
 import { Aviso, NOMBRE_TIPO, distanciaLegible, tituloAviso, horaUtc, useAvisos, vigenciaLegible } from '../utils/useAvisos';
 import { customFetch } from '../utils/customFetch';
 import { useAdminSession } from '../utils/session';
+import { TelemetryConfig } from '../types';
 
 function Fila({ a, elegido, onElegir }: { a: Aviso; elegido: boolean; onElegir: () => void }) {
   return (
@@ -34,7 +35,94 @@ function Fila({ a, elegido, onElegir }: { a: Aviso; elegido: boolean; onElegir: 
   );
 }
 
-function Detalle({ a, txEnabled, onEmitido }: { a: Aviso; txEnabled: boolean; onEmitido: () => void }) {
+type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
+
+const campo = 'w-full min-h-[40px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 text-slate-100 text-sm';
+
+/** Reglas de difusión del tipo de aviso, editables por el administrador. */
+function Reglas({ a, config, onGuardar, onGuardado }: { a: Aviso; config: TelemetryConfig; onGuardar: Guardar; onGuardado: () => void }) {
+  const session = useAdminSession();
+  const [editando, setEditando] = useState(false);
+  const [v, setV] = useState<Record<string, string>>({});
+  const [estado, setEstado] = useState<string | null>(null);
+  const esMeteo = a.tipo === 'meteo';
+  const editable = esMeteo || a.tipo === 'sismo';
+
+  const abrir = () => {
+    setV(esMeteo
+      ? { radio: String(config.meteoRadioKm ?? 25), nivel: String(config.meteoGravedadMinima ?? 'amarillo'), antelacion: String(config.meteoAntelacionH ?? 12), repetir: String(config.meteoRepetirMin ?? 60) }
+      : { radio: String(config.filterRadiusKm ?? 200), magnitud: String(config.minMagnitudBaliza ?? 4), repetir: String(config.ignSeismoInterval ?? 30) });
+    setEstado(null);
+    setEditando(true);
+  };
+
+  const guardar = async () => {
+    const n = (x: string) => Number(String(x).replace(',', '.'));
+    const cambios: Partial<TelemetryConfig> = esMeteo
+      ? { meteoRadioKm: n(v.radio), meteoGravedadMinima: v.nivel as TelemetryConfig['meteoGravedadMinima'], meteoAntelacionH: n(v.antelacion), meteoRepetirMin: n(v.repetir) }
+      : { filterRadiusKm: n(v.radio), minMagnitudBaliza: n(v.magnitud), ignSeismoInterval: n(v.repetir) };
+    if (Object.values(cambios).some((x) => typeof x === 'number' && !Number.isFinite(x))) { setEstado('Hay un valor que no es un número.'); return; }
+    setEstado('Guardando…');
+    const ok = await onGuardar(cambios);
+    setEstado(ok ? null : 'No se pudo guardar.');
+    if (ok) { setEditando(false); onGuardado(); }
+  };
+
+  const entrada = (clave: string, rotulo: string, unidad: string) => (
+    <label className="flex flex-col gap-1 text-xs text-slate-400">
+      {rotulo} ({unidad})
+      <input type="number" inputMode="decimal" className={campo} value={v[clave] ?? ''} onChange={(e) => setV((x) => ({ ...x, [clave]: e.target.value }))} />
+    </label>
+  );
+
+  return (
+    <div className="border-t border-slate-800 pt-3.5 flex flex-col gap-2.5" id="reglas-aviso">
+      <div className="flex items-baseline justify-between">
+        <div className="font-semibold text-slate-100">Reglas de {esMeteo ? 'los avisos meteorológicos' : a.tipo === 'sismo' ? 'los sismos' : 'este tipo de aviso'}</div>
+        {editable && !editando && (
+          <button type="button" id="reglas-cambiar" onClick={abrir} disabled={!session.isAdmin} title={session.isAdmin ? '' : 'Solo el administrador'} className="text-sm font-semibold text-sky-400 disabled:opacity-40 cursor-pointer min-h-[32px]">
+            Cambiar
+          </button>
+        )}
+      </div>
+      {!editando ? (
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <Dato rotulo="Radio">{a.reglas.radioKm === null ? 'Sin límite' : `${a.reglas.radioKm} km${a.deZona ? ' del borde de la zona' : ''}`}</Dato>
+          {esMeteo
+            ? <Dato rotulo="Nivel mínimo">{a.reglas.gravedadMinima.charAt(0).toUpperCase() + a.reglas.gravedadMinima.slice(1)}</Dato>
+            : a.tipo === 'sismo' ? <Dato rotulo="Magnitud mínima">{config.minMagnitudBaliza ?? 4}</Dato> : <Dato rotulo="Nivel mínimo">{a.reglas.gravedadMinima}</Dato>}
+          {esMeteo && <Dato rotulo="Antelación">{a.reglas.antelacionH} h</Dato>}
+          <Dato rotulo="Repetición">Cada {a.reglas.repetirMin} min</Dato>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            {entrada('radio', 'Radio', 'km')}
+            {esMeteo ? (
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Nivel mínimo
+                <select className={campo} value={v.nivel} onChange={(e) => setV((x) => ({ ...x, nivel: e.target.value }))}>
+                  <option value="amarillo">Amarillo</option>
+                  <option value="naranja">Naranja</option>
+                  <option value="rojo">Rojo</option>
+                </select>
+              </label>
+            ) : entrada('magnitud', 'Magnitud mínima', 'M')}
+            {esMeteo && entrada('antelacion', 'Antelación', 'h')}
+            {entrada('repetir', 'Repetición', 'min')}
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button type="button" id="reglas-guardar" onClick={guardar} className="min-h-[40px] px-4 rounded-lg bg-sky-400 text-slate-950 font-bold cursor-pointer">Guardar</button>
+            <button type="button" onClick={() => setEditando(false)} className="min-h-[40px] px-4 rounded-lg border border-slate-700 text-slate-200 cursor-pointer">Cancelar</button>
+            {estado && <span className="text-[13px] text-amber-300">{estado}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Detalle({ a, txEnabled, onEmitido, config, onGuardar }: { a: Aviso; txEnabled: boolean; onEmitido: () => void; config: TelemetryConfig; onGuardar: Guardar }) {
   const session = useAdminSession();
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -75,15 +163,7 @@ function Detalle({ a, txEnabled, onEmitido }: { a: Aviso; txEnabled: boolean; on
 
       {!a.cumple && <p className="text-sm text-amber-300">No se difunde: {a.motivo}.</p>}
 
-      <div className="border-t border-slate-800 pt-3.5 flex flex-col gap-2.5">
-        <div className="font-semibold text-slate-100">Reglas de este tipo de aviso</div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <Dato rotulo="Radio">{a.reglas.radioKm === null ? 'Sin límite' : `${a.reglas.radioKm} km${a.deZona ? ' del borde de la zona' : ''}`}</Dato>
-          <Dato rotulo="Nivel mínimo">{a.reglas.gravedadMinima.charAt(0).toUpperCase() + a.reglas.gravedadMinima.slice(1)}</Dato>
-          <Dato rotulo="Antelación">{a.reglas.antelacionH} h</Dato>
-          <Dato rotulo="Repetición">Cada {a.reglas.repetirMin} min</Dato>
-        </div>
-      </div>
+      <Reglas a={a} config={config} onGuardar={onGuardar} onGuardado={onEmitido} />
 
       <div className="flex flex-wrap items-center gap-2.5">
         <button
@@ -103,7 +183,7 @@ function Detalle({ a, txEnabled, onEmitido }: { a: Aviso; txEnabled: boolean; on
   );
 }
 
-export default function Avisos() {
+export default function Avisos({ config, onGuardar }: { config: TelemetryConfig; onGuardar: Guardar }) {
   const { avisos, total, txEnabled, error, recargar } = useAvisos();
   const [tipo, setTipo] = useState<string>('todos');
   const [elegidoId, setElegidoId] = useState<string | null>(null);
@@ -161,7 +241,7 @@ export default function Avisos() {
         </section>
         {elegido && (
           <aside className="flex-1 basis-80 min-w-0 lg:sticky lg:top-4">
-            <Detalle a={elegido} txEnabled={txEnabled} onEmitido={recargar} />
+            <Detalle a={elegido} txEnabled={txEnabled} onEmitido={recargar} config={config} onGuardar={onGuardar} />
           </aside>
         )}
       </div>

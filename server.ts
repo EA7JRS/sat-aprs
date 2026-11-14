@@ -883,6 +883,8 @@ let simulatedRarRanValue: number | null = null;
 
 let tsunamiAlerts: TsunamiAlert[] = [];
 let dgtIncidentsList: DgtIncident[] = [];
+// true solo si la lista procede de la descarga real de la DGT (no del respaldo de demostración)
+let dgtDatosReales = false;
 
 // Dictionary for identifying Inmarsat SafetyNet C2 codes
 const TIPOS_ALERTA: Record<string, string> = {
@@ -3587,6 +3589,7 @@ async function refreshTrafficIncidents() {
       const xmlText = await response.text();
       const parsed = parseDgtXml(xmlText);
       if (parsed.length > 0) {
+        dgtDatosReales = true;
         dgtIncidentsList = parsed.map((item, idx) => {
           const lat = parseFloat(item.latitud) || gpsdState.lat;
           const lon = parseFloat(item.longitud) || gpsdState.lon;
@@ -3783,6 +3786,7 @@ function generateSimulatedIncidents() {
 
   const now = new Date();
 
+  dgtDatosReales = false;
   dgtIncidentsList = nodes.map((node, i) => {
     const dist = calculateDistance(currentStationLat, currentStationLon, node.lat, node.lon);
     return {
@@ -7571,6 +7575,44 @@ app.get('/api/avisos', (_req, res) => {
   });
 });
 
+// Mapa: todo lo que tiene coordenadas, solo para verlo (nada de esto se retransmite por estar aquí)
+app.get('/api/mapa', (_req, res) => {
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const avisos: any[] = [];
+  for (const { eventos, politica, activo } of gruposDeAvisos()) {
+    for (const e of eventos) {
+      const fin = e.fin ?? e.inicio + politica.vigenciaMs;
+      if (fin < ahora || e.lat === undefined || e.lon === undefined) continue;
+      const d = evaluar(e, politica, estacion, ahora);
+      avisos.push({
+        id: e.id, tipo: e.tipo, gravedad: e.gravedad, titulo: e.titulo, detalle: e.detalle || '', fuente: e.fuente,
+        inicio: e.inicio, fin, lat: e.lat, lon: e.lon, cumple: d.emitir && activo,
+        zona: e.zona ? e.zona.map((p) => [Number(p.lat.toFixed(4)), Number(p.lon.toFixed(4))]) : null,
+      });
+    }
+  }
+  const trafico = dgtDatosReales
+    ? dgtIncidentsList
+        .filter((i) => Number.isFinite(i.latitud) && Number.isFinite(i.longitud))
+        .slice(0, 800)
+        .map((i) => ({ id: i.id, tipo: i.tipo, carretera: i.carretera, poblacion: i.poblacion, provincia: i.provincia, nivel: i.nivel, descripcion: i.descripcion, lat: i.latitud, lon: i.longitud }))
+    : [];
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    estacion: {
+      ...estacion,
+      indicativo: config.callsign,
+      gps: !gpsdState.isFallback && gpsdState.mode >= 2,
+      radioSismosKm: config.filterRadiusKm || 200,
+      radioMeteoKm: Math.max(0, Number(config.meteoRadioKm ?? 25)),
+    },
+    avisos: avisos.slice(0, 600),
+    trafico,
+    traficoReal: dgtDatosReales,
+  });
+});
+
 // Emitir ya un aviso que cumple las reglas, sin esperar a su repetición
 app.post('/api/avisos/emitir', (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede emitir avisos.' });
@@ -7636,6 +7678,7 @@ app.post('/api/config', (req, res) => {
     if (updated.aisShareRawAprs !== undefined) config.aisShareRawAprs = !!updated.aisShareRawAprs;
     if (updated.winlinkSsid) config.winlinkSsid = updated.winlinkSsid.toUpperCase().trim();
     if (updated.minMagnitudBaliza !== undefined) config.minMagnitudBaliza = parseFloat(updated.minMagnitudBaliza.toString());
+    if (updated.ignSeismoInterval !== undefined && Number.isFinite(Number(updated.ignSeismoInterval))) config.ignSeismoInterval = Math.min(720, Math.max(10, Math.round(Number(updated.ignSeismoInterval))));
     if (updated.minMagnitudAlertaVisual !== undefined) config.minMagnitudAlertaVisual = parseFloat(updated.minMagnitudAlertaVisual.toString());
     if (updated.autoGenerarBoletinEmergencia !== undefined) config.autoGenerarBoletinEmergencia = !!updated.autoGenerarBoletinEmergencia;
     if (updated.enableForecastBulletin !== undefined) config.enableForecastBulletin = !!updated.enableForecastBulletin;

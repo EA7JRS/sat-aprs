@@ -130,7 +130,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
 | Estación meteorológica: envío de datos propios y de Internet | Pendiente |
 | Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS, NAVTEX e Inmarsat son hoy simulados; ADS-B no existe |
-| Mapa con capas | Pendiente (el visor anterior se retiró en la v1.4.4) |
+| Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); faltan las capas APRS, AIS y ADS-B |
 | Configuración de Direwolf/aprx desde la consola | Existe; pendiente de revisar |
 | Persistencia en SQLite | Pendiente (hoy, archivos JSON) |
 | `server.ts` | Aún contiene el resto de la lógica; se irá vaciando bloque a bloque |

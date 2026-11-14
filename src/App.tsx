@@ -1519,7 +1519,7 @@ export default function App() {
         {activeTab === 'inicio' ? (
           <Inicio data={data} onIr={setActiveTab} />
         ) : activeTab === 'avisos' ? (
-          <Avisos />
+          <Avisos config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'mapa' ? (
           <Mapa onIr={setActiveTab} />
         ) : activeTab === 'perfil' ? (

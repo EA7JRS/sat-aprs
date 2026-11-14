@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.9.0)
+## 📌 Qué hace hoy (v1.10.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -45,7 +45,8 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Clima espacial (NOAA), incendios y calidad del aire | En la consola; pendientes de pasar a la cadena de avisos |
 | AIS, NAVTEX e Inmarsat | **Demostración**: datos simulados, nunca se emiten |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
-| ADS-B y mapa con capas (AIS, ADS-B, APRS, tráfico) | Pendiente |
+| Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
+| Capas APRS, AIS y ADS-B del mapa | Pendiente |
 
 Los paneles de demostración enseñan cómo quedará cada módulo; lo simulado va marcado y no sale al aire. El detalle de la arquitectura y del plan está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) y los cambios de cada versión en [`CHANGELOG.md`](CHANGELOG.md).
 

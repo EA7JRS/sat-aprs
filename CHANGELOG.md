@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.10.0] - 2026-11-14
+### Mapa con capas
+- **Sección Mapa**: mapa base de OpenStreetMap (Leaflet) con capas que se encienden y apagan: **Estación** (posición y radio de avisos), **Avisos** (sismos como puntos y zonas de AEMET como polígonos, por color de nivel; resaltados los que la estación difunde) y **Tráfico** (incidencias de la DGT). Lo que se ve en el mapa no se retransmite.
+- Solo se pintan datos reales: si la DGT no responde, la capa de tráfico queda vacía en lugar de mostrar las incidencias de demostración. Las capas APRS, AIS y ADS-B figuran como pendientes.
+- `GET /api/mapa` sirve los datos con posición.
+
+### Reglas de avisos desde la consola
+- En **Avisos**, el administrador cambia las reglas de cada tipo: radio, nivel mínimo, antelación y repetición de los avisos meteorológicos; radio, magnitud mínima y repetición de los sismos.
+
+---
+
 ## [v1.9.0] - 2026-11-14
 ### Avisos meteorológicos oficiales de AEMET en la cadena de avisos
 - **Nueva fuente `server/fuentes/aemetAvisos.ts`**: lee los avisos de Meteoalerta que AEMET publica en formato CAP (sin clave), con su nivel, fenómeno, valor, vigencia y el polígono de la zona.

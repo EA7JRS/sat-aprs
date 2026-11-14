@@ -25,6 +25,7 @@ import {
 
 import AdminAccess from './AdminAccess';
 import StationProfile from './StationProfile';
+import StationWeather from './StationWeather';
 import { aprsPasscode as passcodeDe, splitCallsign } from '../../../server/aprs';
 interface ConfigProps {
   config: TelemetryConfig;
@@ -1217,6 +1218,7 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                 saving={isSaving}
                 onSave={handleSaveStationProfile}
               />
+              <StationWeather config={config} onGuardar={(cambios) => onSaveConfig(cambios as TelemetryConfig)} />
               {/* PERFIL AVANZADO DE LA ESTACIÓN APRS PRINCIPAL */}
               <div className="bg-slate-900/30 border border-slate-900/80 rounded-xl p-5 space-y-6">
                 <div className="flex items-center justify-between border-b border-slate-900 pb-3">

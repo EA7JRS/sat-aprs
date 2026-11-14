@@ -128,7 +128,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
-| Estación meteorológica: envío de datos propios y de Internet | Pendiente |
+| Estación meteorológica: parte APRS con datos propios (WeeWX, wxnow.txt) o de Internet | Hecho (`server/estacion/meteo.ts`) |
 | Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales en el mapa; NAVTEX e Inmarsat, y los paneles antiguos de AIS, siguen simulados |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
 | Configuración de Direwolf/aprx desde la consola | Existe; pendiente de revisar |

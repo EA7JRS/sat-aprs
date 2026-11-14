@@ -2,6 +2,19 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.14.0] - 2026-11-14
+### Parte meteorológico de la estación por APRS
+- **Parte meteorológico** (`server/estacion/meteo.ts`): trama APRS completa con posición y hora de la medida (viento, racha, temperatura, lluvia, humedad y presión). Lo que la fuente no da se envía como puntos, tal como pide el protocolo; no se rellena con valores supuestos.
+- **Estación propia**: lee el último registro de la base de datos de **WeeWX** (con la orden `sqlite3`, en solo lectura, en cualquiera de sus tres sistemas de unidades) o un archivo **wxnow.txt**.
+- **Datos de Internet** (OpenWeatherMap o AEMET) como alternativa; en ese caso la trama dice de dónde vienen. Tres modos: automático (la propia y, si falta, Internet), solo propia o solo Internet.
+- **Solo datos reales y recientes**: con más de 30 minutos de antigüedad, o con el simulador de la consola, el parte no se emite.
+- Se configura en **Estación → Perfil**, con el estado de cada fuente, la vista previa de la trama y «Emitir parte ahora». Apagado por defecto, para no duplicar el parte que ya emitan WeeWX, Direwolf o aprx (`GET/POST /api/estacion/meteo`).
+
+### Corrección
+- Al cambiar la **posición fija** en el perfil se aplica al momento. Antes la estación seguía en la posición anterior hasta reiniciar, y con ella el radio de los avisos.
+
+---
+
 ## [v1.13.1] - 2026-11-14
 ### Color del tema táctico
 - El tema **Táctico** se puede poner en cuatro colores: **Ámbar** (el de la v1.13.0, por defecto), **Rojo**, **Verde** y **Azul nocturno**. Con Táctico elegido aparece un segundo selector junto al de color; la elección se guarda en cada navegador.

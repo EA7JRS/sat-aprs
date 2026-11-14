@@ -37,6 +37,7 @@ import { Aeronaves, emergenciaSquawk } from './server/adsb';
 import { EnlaceTcp } from './server/enlaceTcp';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
+import { Observacion, elegirObservacion, intervaloMeteoMs, leerArchivoWxnow, leerWeewx, parteMeteoAprs, validarParte } from './server/estacion/meteo';
 import { gcDistanceKm } from './server/formulas/geo';
 import { sunPosition, unixToUtc } from './server/formulas/astro';
 import { 
@@ -289,6 +290,14 @@ let config: TelemetryConfig = {
   aprsBeaconEnabled: false,
   // Sesión permanente con APRS-IS para recibir las estaciones cercanas (capa APRS del mapa)
   aprsIsRxEnabled: true,
+  // Parte meteorológico de la estación por APRS. Apagado por defecto: actívelo solo
+  // si WeeWX, Direwolf o aprx no emiten ya el parte con este indicativo.
+  wxBeaconEnabled: false,
+  wxBeaconInterval: 10,
+  // «auto» = estación propia si su dato es reciente; si no, Internet (OWM o AEMET)
+  wxFuente: 'auto',
+  wxWeewxDb: '/var/lib/weewx/weewx.sdb',
+  wxWxnowPath: '',
   // Entradas para el mapa. AIS: sentencias NMEA por UDP (AIS-catcher «-u», rtl_ais) y,
   // opcionalmente, un servidor TCP. ADS-B: puerto SBS (30003) de readsb o dump1090.
   aisEnabled: true,
@@ -2026,6 +2035,10 @@ function broadcastForecastBulletin(forecast: ForecastDay[]) {
 }
 
 // Weather Simulator / Refresher (Updates weather based on simulated drift or OWM or AEMET)
+// Observaciones reales para el parte meteorológico APRS (server/estacion/meteo.ts)
+let observacionInternet: Observacion | null = null;
+let observacionPropia: Observacion | null = null;
+
 async function refreshWeather() {
   try {
     if (config.owmApiKey && config.owmApiKey.length > 5) {
@@ -2104,6 +2117,19 @@ async function refreshWeather() {
           rawAprsWx: '',
           forecast: forecastList
         };
+        // Observación real de Internet para el parte APRS: solo lo que la fuente da, sin rellenos
+        observacionInternet = {
+          cuando: Number.isFinite(data.dt) ? data.dt * 1000 : Date.now(),
+          fuente: 'OWM',
+          propia: false,
+          tempC: data.main?.temp,
+          humedadPct: data.main?.humidity,
+          presionHpa: data.main?.sea_level ?? data.main?.pressure,
+          vientoKmh: Number.isFinite(data.wind?.speed) ? data.wind.speed * 3.6 : undefined,
+          rachaKmh: Number.isFinite(data.wind?.gust) ? data.wind.gust * 3.6 : undefined,
+          dirGrados: data.wind?.deg,
+          lluvia1hMm: data.rain?.['1h'],
+        };
         addLog('SYS', 'OWM', 'LOCAL', 'API', 'Datos meteorológicos y previsión futura actualizados desde OpenWeatherMap.', true, `Ok - Temp: ${weatherState.tempC.toFixed(1)}°C`);
         broadcastForecastBulletin(forecastList);
       } else {
@@ -2156,6 +2182,20 @@ async function refreshWeather() {
                   forecast: forecastList
                 };
                 
+                const numAemet = (v: any): number | undefined => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Number(v));
+                const horaAemet = Date.parse(`${latest.fint || ''}Z`.replace(/ZZ$/, 'Z').replace(/([+-]\d{2}:?\d{2})Z$/, '$1'));
+                observacionInternet = {
+                  cuando: Number.isFinite(horaAemet) ? horaAemet : Date.now(),
+                  fuente: `AEMET ${station.name}`,
+                  propia: false,
+                  tempC: numAemet(latest.ta),
+                  humedadPct: numAemet(latest.hr),
+                  presionHpa: numAemet(latest.pres_nvel),
+                  vientoKmh: numAemet(latest.vv) !== undefined ? numAemet(latest.vv)! * 3.6 : undefined,
+                  rachaKmh: numAemet(latest.vmax) !== undefined ? numAemet(latest.vmax)! * 3.6 : undefined,
+                  dirGrados: numAemet(latest.dv),
+                  lluvia1hMm: numAemet(latest.prec),
+                };
                 addLog('SYS', 'AEMET', 'LOCAL', 'API', `Datos oficiales desde estación AEMET: ${station.name} (${station.id}).`, true, `Ok - Temp: ${weatherState.tempC.toFixed(1)}°C`);
                 broadcastForecastBulletin(forecastList);
                 weatherState.rawAprsWx = generateWxPayload(weatherState);
@@ -2170,6 +2210,7 @@ async function refreshWeather() {
       }
     } else {
       // Realistic climate simulator for Central/Southern Spain
+      observacionInternet = null; // lo simulado se muestra, pero no vale para el parte APRS
       const baseTemp = 18 + Math.sin(Date.now() / 100000) * 8; // day/night cycle
       const baseHumidity = 50 - Math.sin(Date.now() / 100000) * 20;
       const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
@@ -4536,6 +4577,54 @@ function startSchedules() {
   if (config.aprsBeaconEnabled) {
     timerStationBeacon = setInterval(() => transmitStationBeacon(), intervaloBalizaMs(config.aprsBeaconInterval));
   }
+
+  // Parte meteorológico de la estación
+  if (timerParteMeteo) clearInterval(timerParteMeteo);
+  timerParteMeteo = undefined;
+  if (config.wxBeaconEnabled) {
+    timerParteMeteo = setInterval(() => transmitParteMeteo(), intervaloMeteoMs(config.wxBeaconInterval));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Parte meteorológico de la estación por APRS
+// ---------------------------------------------------------------------------
+let timerParteMeteo: NodeJS.Timeout | undefined;
+
+/** Lee la estación meteorológica propia: la base de datos de WeeWX o, si se indica, wxnow.txt. */
+async function leerEstacionPropia() {
+  const deArchivo = leerArchivoWxnow(String(config.wxWxnowPath || '').trim());
+  const deWeewx = await leerWeewx(String(config.wxWeewxDb || '').trim());
+  // Si hay las dos, la más reciente
+  const candidatas = [deArchivo, deWeewx].filter((o): o is Observacion => !!o);
+  observacionPropia = candidatas.sort((a, b) => b.cuando - a.cuando)[0] ?? null;
+}
+setInterval(() => { leerEstacionPropia().catch(() => {}); }, 60_000);
+setTimeout(() => { leerEstacionPropia().catch(() => {}); }, 3000);
+
+function estadoParteMeteo() {
+  const ahora = Date.now();
+  const modo = (['auto', 'propia', 'internet'].includes(String(config.wxFuente)) ? config.wxFuente : 'auto') as 'auto' | 'propia' | 'internet';
+  const elegida = elegirObservacion(modo, observacionPropia, observacionInternet, ahora);
+  const gpsReal = !gpsdState.isFallback && gpsdState.mode >= 2;
+  const estacion = {
+    callsign: config.callsign,
+    lat: gpsReal ? gpsdState.lat : config.fallbackLat,
+    lon: gpsReal ? gpsdState.lon : config.fallbackLon,
+  };
+  return { ahora, modo, elegida, estacion, errores: validarParte(estacion, elegida, ahora), packet: parteMeteoAprs(estacion, elegida, ahora) };
+}
+
+/** Emite el parte meteorológico por la cola de emisión; solo con datos reales y recientes. */
+function transmitParteMeteo(): { ok: boolean; packet?: string; error?: string } {
+  const e = estadoParteMeteo();
+  if (!e.packet) {
+    const error = e.errores.join('; ');
+    addLog('SYS', 'METEO', 'LOCAL', 'PARTE', `Parte meteorológico no emitido: ${error}.`, false, 'Sin datos válidos');
+    return { ok: false, error };
+  }
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, e.packet, true, `Parte meteorológico de la estación (${e.elegida!.fuente}).`);
+  return { ok: true, packet: e.packet };
 }
 
 // ---------------------------------------------------------------------------
@@ -7788,6 +7877,34 @@ app.post('/api/avisos/emitir', (req, res) => {
   return res.status(404).json({ ok: false, error: 'Aviso no encontrado o caducado.' });
 });
 
+// Parte meteorológico: vista previa, estado de las fuentes y envío manual
+app.get('/api/estacion/meteo', (_req, res) => {
+  const e = estadoParteMeteo();
+  const resumen = (o: Observacion | null) => (o ? {
+    fuente: o.fuente, cuando: o.cuando, reciente: e.ahora - o.cuando <= 30 * 60_000,
+    tempC: o.tempC ?? null, humedadPct: o.humedadPct ?? null, presionHpa: o.presionHpa ?? null,
+    vientoKmh: o.vientoKmh ?? null, rachaKmh: o.rachaKmh ?? null, dirGrados: o.dirGrados ?? null, lluvia1hMm: o.lluvia1hMm ?? null,
+  } : null);
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    packet: e.packet,
+    errores: e.errores,
+    activa: !!config.wxBeaconEnabled,
+    intervaloMin: intervaloMeteoMs(config.wxBeaconInterval) / 60000,
+    modo: e.modo,
+    elegida: e.elegida?.fuente ?? null,
+    propia: resumen(observacionPropia),
+    internet: resumen(observacionInternet),
+    txEnabled: TX_ENABLED,
+  });
+});
+
+app.post('/api/estacion/meteo', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede emitir el parte.' });
+  const r = transmitParteMeteo();
+  res.status(r.ok ? 200 : 400).json({ ...r, txEnabled: TX_ENABLED });
+});
+
 // Baliza de la estación: vista previa de la trama y envío manual
 app.get('/api/estacion/baliza', (_req, res) => {
   const perfil = perfilBaliza();
@@ -7908,6 +8025,14 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
     if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
     if (updated.aprsIsRxEnabled !== undefined) config.aprsIsRxEnabled = !!updated.aprsIsRxEnabled;
+    if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
+    if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));
+    if (updated.wxFuente !== undefined && ['auto', 'propia', 'internet'].includes(String(updated.wxFuente))) config.wxFuente = updated.wxFuente;
+    // Rutas de archivos del propio equipo: solo las cambia el administrador
+    if (isAuthorizedRequest(req)) {
+      if (updated.wxWeewxDb !== undefined) config.wxWeewxDb = String(updated.wxWeewxDb).trim().slice(0, 300);
+      if (updated.wxWxnowPath !== undefined) config.wxWxnowPath = String(updated.wxWxnowPath).trim().slice(0, 300);
+    }
     if (updated.aisEnabled !== undefined) config.aisEnabled = !!updated.aisEnabled;
     if (updated.aisUdpPort !== undefined) config.aisUdpPort = puertoValido(updated.aisUdpPort);
     if (updated.aisTcpHost !== undefined) config.aisTcpHost = String(updated.aisTcpHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
@@ -7955,8 +8080,13 @@ app.post('/api/config', (req, res) => {
       }
     }
 
-    // If GPSD is currently using fallback coordinates, update them!
+    // Sin fijo GPS la estación está en su posición fija: si se acaba de cambiar
+    // en el perfil, se aplica al momento (antes hacía falta reiniciar).
     if (gpsdState.isFallback) {
+      if ((updated.fallbackLat || updated.fallbackLon) && Number.isFinite(config.fallbackLat) && Number.isFinite(config.fallbackLon)) {
+        lastValidGps.lat = config.fallbackLat;
+        lastValidGps.lon = config.fallbackLon;
+      }
       gpsdState.lat = lastValidGps.lat;
       gpsdState.lon = lastValidGps.lon;
     }

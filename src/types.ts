@@ -216,6 +216,14 @@ export interface TelemetryConfig {
   adsbEnabled?: boolean;
   adsbHost?: string;
   adsbPort?: number;
+  /** Parte meteorológico de la estación por APRS. */
+  wxBeaconEnabled?: boolean;
+  wxBeaconInterval?: number;
+  /** De dónde salen los datos del parte. */
+  wxFuente?: 'auto' | 'propia' | 'internet';
+  /** Base de datos de WeeWX y, opcionalmente, archivo wxnow.txt de la estación propia. */
+  wxWeewxDb?: string;
+  wxWxnowPath?: string;
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

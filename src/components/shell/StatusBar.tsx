@@ -7,7 +7,7 @@ import AdminAccess from '../system/AdminAccess';
 import { GPSDStatus, NTPSECStatus, TelemetryConfig } from '../../types';
 import { isValidCallsign } from '../../../server/aprs';
 import { customFetch } from '../../utils/customFetch';
-import { TEMAS, TemaElegido } from '../../utils/tema';
+import { COLORES_TACTICO, ColorTactico, TEMAS, TemaElegido } from '../../utils/tema';
 
 interface Enlaces {
   aprsIs: { estado: 'parado' | 'conectando' | 'conectado' | 'solo-recepcion' | 'desconectado'; detalle: string; recibidas: number };
@@ -23,6 +23,9 @@ interface Props {
   /** Color de la consola elegido y cómo cambiarlo. */
   tema: TemaElegido;
   onTema: (t: TemaElegido) => void;
+  /** Color del tema táctico. */
+  colorTactico: ColorTactico;
+  onColorTactico: (c: ColorTactico) => void;
 }
 
 function Chip({ estado, children, titulo }: { estado: 'bien' | 'aviso' | 'neutro'; children: React.ReactNode; titulo?: string }) {
@@ -39,7 +42,7 @@ function Chip({ estado, children, titulo }: { estado: 'bien' | 'aviso' | 'neutro
   );
 }
 
-export default function StatusBar({ config, gpsd, ntp, txEnabled, tema, onTema }: Props) {
+export default function StatusBar({ config, gpsd, ntp, txEnabled, tema, onTema, colorTactico, onColorTactico }: Props) {
   const [ahora, setAhora] = useState(() => new Date());
   useEffect(() => {
     const t = setInterval(() => setAhora(new Date()), 1000);
@@ -105,6 +108,17 @@ export default function StatusBar({ config, gpsd, ntp, txEnabled, tema, onTema }
           >
             {TEMAS.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
           </select>
+          {tema === 'tactico' && (
+            <select
+              id="selector-color-tactico"
+              aria-label="Color del tema táctico"
+              value={colorTactico}
+              onChange={(e) => onColorTactico(e.target.value as ColorTactico)}
+              className="min-h-[36px] bg-slate-900 border border-slate-700 rounded-lg px-2 text-slate-100 text-[13px] cursor-pointer"
+            >
+              {COLORES_TACTICO.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          )}
         </label>
         <AdminAccess />
       </div>

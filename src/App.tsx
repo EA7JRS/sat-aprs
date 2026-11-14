@@ -9,7 +9,7 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import { useAvisos } from './utils/useAvisos';
-import { useTema } from './utils/tema';
+import { COLORES_TACTICO, useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
@@ -526,6 +526,7 @@ export default function App() {
   const dayMode = !emergencyMode && tema.efectivo === 'claro';
   const nightMode = !emergencyMode && tema.efectivo === 'tactico';
   const nightModeAuto = tema.elegido === 'auto';
+  const tactico = COLORES_TACTICO.find((c) => c.id === tema.colorTactico) ?? COLORES_TACTICO[0];
 
   // Automatic Version Updates S.A.T.
   const APP_VERSION = '2.4.0';
@@ -1006,12 +1007,12 @@ export default function App() {
       <motion.div 
         initial={false}
         animate={{
-          backgroundColor: dayMode ? "#f1f5f9" : nightMode ? "#050201" : emergencyMode ? "#0b0101" : "#070b12",
-          color: dayMode ? "#0f172a" : nightMode ? "#c9a59c" : emergencyMode ? "#fca5a5" : "#f1f5f9"
+          backgroundColor: dayMode ? "#f1f5f9" : nightMode ? tactico.fondo : emergencyMode ? "#0b0101" : "#070b12",
+          color: dayMode ? "#0f172a" : nightMode ? tactico.texto : emergencyMode ? "#fca5a5" : "#f1f5f9"
         }}
         transition={{ duration: isEcoMode ? 0 : 0.8, ease: "easeInOut" }}
         className={`min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 ${isEcoMode ? 'eco-mode' : ''} ${
-          dayMode ? 'theme-day' : nightMode ? 'theme-night' : emergencyMode ? 'theme-emergency' : 'theme-standard'
+          dayMode ? 'theme-day' : nightMode ? `theme-night tac-${tema.colorTactico}` : emergencyMode ? 'theme-emergency' : 'theme-standard'
         }`}
       >
       {/* Estilo global para transiciones de color de fondo, borde y texto en todo el documento */}
@@ -1083,7 +1084,7 @@ export default function App() {
         version={pkg.version}
       />
       <div className="flex-1 min-w-0 flex flex-col">
-      <StatusBar config={data.config} gpsd={data.gpsd} ntp={data.ntp} txEnabled={adminSession.txEnabled} tema={tema.elegido} onTema={(t) => { setEmergencyMode(false); localStorage.setItem('emergencyMode', 'false'); tema.setElegido(t); }} />
+      <StatusBar config={data.config} gpsd={data.gpsd} ntp={data.ntp} txEnabled={adminSession.txEnabled} tema={tema.elegido} onTema={(t) => { setEmergencyMode(false); localStorage.setItem('emergencyMode', 'false'); tema.setElegido(t); }} colorTactico={tema.colorTactico} onColorTactico={tema.setColorTactico} />
 
       {/* CENTRAL EMERGENCY & BROADCAST STATUS HUB */}
       {(rangeHazards > 0 || isEmergencyBroadcastActive) && (

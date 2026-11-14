@@ -19,7 +19,26 @@ export const TEMAS: Array<{ id: TemaElegido; nombre: string }> = [
   { id: 'tactico', nombre: 'Táctico' },
 ];
 
+/** Color del tema táctico: cada uno es una gama única de baja luminosidad. */
+export type ColorTactico = 'ambar' | 'rojo' | 'verde' | 'azul';
+
+export const COLORES_TACTICO: Array<{ id: ColorTactico; nombre: string; fondo: string; texto: string }> = [
+  { id: 'ambar', nombre: 'Ámbar', fondo: '#0b0402', texto: '#e8b7a1' },
+  { id: 'rojo', nombre: 'Rojo', fondo: '#0c0202', texto: '#eba3a3' },
+  { id: 'verde', nombre: 'Verde', fondo: '#030b03', texto: '#a8dea8' },
+  { id: 'azul', nombre: 'Azul nocturno', fondo: '#03060a', texto: '#a8c3e0' },
+];
+
 const CLAVE = 'sat_tema';
+const CLAVE_TACTICO = 'sat_tema_tactico';
+const esColorTactico = (v: unknown): v is ColorTactico => COLORES_TACTICO.some((c) => c.id === v);
+
+/** Color táctico guardado; ámbar si no hay ninguno. */
+export function colorTacticoGuardado(almacen: Pick<Storage, 'getItem'>): ColorTactico {
+  const v = almacen.getItem(CLAVE_TACTICO);
+  return esColorTactico(v) ? v : 'ambar';
+}
+
 const esTema = (v: unknown): v is TemaElegido => TEMAS.some((t) => t.id === v);
 
 /** Tema que se aplica de hecho. */
@@ -68,6 +87,14 @@ export function useTema(noche: OpcionesNoche) {
     try { return window.matchMedia('(prefers-color-scheme: dark)').matches; } catch { return true; }
   });
 
+  const [colorTactico, setColorTacticoEstado] = useState<ColorTactico>(() => {
+    try { return colorTacticoGuardado(window.localStorage); } catch { return 'ambar'; }
+  });
+  const setColorTactico = useCallback((c: ColorTactico) => {
+    setColorTacticoEstado(c);
+    try { window.localStorage.setItem(CLAVE_TACTICO, c); } catch { /* sin almacenamiento */ }
+  }, []);
+
   const setElegido = useCallback((t: TemaElegido) => {
     setElegidoEstado(t);
     try { window.localStorage.setItem(CLAVE, t); } catch { /* sin almacenamiento */ }
@@ -89,7 +116,10 @@ export function useTema(noche: OpcionesNoche) {
       mq = window.matchMedia('(prefers-color-scheme: dark)');
       mq.addEventListener('change', alCambiar);
     } catch { /* navegador sin matchMedia */ }
-    const alGuardar = (e: StorageEvent) => { if (e.key === CLAVE && esTema(e.newValue)) setElegidoEstado(e.newValue); };
+    const alGuardar = (e: StorageEvent) => {
+      if (e.key === CLAVE && esTema(e.newValue)) setElegidoEstado(e.newValue);
+      if (e.key === CLAVE_TACTICO && esColorTactico(e.newValue)) setColorTacticoEstado(e.newValue);
+    };
     window.addEventListener('storage', alGuardar);
     return () => {
       mq?.removeEventListener('change', alCambiar);
@@ -97,5 +127,5 @@ export function useTema(noche: OpcionesNoche) {
     };
   }, []);
 
-  return { elegido, setElegido, efectivo: resolverTema(elegido, { esNoche: deNoche, sistemaOscuro }) };
+  return { elegido, setElegido, efectivo: resolverTema(elegido, { esNoche: deNoche, sistemaOscuro }), colorTactico, setColorTactico };
 }

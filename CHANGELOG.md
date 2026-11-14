@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.13.1] - 2026-11-14
+### Color del tema táctico
+- El tema **Táctico** se puede poner en cuatro colores: **Ámbar** (el de la v1.13.0, por defecto), **Rojo**, **Verde** y **Azul nocturno**. Con Táctico elegido aparece un segundo selector junto al de color; la elección se guarda en cada navegador.
+- Cada color es una gama única de baja luminosidad que cambia toda la consola, incluido el fondo del mapa.
+
+---
+
 ## [v1.13.0] - 2026-11-14
 ### Color de la consola
 - **Selector de color** en la barra de estado: **Automático** (por defecto), **Sistema**, **Claro**, **Oscuro** y **Táctico**. La elección se guarda en cada navegador.

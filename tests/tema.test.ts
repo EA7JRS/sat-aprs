@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { esDeNoche, resolverTema, temaGuardado } from '../src/utils/tema';
+import { COLORES_TACTICO, colorTacticoGuardado, esDeNoche, resolverTema, temaGuardado } from '../src/utils/tema';
 
 const almacen = (datos: Record<string, string>) => ({ getItem: (k: string) => datos[k] ?? null });
 
@@ -32,4 +32,11 @@ test('tema: noche por horario fijo, también cruzando la medianoche', () => {
   assert.equal(esDeNoche(o, new Date(2026, 10, 14, 3, 0)), true);
   assert.equal(esDeNoche(o, new Date(2026, 10, 14, 12, 0)), false);
   assert.equal(esDeNoche({ ...o, horaInicio: 1, horaFin: 5 }, new Date(2026, 10, 14, 3, 0)), true);
+});
+
+test('tema táctico: cuatro colores, ámbar por defecto', () => {
+  assert.deepEqual(COLORES_TACTICO.map((c) => c.id), ['ambar', 'rojo', 'verde', 'azul']);
+  assert.equal(colorTacticoGuardado(almacen({})), 'ambar');
+  assert.equal(colorTacticoGuardado(almacen({ sat_tema_tactico: 'verde' })), 'verde');
+  assert.equal(colorTacticoGuardado(almacen({ sat_tema_tactico: 'rosa' })), 'ambar');
 });

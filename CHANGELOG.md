@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.25.0] - 2026-11-14
+### Satélites: descarga de TLE, pasos y seguimiento
+- **Descarga de elementos orbitales (TLE)** (`server/radio/satelites.ts`): el mismo archivo `sats_all.txt` que usan el tracker y la app APRS LoRa+ (rama `satdata` de APRS-LoRa-Plus; TLE de CelesTrak y transmisores de SatNOGS DB, CC BY-SA 4.0). Se relee cada 12 horas y a petición («Actualizar TLE»); la pantalla dice cuántos satélites hay y la antigüedad de los TLE, y avisa si pasan de una semana.
+- **Satélites favoritos** (de serie, la ISS): dónde están ahora y su **próximo paso** desde la posición actual de la estación (fija o GPS): cuándo sale, elevación máxima y acimut de salida, culminación y puesta. Búsqueda por nombre, número NORAD o grupo para añadir más.
+- **Transmisores** de cada satélite (bajada, subida, modo, velocidad, CTCSS), con la frecuencia de bajada **corregida de Doppler** mientras está a la vista, y «Sintonizar» si hay equipo por CAT.
+- **Seguir con el rotor**: nuevo objetivo de seguimiento; bajo el horizonte espera, y dos minutos antes se coloca por donde sale.
+- Órbitas con SGP4 (biblioteca `satellite.js`, MIT). Sin TLE no se muestra ninguna posición ni paso.
+
+---
+
 ## [v1.24.0] - 2026-11-14
 ### Rotor: seguimiento con la estación fija o en movimiento
 - **Seguimiento de objetivos** (`server/radio/seguimiento.ts`), como en la caja APRS LoRa+ Rotor, el tracker y la app: una estación APRS, la última oída por radio, un barco (AIS), una aeronave (ADS-B, con elevación), el Sol o la Luna (con refracción). El rotor solo se mueve cuando el cambio pasa de 2°.

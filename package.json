@@ -1,7 +1,7 @@
 {
   "name": "sat-aprs",
   "private": true,
-  "version": "1.24.0",
+  "version": "1.25.0",
   "description": "S.A.T.-APRS: Servicio de Alerta Temprana por APRS",
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -28,6 +28,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.8.1",
+    "satellite.js": "^7.2.0",
     "vite": "^6.2.3"
   },
   "devDependencies": {

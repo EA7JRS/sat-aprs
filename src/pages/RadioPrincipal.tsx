@@ -10,6 +10,7 @@ import { useAdminSession } from '../utils/session';
 import { haceCuanto, horaUtc } from '../utils/useAvisos';
 import { TelemetryConfig } from '../types';
 import { DatosEquipo, PanelEquipo, PanelRotor, ordenRadio } from '../components/radio/EquipoRotor';
+import Satelites from '../components/radio/Satelites';
 
 type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
 
@@ -373,6 +374,7 @@ export default function RadioPrincipal({ config, onGuardar }: { config: Telemetr
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
         <div className="xl:col-span-3 min-w-0"><PanelEquipo datos={equipo} admin={admin} config={config} onGuardar={onGuardar} onCambio={releer} /></div>
         <div className="xl:col-span-2 min-w-0"><PanelRotor datos={equipo} admin={admin} config={config} onGuardar={onGuardar} onCambio={releer} /></div>
+        <div className="xl:col-span-5 min-w-0"><Satelites admin={admin} config={config} onGuardar={onGuardar} puedeSeguir={alTocar.puedeGirar} puedeSintonizar={alTocar.puedeSintonizar} onCambio={releer} /></div>
         <div className="xl:col-span-3 min-w-0"><Cluster config={config} onGuardar={onGuardar} admin={admin} alTocar={alTocar} onCambio={releer} /></div>
         <div className="xl:col-span-2 min-w-0"><Mensajes config={config} onGuardar={onGuardar} admin={admin} /></div>
       </div>

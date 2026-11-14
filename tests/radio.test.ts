@@ -354,3 +354,66 @@ test('seguimiento: sol y luna', () => {
   const a = calcular({ tipo: 'avion', indicativo: 'IBE3110' }, { ...ctx, altitudM: 0, buscar: (i, t) => (t === 'avion' && i === 'IBE3110' ? avion : null) }, 1000);
   assert.ok(a.ok && Math.abs(a.elevacion! - 45) < 0.5 && Math.abs(difAngulo(a.azVerdadero!, 0)) < 0.5);
 });
+
+// ── Satélites: TLE, posición y pasos ────────────────────────────────────────
+import { conDoppler, epocaTle, leerSatelites, mirar, orbita, proximoPaso, sumaTle } from '../server/radio/satelites';
+
+const ARCHIVO_SAT = [
+  '# APRS LoRa+ satellites (all bands, groups) 2026-11-14T10:39Z',
+  '# TLE: CelesTrak. Transmitters: SatNOGS DB (CC BY-SA 4.0).',
+  'S|25544|ISS (ZARYA)|U|ansv',
+  '1 25544U 98067A   26317.91612726  .00008668  00000+0  16320-3 0  9995',
+  '2 25544  51.6324 279.1461 0007382  22.6178 337.5134 15.49359724594967',
+  'T|145825000|145825000|145825000|145825000|AFSK|1200|0|Mode V APRS',
+  'T|145990000|145990000|437800000|437800000|FM|0|0|Mode V/U FM repeater|670',
+  'S|23839|INMARSAT 3-F1|G',
+  'S|99999|TLE ROTO|U|a',
+  '1 99999U 98067A   26317.91612726  .00008668  00000+0  16320-3 0  9993',
+  '2 25544  51.6324 279.1461 0007382  22.6178 337.5134 15.49359724594967',
+].join('\n');
+
+test('satélites: lectura del archivo de TLE y transmisores', () => {
+  const { satelites, generado } = leerSatelites(ARCHIVO_SAT);
+  assert.equal(generado, Date.UTC(2026, 10, 14, 10, 39));
+  assert.equal(satelites.length, 1); // sin TLE o con la suma de control mal, fuera
+  const iss = satelites[0];
+  assert.equal(iss.norad, 25544);
+  assert.equal(iss.nombre, 'ISS (ZARYA)');
+  assert.equal(iss.grupos, 'ansv');
+  assert.equal(iss.transmisores.length, 2);
+  assert.deepEqual(iss.transmisores[1], { subidaHz: 145990000, bajadaHz: 437800000, modo: 'FM', baudios: 0, descripcion: 'Mode V/U FM repeater', ctcssHz: 67 });
+  assert.equal(iss.transmisores[0].ctcssHz, undefined);
+  // Día 317,916 de 2026 = 13 de noviembre, hacia las 22 UTC
+  assert.equal(new Date(epocaTle(iss.tle1)).toISOString().slice(0, 13), '2026-11-13T21');
+  assert.equal(sumaTle(iss.tle1), true);
+  assert.equal(sumaTle(iss.tle1.slice(0, 68) + '0'), false);
+});
+
+test('satélites: posición, Doppler y próximo paso', () => {
+  const iss = leerSatelites(ARCHIVO_SAT).satelites[0];
+  const o = orbita(iss)!;
+  assert.ok(o);
+  const sevilla = { lat: 37.39, lon: -5.99 };
+  const t0 = Date.UTC(2026, 10, 14, 12, 0);
+  const m = mirar(o, sevilla, 10, t0)!;
+  assert.ok(m.az >= 0 && m.az < 360 && m.el >= -90 && m.el <= 90);
+  assert.ok(m.distanciaKm > 350 && m.distanciaKm < 14000, `distancia ${m.distanciaKm}`);
+  assert.ok(Math.abs(m.radialKmS) < 8);
+  // Un paso de la ISS: dura minutos, sale y se pone en el horizonte y culmina entre medias
+  const p = proximoPaso(o, sevilla, 10, t0)!;
+  assert.ok(p, 'hay paso en 36 h');
+  assert.ok(p.aos >= t0 && p.los > p.aos && p.maximo > p.aos && p.maximo < p.los);
+  const minutos = (p.los - p.aos) / 60000;
+  assert.ok(minutos > 0.5 && minutos < 12, `duración ${minutos} min`);
+  assert.ok(p.elMax > 0 && p.elMax <= 90);
+  assert.ok(Math.abs(mirar(o, sevilla, 10, p.aos)!.el) < 0.3);
+  assert.ok(Math.abs(mirar(o, sevilla, 10, p.los)!.el) < 0.3);
+  assert.ok(mirar(o, sevilla, 10, p.maximo)!.el > mirar(o, sevilla, 10, p.aos + 5000)!.el);
+  // En mitad del paso devuelve el mismo paso, no el siguiente
+  const enCurso = proximoPaso(o, sevilla, 10, p.maximo)!;
+  assert.ok(Math.abs(enCurso.aos - p.aos) <= 1000 && Math.abs(enCurso.los - p.los) <= 1000);
+  // Doppler: acercándose (radial negativa) la frecuencia recibida sube
+  assert.equal(conDoppler(145_825_000, -7), 145_828_405);
+  assert.equal(conDoppler(145_825_000, 0), 145_825_000);
+  assert.equal(orbita({ tle1: 'basura', tle2: 'basura' }), null);
+});

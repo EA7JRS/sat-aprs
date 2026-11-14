@@ -25,7 +25,8 @@ export type Objetivo =
   | { tipo: 'ultima' }
   | { tipo: 'punto'; lat: number; lon: number; nombre: string }
   | { tipo: 'sol' }
-  | { tipo: 'luna' };
+  | { tipo: 'luna' }
+  | { tipo: 'satelite'; norad: number };
 
 export interface EstacionVista {
   nombre: string;
@@ -106,6 +107,8 @@ export interface Contexto {
   ultimaOida: () => EstacionVista | null;
   /** El rotor tiene elevación. */
   conElevacion: boolean;
+  /** Satélite por su número NORAD: dónde está ahora y su próximo paso. */
+  satelite?: (norad: number, ahora: number) => { nombre: string; az: number; el: number; distanciaKm: number; aos?: number; azAos?: number } | null;
 }
 
 export interface Calculo {
@@ -123,7 +126,7 @@ export interface Calculo {
   estimada?: boolean;
 }
 
-export const NOMBRE_OBJETIVO: Record<Objetivo['tipo'], string> = { aprs: 'Estación APRS', barco: 'Barco (AIS)', avion: 'Aeronave (ADS-B)', ultima: 'Última estación oída', punto: 'Punto fijo', sol: 'Sol', luna: 'Luna' };
+export const NOMBRE_OBJETIVO: Record<Objetivo['tipo'], string> = { aprs: 'Estación APRS', barco: 'Barco (AIS)', avion: 'Aeronave (ADS-B)', ultima: 'Última estación oída', punto: 'Punto fijo', sol: 'Sol', luna: 'Luna', satelite: 'Satélite' };
 
 /** Adónde hay que apuntar ahora. */
 export function calcular(objetivo: Objetivo, ctx: Contexto, ahora = Date.now()): Calculo {
@@ -143,6 +146,20 @@ export function calcular(objetivo: Objetivo, ctx: Contexto, ahora = Date.now()):
     const altura = p.altDeg + refractionDeg(p.altDeg); // lo que ve la antena
     if (altura < 0) return { ok: false, nombre, espera: `bajo el horizonte (${altura.toFixed(1)}°)`, azVerdadero: Math.round(p.azDeg * 10) / 10, elevacion: Math.round(altura * 10) / 10 };
     return acabar(nombre, p.azDeg, { elevacion: ctx.conElevacion ? Math.round(altura * 10) / 10 : undefined });
+  }
+
+  if (objetivo.tipo === 'satelite') {
+    const sat = ctx.satelite?.(objetivo.norad, ahora) ?? null;
+    if (!sat) return { ok: false, nombre: `NORAD ${objetivo.norad}`, espera: 'no hay elementos orbitales (TLE) de ese satélite' };
+    if (sat.el > 0) {
+      return acabar(sat.nombre, sat.az, { elevacion: ctx.conElevacion ? Math.round(sat.el * 10) / 10 : undefined, distanciaKm: Math.round(sat.distanciaKm) });
+    }
+    // Dos minutos antes de la salida, el rotor se coloca en el acimut por donde sale
+    if (sat.aos !== undefined && sat.azAos !== undefined && sat.aos - ahora <= 120_000) {
+      return acabar(sat.nombre, sat.azAos, { elevacion: ctx.conElevacion ? 0 : undefined });
+    }
+    const falta = sat.aos === undefined ? null : Math.round((sat.aos - ahora) / 60000);
+    return { ok: false, nombre: sat.nombre, espera: falta === null ? 'bajo el horizonte, sin paso próximo' : `bajo el horizonte; sale en ${falta >= 120 ? `${Math.round(falta / 60)} h` : `${falta} min`}` };
   }
 
   if (objetivo.tipo === 'punto') {

@@ -15,6 +15,7 @@ import { ClusterDx } from './server/radio/clusterDx';
 import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
+import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
 import { gcInitialBearing } from './server/formulas/geo';
 import { TOCALL, IS_PATH } from './server/aprs';
@@ -348,6 +349,8 @@ let config: TelemetryConfig = {
   rotorPin: '',
   // true = el rotor va en un vehículo o barco: se descuenta el rumbo de la proa
   rotorMovil: false,
+  // Satélites favoritos (números NORAD, separados por comas); de serie, la ISS
+  satFavoritos: '25544',
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -735,6 +738,65 @@ setInterval(() => {
   rotorAntena.sondear().catch(() => {});
 }, 1500);
 
+// Satélites: mismo archivo de TLE que el tracker y la app APRS LoRa+
+let satelites: Satelite[] = [];
+let satGenerado: number | null = null;
+let satLeido = 0;
+let satIntento = 0;
+let satError = '';
+const orbitas = new Map<number, NonNullable<ReturnType<typeof orbita>>>();
+const pasosGuardados = new Map<number, { paso: Paso | null; cuando: number; lat: number; lon: number }>();
+
+async function descargarSatelites(forzar = false): Promise<boolean> {
+  const ahora = Date.now();
+  // El archivo se publica una vez al día: se relee cada 12 h; si falla, cada hora
+  if (!forzar && ((satLeido && ahora - satLeido < 12 * 3600_000) || ahora - satIntento < 3600_000)) return satelites.length > 0;
+  satIntento = ahora;
+  try {
+    const r = await fetch(URL_SATELITES, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const leido = leerSatelites(await r.text());
+    if (leido.satelites.length === 0) throw new Error('archivo sin satélites legibles');
+    satelites = leido.satelites;
+    satGenerado = leido.generado;
+    satLeido = ahora;
+    satError = '';
+    orbitas.clear();
+    pasosGuardados.clear();
+    anotarFuente('satelites', 'Satélites · TLE de CelesTrak', true, `${satelites.length} satélites`);
+    return true;
+  } catch (e: any) {
+    satError = e?.message ?? String(e);
+    anotarFuente('satelites', 'Satélites · TLE de CelesTrak', false, `Sin TLE: ${satError}`);
+    addLog('SYS', 'SAT', 'LOCAL', 'API', `No se pudieron descargar los elementos orbitales (TLE): ${satError}.`, false, 'Sin datos');
+    return false;
+  }
+}
+setInterval(() => { descargarSatelites().catch(() => {}); }, 3600_000);
+
+function orbitaDe(norad: number) {
+  const guardada = orbitas.get(norad);
+  if (guardada) return guardada;
+  const s = satelites.find((x) => x.norad === norad);
+  const o = s ? orbita(s) : null;
+  if (o) orbitas.set(norad, o);
+  return o;
+}
+
+/** Próximo paso (o el que está en curso) sobre la posición actual; se recalcula al acabar o si la estación se mueve. */
+function pasoDe(norad: number, ahora: number): Paso | null {
+  const o = orbitaDe(norad);
+  if (!o) return null;
+  const g = pasosGuardados.get(norad);
+  const movida = g ? gcDistanceKm({ lat: g.lat, lon: g.lon }, { lat: gpsdState.lat, lon: gpsdState.lon }) > 5 : true;
+  if (g && !movida && (g.paso ? g.paso.los > ahora : ahora - g.cuando < 3600_000)) return g.paso;
+  const paso = proximoPaso(o, { lat: gpsdState.lat, lon: gpsdState.lon }, gpsdState.alt || 0, ahora);
+  pasosGuardados.set(norad, { paso, cuando: ahora, lat: gpsdState.lat, lon: gpsdState.lon });
+  return paso;
+}
+
+const favoritosSat = (): number[] => String(config.satFavoritos || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+
 // Seguimiento del rotor: desde la posición actual de la estación (fija o GPS)
 const seguimientoRotor = new Seguimiento(2);
 const proaEstacion = new Proa(3);
@@ -772,6 +834,14 @@ function contextoRotor(): Contexto {
         nombre: a.vuelo?.trim() || a.hex.toUpperCase(), lat: a.lat, lon: a.lon, ultima: a.ultima, rumbo: a.rumbo,
         velocidadKmh: a.velocidad === undefined ? undefined : a.velocidad * 1.852, altitudM: a.altitud === undefined ? undefined : a.altitud * 0.3048,
       };
+    },
+    satelite: (norad, t) => {
+      const s = satelites.find((x) => x.norad === norad);
+      const o = orbitaDe(norad);
+      const m = o ? mirar(o, { lat: gpsdState.lat, lon: gpsdState.lon }, gpsdState.alt || 0, t) : null;
+      if (!s || !m) return null;
+      const paso = m.el > 0 ? null : pasoDe(norad, t);
+      return { nombre: s.nombre, az: m.az, el: m.el, distanciaKm: m.distanciaKm, aos: paso?.aos, azAos: paso?.azAos };
     },
     ultimaOida: () => {
       const e = estacionesOidas.lista(ahora).find((x) => x.clase === 'estacion' && x.ultimaRf !== undefined && ahora - x.ultimaRf < 30 * 60_000 && x.nombre.toUpperCase() !== propio);
@@ -2858,6 +2928,7 @@ setImmediate(() => {
   ajustarEntradasMapa();
   ajustarCluster();
   ajustarEquipoYRotor();
+  descargarSatelites().catch(() => {});
 });
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
 setInterval(ajustarAprsIs, 5 * 60_000);
@@ -4551,6 +4622,61 @@ app.post('/api/radio/dapnet', async (req, res) => {
   res.status(r.ok ? 200 : 400).json(r);
 });
 
+// Satélites: favoritos con su posición y próximo paso, y búsqueda en el archivo
+app.get('/api/radio/satelites', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const epocas = satelites.map((s) => s.epoca).sort((a, b) => a - b);
+  const mediana = epocas.length ? epocas[Math.floor(epocas.length / 2)] : null;
+  const ficha = (s: Satelite, conPaso: boolean) => {
+    const o = orbitaDe(s.norad);
+    const m = o ? mirar(o, estacion, gpsdState.alt || 0, ahora) : null;
+    return {
+      norad: s.norad, nombre: s.nombre, grupos: s.grupos, categoria: s.categoria,
+      edadTleDias: Math.round(((ahora - s.epoca) / 86400_000) * 10) / 10,
+      ahora: m ? { az: Math.round(m.az), el: Math.round(m.el * 10) / 10, distanciaKm: Math.round(m.distanciaKm), radialKmS: Math.round(m.radialKmS * 1000) / 1000 } : null,
+      paso: conPaso ? pasoDe(s.norad, ahora) : undefined,
+      transmisores: conPaso ? s.transmisores.slice(0, 8).map((t) => ({
+        ...t, bajadaAhoraHz: m && t.bajadaHz ? conDoppler(t.bajadaHz, m.radialKmS) : null,
+      })) : undefined,
+    };
+  };
+  const favoritos = favoritosSat();
+  const q = String(req.query.q ?? '').trim().toUpperCase().slice(0, 30);
+  const grupo = String(req.query.grupo ?? '').slice(0, 1);
+  let lista: Satelite[] = [];
+  if (q || grupo) {
+    lista = satelites.filter((s) => (!grupo || s.grupos.includes(grupo)) && (!q || s.nombre.toUpperCase().includes(q) || String(s.norad) === q)).slice(0, 40);
+  }
+  res.json({
+    disponible: satelites.length > 0,
+    error: satelites.length > 0 ? '' : satError,
+    total: satelites.length,
+    generado: satGenerado,
+    leido: satLeido || null,
+    // Antigüedad típica de los TLE: pasados unos días la precisión baja
+    edadTleDias: mediana === null ? null : Math.round(((ahora - mediana) / 86400_000) * 10) / 10,
+    estacion: { ...estacion, gps: estacionConGps() },
+    grupos: NOMBRE_GRUPO,
+    favoritos: favoritos.map((n) => satelites.find((s) => s.norad === n)).filter((s): s is Satelite => !!s).map((s) => ficha(s, true))
+      .sort((a, b) => (a.paso?.aos ?? Infinity) - (b.paso?.aos ?? Infinity)),
+    favoritosSinTle: favoritos.filter((n) => !satelites.some((s) => s.norad === n)),
+    lista: lista.map((s) => ({ ...ficha(s, false), favorito: favoritos.includes(s.norad) })),
+  });
+});
+
+app.post('/api/radio/satelites', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede cambiar los satélites.' });
+  const b = req.body || {};
+  if (b.accion === 'actualizar') {
+    const ok = await descargarSatelites(true);
+    return res.status(ok ? 200 : 502).json({ ok, error: ok ? undefined : `No se pudo descargar: ${satError}` });
+  }
+  // Los favoritos se guardan con el resto de la configuración (satFavoritos)
+  res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
 // Equipo de radio (CAT) y rotor
 app.get('/api/radio/equipo', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -4602,6 +4728,7 @@ app.post('/api/radio/rotor', async (req, res) => {
     let objetivo: Objetivo | null = null;
     if (o.tipo === 'sol' || o.tipo === 'luna' || o.tipo === 'ultima') objetivo = { tipo: o.tipo };
     else if ((o.tipo === 'aprs' || o.tipo === 'barco' || o.tipo === 'avion') && id) objetivo = { tipo: o.tipo, indicativo: id };
+    else if (o.tipo === 'satelite' && Number.isInteger(Number(o.norad)) && Number(o.norad) > 0) objetivo = { tipo: 'satelite', norad: Number(o.norad) };
     else if (o.tipo === 'punto' && Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lon)) && Math.abs(Number(o.lat)) <= 90 && Math.abs(Number(o.lon)) <= 180) {
       objetivo = { tipo: 'punto', lat: Number(o.lat), lon: Number(o.lon), nombre: String(o.nombre || 'Punto fijo').slice(0, 30) };
     }
@@ -4921,6 +5048,7 @@ app.post('/api/config', (req, res) => {
     if (updated.rotorMode !== undefined && ['off', 'rotctld', 'caja'].includes(String(updated.rotorMode))) config.rotorMode = updated.rotorMode;
     if (updated.rotorHost !== undefined) config.rotorHost = String(updated.rotorHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
     if (updated.rotorPort !== undefined) config.rotorPort = puertoValido(updated.rotorPort);
+    if (updated.satFavoritos !== undefined) config.satFavoritos = String(updated.satFavoritos).split(/[^0-9]+/).filter(Boolean).slice(0, 16).join(',');
     if (updated.rotorMovil !== undefined) config.rotorMovil = !!updated.rotorMovil;
     if (updated.rotorPin !== undefined && !isMaskedSecret(updated.rotorPin)) config.rotorPin = String(updated.rotorPin).replace(/[^0-9A-Za-z]/g, '').slice(0, 16);
     if (updated.dapnetUser !== undefined) config.dapnetUser = String(updated.dapnetUser).trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);

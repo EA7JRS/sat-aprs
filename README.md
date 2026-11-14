@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.24.0)
+## 📌 Qué hace hoy (v1.25.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -51,6 +51,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Radio · Principal: cluster DX (con país, rumbo y distancia), mensajería APRS con acuse y envío por DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
 | Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor); un spot sintoniza y gira | Operativo desde la v1.23.0; pendiente de validar en la estación |
 | Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna, con la estación fija o en movimiento y objetivos en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
+| Satélites: descarga de TLE, próximos pasos, transmisores con Doppler y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
 | Grupo de estaciones (ARTS), consola de comandos y salida NMEA 2000 (Conectividad) | En preparación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |

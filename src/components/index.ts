@@ -20,10 +20,7 @@ export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors
 export { default as MeteosaludPortal } from './environment/MeteosaludPortal';
-export { default as PortusOceanData } from './environment/PortusOceanData';
 export { default as WeatherStation } from './environment/WeatherStation';
-export { default as NDBCStationsCatalog } from './environment/NDBCStationsCatalog';
-export { default as JrcDataPortal } from './environment/JrcDataPortal';
 
 // Diagnostic, Logs, Layout & Core System Utilities
 export { default as ConsoleHeader } from './system/ConsoleHeader';

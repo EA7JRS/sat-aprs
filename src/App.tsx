@@ -10,6 +10,7 @@ import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
+import BoyasCercanas from './components/environment/BoyasCercanas';
 import { AvisoDemostracion } from './components/shell/Etiquetas';
 import { useAvisos } from './utils/useAvisos';
 import { COLORES_TACTICO, useTema } from './utils/tema';
@@ -34,7 +35,6 @@ import {
   ScriptExporter,
   TransmissionTrafficTrends,
   DgtTrafficDatabase,
-  PortusOceanData,
   NotificationPanel,
   SyncScheduler,
   MeteosaludPortal,
@@ -714,34 +714,6 @@ export default function App() {
     localStorage.setItem('nightModeEndHour', String(end));
   };
 
-  const handleAddSimulatedNavarea = async () => {
-    const randomIdNumber = Math.floor(Math.random() * 900 + 100);
-    const newWarning: NavareaWarning = {
-      id: `NAV3-${randomIdNumber}/26`,
-      navareaType: 'NAVAREA III',
-      category: 'Search & Rescue',
-      title: 'ALERTA DE SOCORRO: Embarcación a la deriva al norte de Menorca',
-      lat: 40.2450,
-      lon: 4.1200,
-      areaDescription: 'Norte de las Baleares. Operando Salvamento Marítimo con embarcación de salvamento "Salvamar Acrux".',
-      originator: 'Sociedad de Salvamento y Seguridad Marítima (SASEMAR)',
-      broadcastTime: new Date().toISOString().replace('T', ' ').substring(0, 19).replace('Z', '') + ' UTC',
-      urgency: 'ALERTA CRÍTICA',
-      rawText: `NAVAREA III WARNING 0${randomIdNumber}/26\nNORTH OF MENORCA ISLAND.\n1. FISHING VESSEL "ORION DOS" WITH ENGINE FAILURE DRIFTING IN VICINITY 40-14.7N 004-07.2E. DANGEROUS TO OBSTRUCTION.\n2. ALL SHIPS REQUESTED TO EXTREME COOPERATIVE LOOKOUT AND REPORT TO MRCC PALMA. CANCEL THIS MSG ON CEASE EMERGENCY.`
-    };
-    try {
-      await customFetch('/api/navareas/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ warning: newWarning })
-      });
-      // Also update local state immediately for snappy response
-      setNavareas(prev => [newWarning, ...prev]);
-    } catch (err) {
-      console.error('Error injecting simulated navarea warning:', err);
-    }
-  };
-
   // Sync navareas state with backend telemetry data
   useEffect(() => {
     if (data?.navareas && data.navareas.length > 0) {
@@ -1154,13 +1126,22 @@ export default function App() {
             className="flex flex-col gap-4"
           >
             <h1 className="text-2xl font-semibold text-slate-100">Estación y meteo</h1>
-            {data.meteoSimulada && (
-              <p id="aviso-meteo-simulada" className="border border-amber-700 bg-amber-950 text-amber-300 rounded-xl px-4 py-3 text-sm">
-                Estos datos meteorológicos son <b>simulados</b>: no hay clave de OpenWeatherMap ni de AEMET, o la fuente no responde.
-                No se emiten por APRS. Las fuentes reales se ajustan en Estación → Perfil y en Sistema → Configuración.
+            {data.meteoSinDatos ? (
+              <p id="aviso-meteo-sin-datos" className="border border-amber-700 bg-amber-950 text-amber-300 rounded-xl px-4 py-3 text-sm">
+                <b>Sin datos meteorológicos.</b> Ninguna fuente responde ahora mismo (OpenWeatherMap, AEMET u Open-Meteo), así que no se muestra nada.
+                Se reintenta solo. Las fuentes se ajustan en Estación → Perfil y en Sistema → Configuración.
               </p>
+            ) : (
+              <>
+                {data.meteoFuente && (
+                  <p id="meteo-fuente" className="text-sm text-slate-400">
+                    Fuente: <span className="text-slate-200">{data.meteoFuente}</span>
+                    {data.meteoFuente.startsWith('Open-Meteo') && ' · datos de modelo meteorológico, no de una estación. Con clave de AEMET u OpenWeatherMap se usan observaciones.'}
+                  </p>
+                )}
+                <WeatherStation weather={data.weather} iqair={data.iqair} />
+              </>
             )}
-            <WeatherStation weather={data.weather} iqair={data.iqair} />
             <MedidoresAire />
           </motion.div>
         ) : activeTab === 'pruebas' ? (
@@ -1284,13 +1265,8 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            <PortusOceanData 
-              gpsd={data.gpsd} 
-              onRelocate={(lat, lon, title) => handleRelocate(lat, lon, title)} 
-              onInjectRaw={handleInjectRaw} 
-              erddapBuoys={data.erddapBuoys || []}
-              portusStations={data.portusStations || []}
-            />
+            <h1 className="text-2xl font-semibold text-slate-100">Boyas</h1>
+            <BoyasCercanas />
           </motion.div>
         ) : activeTab === 'salud' ? (
           /* METEOSALUD PLAN TEMPERATURE WATCH PORTAL */
@@ -1441,7 +1417,6 @@ export default function App() {
               noaaAlerts={data.noaaAlerts} 
               navareas={navareas} 
               minMagnitudVisualThreshold={data.config.minMagnitudAlertaVisual ?? 3.0}
-              onAddSimulatedNavarea={handleAddSimulatedNavarea}
               weather={data.weather}
               tsunamiAlerts={data.tsunamiAlerts || []}
               cecopSituacion={cecopSituacion}

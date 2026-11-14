@@ -7,6 +7,9 @@ import dns from 'dns';
 import dgram from 'dgram';
 import fs from 'fs';
 import { execFile, execFileSync } from 'child_process';
+import os from 'os';
+import { descargarMeteoAbierta } from './server/fuentes/meteoAbierta';
+import { Boya, boyasCercanas, descargarBoyas } from './server/fuentes/boyas';
 import net from 'net';
 import {
   DEFAULT_RF_PATH,
@@ -1011,18 +1014,12 @@ async function refreshNtp() {
 refreshNtp();
 setInterval(refreshNtp, 30000);
 
-let weatherState: WeatherTelemetry = {
-  tempC: 22.5,
-  humidityPct: 50,
-  windSpeedKts: 4,
-  windDirDeg: 240,
-  gustKts: 6,
-  pressureHpa: 1016.2,
-  rain1hIn: 0.0,
-  rain24hIn: 0.05,
-  time: new Date().toISOString(),
-  rawAprsWx: ''
-};
+// Sin lectura real todavía: a cero y marcada como «sin datos» (ver meteoSinDatos)
+const METEO_VACIA = (): WeatherTelemetry => ({
+  tempC: 0, humidityPct: 0, windSpeedKts: 0, windDirDeg: 0, gustKts: 0, pressureHpa: 0,
+  rain1hIn: 0, rain24hIn: 0, time: new Date().toISOString(), rawAprsWx: '', forecast: [],
+});
+let weatherState: WeatherTelemetry = METEO_VACIA();
 
 let iqairState: IQAirStatus = {
   aqi: 42,
@@ -1077,24 +1074,18 @@ let patState: PatWinlinkStatus = {
 
 // Intel NUC 5i3 CPU Broadwell Core i3-5010U, dual-core - robust server status
 let nucStats: NucDiagnostics = {
-  cpuUsagePct: 15,
-  cpuTempC: 44.5,
-  ramUsagePct: 28.5,
-  ramUsedGb: 2.28,
-  ramTotalGb: 8.00,
-  uptime: '4d 18h 32m',
-  loadAverage: '0.24, 0.15, 0.08',
-  debianVersion: 'Debian GNU/Linux 13 (trixie)',
+  cpuUsagePct: 0,
+  cpuTempC: 0,
+  ramUsagePct: 0,
+  ramUsedGb: 0,
+  ramTotalGb: 0,
+  uptime: '',
+  loadAverage: '',
+  debianVersion: '',
   services: {
-    aprsc: 'active',
-    aprx: 'active',
-    direwolf: 'active',
-    gpsd: 'active',
-    ntpsec: 'active',
-    aiscatcher: 'active',
-    pat: 'inactive',
-    weewx: 'active'
-  }
+    aprsc: 'inactive', aprx: 'inactive', direwolf: 'inactive', gpsd: 'inactive',
+    ntpsec: 'inactive', aiscatcher: 'inactive', pat: 'inactive', weewx: 'inactive',
+  },
 };
 
 interface ScheduledNotification {
@@ -1211,331 +1202,23 @@ let earthquakes: EarthquakeEvent[] = [];
 // Radioavisos náuticos: sin fuente real conectada todavía (ya no hay avisos de ejemplo)
 let navareaWarnings: NavareaWarning[] = [];
 
-let erddapBuoys: ERDDAPBuoy[] = [
-  {
-    id: 'ERD-GDP-2025-01',
-    name: 'Drifter AOML GDP-103302 (Canary Basin)',
-    datasetId: 'noaa_aoml_gdp_2025',
-    lat: 28.12,
-    lon: -16.45,
-    waveHeightM: 1.80,
-    wavePeriodSec: 7.2,
-    waterTempC: 22.1,
-    windSpeedKts: 14.8,
-    windDirDeg: 120,
-    pressureHpa: 1013.8,
-    region: 'Canarias',
-    statusDescription: 'Boya a la deriva del Global Drifter Program (GDP) 2025. Registrando las corrientes de Canarias hacia las Antillas en tiempo real.',
-    lastUpdatedTime: new Date().toISOString()
-  },
-  {
-    id: 'ERD-GDP-2025-02',
-    name: 'Drifter AOML GDP-904122 (Azores Current)',
-    datasetId: 'noaa_aoml_gdp_2025',
-    lat: 38.50,
-    lon: -28.60,
-    waveHeightM: 2.30,
-    wavePeriodSec: 8.4,
-    waterTempC: 18.2,
-    windSpeedKts: 19.5,
-    windDirDeg: 260,
-    pressureHpa: 1011.2,
-    region: 'Atlántico',
-    statusDescription: 'Drifter oceanográfico NOAA AOML registrando la temperatura superficial de mar (SST) y el empuje de deriva geostrófica.',
-    lastUpdatedTime: new Date().toISOString()
-  },
-  {
-    id: 'ERD-41001',
-    name: 'Boya NDBC 41001 (East Hatteras)',
-    datasetId: 'noaa_ndbc_realtime',
-    lat: 34.68,
-    lon: -72.63,
-    waveHeightM: 2.85,
-    wavePeriodSec: 9.1,
-    waterTempC: 24.5,
-    windSpeedKts: 18.5,
-    windDirDeg: 135,
-    pressureHpa: 1012.3,
-    region: 'Atlántico Norte',
-    statusDescription: 'Datos obtenidos por protocolo Tabledap desde el servidor ERDDAP de NOAA.',
-    lastUpdatedTime: new Date().toISOString()
-  },
-  {
-    id: 'ERD-44005',
-    name: 'Boya NDBC 44005 (Gulf of Maine)',
-    datasetId: 'noaa_ndbc_realtime',
-    lat: 43.20,
-    lon: -69.12,
-    waveHeightM: 3.52,
-    wavePeriodSec: 10.4,
-    waterTempC: 12.8,
-    windSpeedKts: 22.4,
-    windDirDeg: 240,
-    pressureHpa: 1007.5,
-    region: 'Atlántico Norte',
-    statusDescription: 'Fuerte oleaje del noroeste registrado en la costa noreste de EEUU. Canal ERDDAP estable.',
-    lastUpdatedTime: new Date().toISOString()
-  },
-  {
-    id: 'ERD-MED74',
-    name: 'Boya Copernicus MED-741 (Golfo de León)',
-    datasetId: 'copernicus_insitu_med_nrt',
-    lat: 42.15,
-    lon: 4.88,
-    waveHeightM: 1.45,
-    wavePeriodSec: 6.5,
-    waterTempC: 20.2,
-    windSpeedKts: 12.8,
-    windDirDeg: 315,
-    pressureHpa: 1015.1,
-    region: 'Mediterráneo',
-    statusDescription: 'Datos cosechados via ERDDAP. Condiciones del Golfo de León estables.',
-    lastUpdatedTime: new Date().toISOString()
-  },
-  {
-    id: 'ERD-PALOS',
-    name: 'Boya Cabo Palos Profunda (IHM/ERDDAP)',
-    datasetId: 'pe_erddap_exterior_espectrales',
-    lat: 37.64,
-    lon: -0.33,
-    waveHeightM: 1.20,
-    wavePeriodSec: 5.8,
-    waterTempC: 22.4,
-    windSpeedKts: 14.5,
-    windDirDeg: 90,
-    pressureHpa: 1014.5,
-    region: 'Mediterráneo',
-    statusDescription: 'Boya profunda acoplada del dataset de Puertos del Estado vía pasarela ERDDAP.',
-    lastUpdatedTime: new Date().toISOString()
-  }
-];
-let portusStations: OceanStation[] = [
-  {
-    id: 'BOY-GATA',
-    name: 'Boya de Cabo de Gata (Deep-Water)',
-    type: 'Boya',
-    region: 'Mediterráneo',
-    lat: 36.5700,
-    lon: -2.3300,
-    waveHeightM: 1.6,
-    wavePeriodSec: 7.2,
-    waterTempC: 21.4,
-    seaLevelM: 0.12,
-    windSpeedKts: 16.4,
-    windDirDeg: 85,
-    pressureHpa: 1014.2,
-    provider: 'Red Exterior (Boyas de Gran Escala)',
-    status: 'Nominal',
-    statusDescription: 'Régimen de vientos moderados de levante. Alturas de ola seguras para navegación costera.'
-  },
-  {
-    id: 'BOY-PENAS',
-    name: 'Boya de Cabo de Peñas (Norte-Norte)',
-    type: 'Boya',
-    region: 'Cantábrico',
-    lat: 43.7300,
-    lon: -5.8600,
-    waveHeightM: 4.8,
-    wavePeriodSec: 11.5,
-    waterTempC: 14.8,
-    seaLevelM: 1.15,
-    windSpeedKts: 31.2,
-    windDirDeg: 275,
-    pressureHpa: 1004.8,
-    provider: 'Red Exterior (Boyas de Gran Escala)',
-    status: 'Temporal',
-    statusDescription: 'Fuerte temporal de poniente con mar gruesa. Se recomienda precaución severa en operaciones SAR.'
-  },
-  {
-    id: 'BOY-BILBO',
-    name: 'Boya de Bilbao (Cantábrico)',
-    type: 'Boya',
-    region: 'Cantábrico',
-    lat: 43.6400,
-    lon: -3.0500,
-    waveHeightM: 3.2,
-    wavePeriodSec: 9.8,
-    waterTempC: 15.6,
-    seaLevelM: 0.98,
-    windSpeedKts: 22.1,
-    windDirDeg: 290,
-    pressureHpa: 1008.2,
-    provider: 'Red Exterior (Boyas de Gran Escala)',
-    status: 'Precaución',
-    statusDescription: 'Mar marejada aumentando a fuerte marejada. Propagación de fondo del noroeste.'
-  },
-  {
-    id: 'BOY-BARC',
-    name: 'Boya de Barcelona (Litoral)',
-    type: 'Boya',
-    region: 'Mediterráneo',
-    lat: 41.3200,
-    lon: 2.2000,
-    waveHeightM: 0.65,
-    wavePeriodSec: 4.5,
-    waterTempC: 22.8,
-    seaLevelM: 0.22,
-    windSpeedKts: 6.8,
-    windDirDeg: 190,
-    pressureHpa: 1016.5,
-    provider: 'Red Costera (Boyas de Proximidad)',
-    status: 'Nominal',
-    statusDescription: 'Régimen de brisa térmica regular (embat). Aguas calmas en dársenas exteriores.'
-  },
-  {
-    id: 'BOY-TENER',
-    name: 'Boya de Tenerife Este (Atlántico)',
-    type: 'Boya',
-    region: 'Canarias',
-    lat: 28.4800,
-    lon: -16.2000,
-    waveHeightM: 1.9,
-    wavePeriodSec: 8.4,
-    waterTempC: 21.1,
-    seaLevelM: 0.85,
-    windSpeedKts: 19.5,
-    windDirDeg: 45,
-    pressureHpa: 1020.1,
-    provider: 'Red Costera (Boyas de Proximidad)',
-    status: 'Nominal',
-    statusDescription: 'Vientos alisios estables del NE. Condiciones normales del archipiélago.'
-  },
-  {
-    id: 'MAR-ALGE',
-    name: 'Mareógrafo de Algeciras (Puerto Real)',
-    type: 'Mareógrafo',
-    region: 'Estrecho',
-    lat: 36.1300,
-    lon: -5.4400,
-    waveHeightM: 0.25,
-    wavePeriodSec: 3.0,
-    waterTempC: 17.5,
-    seaLevelM: 0.38,
-    windSpeedKts: 14.2,
-    windDirDeg: 260,
-    pressureHpa: 1013.1,
-    provider: 'Red de Mareógrafos (REDMAR)',
-    status: 'Nominal',
-    statusDescription: 'Canal de mareas estable. Sobremarea astronómica insignificante de +0.03 metros.'
-  },
-  {
-    id: 'MAR-CORU',
-    name: 'Mareógrafo de La Coruña (Dársena)',
-    type: 'Mareógrafo',
-    region: 'Atlántico',
-    lat: 43.3700,
-    lon: -8.4000,
-    waveHeightM: 1.2,
-    wavePeriodSec: 6.8,
-    waterTempC: 15.2,
-    seaLevelM: 1.84,
-    windSpeedKts: 24.5,
-    windDirDeg: 310,
-    pressureHpa: 1010.5,
-    provider: 'Red de Mareógrafos (REDMAR)',
-    status: 'Precaución',
-    statusDescription: 'Marea alta con fuerte embate de fondo en diques exteriores. Coeficiente de marea medio/alto.'
-  },
-  {
-    id: 'MAR-VALE',
-    name: 'Mareógrafo de Valencia (Puerto)',
-    type: 'Mareógrafo',
-    region: 'Mediterráneo',
-    lat: 39.4500,
-    lon: -0.3100,
-    waveHeightM: 0.45,
-    wavePeriodSec: 4.1,
-    waterTempC: 23.1,
-    seaLevelM: 0.18,
-    windSpeedKts: 9.5,
-    windDirDeg: 120,
-    pressureHpa: 1015.0,
-    provider: 'Red de Mareógrafos (REDMAR)',
-    status: 'Nominal',
-    statusDescription: 'Aguas tranquilas en el frente portuario. Operativa civil de estiba sin contingencias.'
-  },
-  {
-    id: 'MAR-MALI',
-    name: 'Mareógrafo de Santa Cruz de la Palma',
-    type: 'Mareógrafo',
-    region: 'Canarias',
-    lat: 28.6700,
-    lon: -17.7600,
-    waveHeightM: 1.5,
-    wavePeriodSec: 7.9,
-    waterTempC: 20.4,
-    seaLevelM: 0.94,
-    windSpeedKts: 11.2,
-    windDirDeg: 20,
-    pressureHpa: 1017.8,
-    provider: 'Red de Mareógrafos (REDMAR)',
-    status: 'Nominal',
-    statusDescription: 'Amplitud de marea regular Atlántica. Registro instrumental estable.'
-  },
-  {
-    id: 'BOY-CABOPAL',
-    name: 'Boya de Cabo de Palos (Costa Murciana)',
-    type: 'Boya',
-    region: 'Mediterráneo',
-    lat: 37.6400,
-    lon: -0.5300,
-    waveHeightM: 1.1,
-    wavePeriodSec: 6.0,
-    waterTempC: 22.1,
-    seaLevelM: 0.08,
-    windSpeedKts: 15.1,
-    windDirDeg: 70,
-    pressureHpa: 1014.9,
-    provider: 'Red Exterior (Boyas de Gran Escala)',
-    status: 'Nominal',
-    statusDescription: 'Estado nominal del viento. Corrientes estables bajo el relieve de acantilados costeros.'
-  },
-  {
-    id: 'MAR-CADIZ',
-    name: 'Mareógrafo de Cádiz (Puerto de la Bahía)',
-    type: 'Mareógrafo',
-    region: 'Atlántico',
-    lat: 36.5300,
-    lon: -6.2800,
-    waveHeightM: 0.5,
-    wavePeriodSec: 4.8,
-    waterTempC: 19.8,
-    seaLevelM: 1.48,
-    windSpeedKts: 17.5,
-    windDirDeg: 240,
-    pressureHpa: 1012.8,
-    provider: 'Red de Mareógrafos (REDMAR)',
-    status: 'Nominal',
-    statusDescription: 'Marea menguante normalizada dentro de la cubeta de la bahía interior.'
-  }
-];
+// Sin datos de ejemplo: las boyas reales más cercanas salen de server/fuentes/boyas.ts
+let erddapBuoys: ERDDAPBuoy[] = [];
+let portusStations: OceanStation[] = [];
 let noaaAlerts: NoaaSpaceAlert[] = [];
 let logs: AprsPacketLog[] = [];
 let trafficTrends: TrafficDataPoint[] = [];
 
-// Initialize traffic trends with healthy realistic values for the past hour
-function initTrafficTrends() {
-  trafficTrends = [];
-  const now = Date.now();
-  for (let i = 59; i >= 0; i--) {
-    const time = new Date(now - i * 60 * 1000);
-    const label = time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    // Realistic traffic generation for initial state (e.g., 0-4 transmissions, 1-8 receptions)
-    // To make pattern look authentic, make some periods slightly busier
-    const sinFactor = Math.sin(i / 5) * 1.5 + 2;
-    const txInit = Math.max(0, Math.floor(Math.random() * 3 + sinFactor * 0.4));
-    const rxInit = Math.max(0, Math.floor(Math.random() * 5 + sinFactor));
-    trafficTrends.push({
-      minuteOffset: -i,
-      label,
-      txCount: txInit,
-      rxCount: rxInit
-    });
-  }
-}
 
-// Initialize immediately
-initTrafficTrends();
+// La última hora empieza a cero: solo cuenta el tráfico real de esta sesión
+for (let i = 59; i >= 0; i--) {
+  trafficTrends.push({
+    minuteOffset: -i,
+    label: new Date(Date.now() - i * 60000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+    txCount: 0,
+    rxCount: 0,
+  });
+}
 
 // Rolling window shift every 1 minute
 setInterval(() => {
@@ -1698,56 +1381,10 @@ function getClosestAemetStation(lat: number, lon: number) {
   return closest;
 }
 
-// Pronósticos generados por el simulador local (nunca se emiten por APRS)
-const mockForecasts = new WeakSet<ForecastDay[]>();
 
-function generateMockForecast(lat: number, lon: number): ForecastDay[] {
-  const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const today = new Date();
-  const list: ForecastDay[] = [];
-  
-  for (let i = 1; i <= 5; i++) {
-    const futureDate = new Date();
-    futureDate.setDate(today.getDate() + i);
-    const dayLabel = days[futureDate.getDay()];
-    const dateFormatted = `${dayLabel} ${futureDate.getDate()}/${futureDate.getMonth() + 1}`;
-    
-    // Simulating daily fluctuations
-    const baseTempMax = 28 + Math.sin(i * 1.5) * 4 + (Math.random() - 0.5) * 2;
-    const baseTempMin = 15 + Math.sin(i * 1.5) * 2 + (Math.random() - 0.5) * 1.5;
-    const humidity = Math.max(15, Math.round(45 - Math.sin(i * 1.5) * 15 + (Math.random() - 0.5) * 5));
-    const windSpeed = parseFloat(Math.max(3, 8 + Math.cos(i * 1.2) * 4 + Math.random() * 2).toFixed(1));
-    const popVal = parseFloat(Math.max(0, Math.min(1, (i % 3 === 0 ? 0.35 : 0) + Math.random() * 0.1)).toFixed(2));
-    
-    let desc = 'Soleado / Estable';
-    let icon = '01d';
-    if (popVal > 0.4) {
-      desc = 'Atribución de Lluvia';
-      icon = '09d';
-    } else if (humidity > 55) {
-      desc = 'Nubosidad Parcial';
-      icon = '03d';
-    }
-    
-    list.push({
-      date: dateFormatted,
-      tempMin: parseFloat(baseTempMin.toFixed(1)),
-      tempMax: parseFloat(baseTempMax.toFixed(1)),
-      humidityPct: humidity,
-      windSpeedKts: windSpeed,
-      windDirDeg: Math.round((210 + i * 25) % 360),
-      description: desc,
-      icon,
-      pop: popVal
-    });
-  }
-  mockForecasts.add(list);
-  return list;
-}
 
 function broadcastForecastBulletin(forecast: ForecastDay[]) {
   if (!config.enableForecastBulletin) return;
-  const simulated = mockForecasts.has(forecast);
   if (!forecast || forecast.length === 0) return;
   // Construct a concise forecast summary (3 days)
   const summaryDays = forecast.slice(0, 3).map(day => {
@@ -1759,15 +1396,62 @@ function broadcastForecastBulletin(forecast: ForecastDay[]) {
   }).join('; ');
   
   const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3    :NUEVO PRONOSTICO PROSPECCION: ${summaryDays}. REMER S.A.T.`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de Pronóstico Meteorológico Prospectivo (3-5 días) emitido.', { simulated });
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de pronóstico (3 días).');
 }
 
 // Weather Simulator / Refresher (Updates weather based on simulated drift or OWM or AEMET)
 // Observaciones reales para el parte meteorológico APRS (server/estacion/meteo.ts)
 let observacionInternet: Observacion | null = null;
 let observacionPropia: Observacion | null = null;
-// true mientras `weatherState` salga del simulador (sin clave de OWM ni de AEMET, o con la fuente caída)
-let meteoSimulada = true;
+// true mientras no haya ninguna lectura real que mostrar
+let meteoSinDatos = true;
+// De dónde sale lo que se muestra: «OpenWeatherMap», «AEMET <estación>», «Open-Meteo (modelo)»
+let meteoFuente = '';
+let meteoLeida = 0;
+
+/** Previsión real de los próximos días (Open-Meteo, sin clave). Vacía si no responde. */
+async function previsionReal(): Promise<ForecastDay[]> {
+  const m = await descargarMeteoAbierta({ lat: gpsdState.lat, lon: gpsdState.lon }, registrarFuente);
+  return m ? m.prevision : [];
+}
+
+/** Meteorología real sin clave: último recurso cuando no hay OWM ni AEMET, o no responden. */
+async function meteoSinClave(): Promise<boolean> {
+  const m = await descargarMeteoAbierta({ lat: gpsdState.lat, lon: gpsdState.lon }, registrarFuente);
+  if (!m) return false;
+  const o = m.observacion;
+  const nudos = (kmh: number | undefined) => (kmh === undefined ? 0 : parseFloat((kmh / 1.852).toFixed(1)));
+  weatherState = {
+    tempC: o.tempC ?? 0,
+    humidityPct: Math.round(o.humedadPct ?? 0),
+    windSpeedKts: nudos(o.vientoKmh),
+    windDirDeg: Math.round(o.dirGrados ?? 0),
+    gustKts: nudos(o.rachaKmh ?? o.vientoKmh),
+    pressureHpa: o.presionHpa ?? 0,
+    rain1hIn: parseFloat(((o.lluvia1hMm ?? 0) / 25.4).toFixed(3)),
+    rain24hIn: parseFloat(((o.lluvia24hMm ?? 0) / 25.4).toFixed(3)),
+    time: new Date(o.cuando).toISOString(),
+    rawAprsWx: '',
+    forecast: m.prevision,
+  };
+  weatherState.rawAprsWx = generateWxPayload(weatherState);
+  observacionInternet = o;
+  meteoSinDatos = false;
+  meteoFuente = 'Open-Meteo (modelo)';
+  meteoLeida = Date.now();
+  return true;
+}
+
+/** Ninguna fuente responde: se conserva la última lectura real una hora; después, sin datos. */
+function meteoSinRespuesta(motivo: string) {
+  observacionInternet = null;
+  if (!meteoSinDatos && Date.now() - meteoLeida > 3600_000) {
+    meteoSinDatos = true;
+    meteoFuente = '';
+    weatherState = METEO_VACIA();
+  }
+  addLog('SYS', 'METEO', 'LOCAL', 'API', `Sin datos meteorológicos de ninguna fuente: ${motivo}`, false, 'Sin datos');
+}
 
 async function refreshWeather() {
   try {
@@ -1829,9 +1513,9 @@ async function refreshWeather() {
           console.error("Forecast fetch error", fErr);
         }
 
-        // Fallback to simulated forecast if OWM forecast fetch was empty
+        // Si OWM no da previsión, se pide la real sin clave; si tampoco, queda vacía
         if (forecastList.length === 0) {
-          forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
+          forecastList = await previsionReal();
         }
 
         weatherState = {
@@ -1847,7 +1531,9 @@ async function refreshWeather() {
           rawAprsWx: '',
           forecast: forecastList
         };
-        meteoSimulada = false;
+        meteoSinDatos = false;
+        meteoFuente = 'OpenWeatherMap';
+        meteoLeida = Date.now();
         // Observación real de Internet para el parte APRS: solo lo que la fuente da, sin rellenos
         observacionInternet = {
           cuando: Number.isFinite(data.dt) ? data.dt * 1000 : Date.now(),
@@ -1897,7 +1583,7 @@ async function refreshWeather() {
                 const pressureHpa = latest.pres_nvel ? parseFloat(latest.pres_nvel) : (latest.pres ? parseFloat(latest.pres) : 1013);
                 const rain1hIn = latest.prec ? parseFloat((parseFloat(latest.prec) / 25.4).toFixed(3)) : 0.0;
                 
-                const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
+                const forecastList = await previsionReal();
 
                 weatherState = {
                   tempC,
@@ -1913,7 +1599,9 @@ async function refreshWeather() {
                   forecast: forecastList
                 };
                 
-                meteoSimulada = false;
+                meteoSinDatos = false;
+                meteoFuente = `AEMET ${station.name}`;
+                meteoLeida = Date.now();
                 const numAemet = (v: any): number | undefined => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Number(v));
                 const horaAemet = Date.parse(`${latest.fint || ''}Z`.replace(/ZZ$/, 'Z').replace(/([+-]\d{2}:?\d{2})Z$/, '$1'));
                 observacionInternet = {
@@ -1941,38 +1629,21 @@ async function refreshWeather() {
         throw new Error('AEMET server unreachable');
       }
     } else {
-      // Realistic climate simulator for Central/Southern Spain
-      observacionInternet = null; // lo simulado se muestra, pero no vale para el parte APRS
-      meteoSimulada = true;
-      const baseTemp = 18 + Math.sin(Date.now() / 100000) * 8; // day/night cycle
-      const baseHumidity = 50 - Math.sin(Date.now() / 100000) * 20;
-      const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
-
-      weatherState = {
-        tempC: parseFloat(baseTemp.toFixed(1)),
-        humidityPct: Math.round(Math.max(10, Math.min(100, baseHumidity))),
-        windSpeedKts: parseFloat((5 + Math.random() * 3).toFixed(1)),
-        windDirDeg: Math.round((240 + Math.random() * 20) % 360),
-        gustKts: parseFloat((8 + Math.random() * 4).toFixed(1)),
-        pressureHpa: parseFloat((1014 + Math.sin(Date.now() / 500000) * 3 + Math.random() * 0.4).toFixed(1)),
-        rain1hIn: 0.0,
-        rain24hIn: 0.03,
-        time: new Date().toISOString(),
-        rawAprsWx: '',
-        forecast: forecastList
-      };
-      broadcastForecastBulletin(forecastList);
+      // Sin claves: fuente real que no las pide
+      if (await meteoSinClave()) {
+        addLog('SYS', 'METEO', 'LOCAL', 'API', 'Meteorología y previsión actualizadas desde Open-Meteo (modelo, sin clave).', true, `Ok - Temp: ${weatherState.tempC.toFixed(1)}°C`);
+        broadcastForecastBulletin(weatherState.forecast ?? []);
+      } else {
+        meteoSinRespuesta('Open-Meteo no responde y no hay clave de OpenWeatherMap ni de AEMET.');
+      }
     }
-    // Update the WX beacon payload
-    weatherState.rawAprsWx = generateWxPayload(weatherState);
   } catch (err: any) {
-    // Fail-safe mock values
-    meteoSimulada = true;
-    const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
-    weatherState.time = new Date().toISOString();
-    weatherState.forecast = forecastList;
-    weatherState.rawAprsWx = generateWxPayload(weatherState);
-    addLog('SYS', 'WEATHER_ERR', 'LOCAL', 'HARDWARE', `Error conectando con API de meteorología: ${err.message}. Operando con simulador local.`, false, 'Simulador activo');
+    // La fuente con clave ha fallado: se intenta la que no la pide
+    if (await meteoSinClave()) {
+      addLog('SYS', 'METEO', 'LOCAL', 'API', `La fuente configurada falla (${err.message}); se usa Open-Meteo (modelo, sin clave).`, true, `Ok - Temp: ${weatherState.tempC.toFixed(1)}°C`);
+    } else {
+      meteoSinRespuesta(err.message);
+    }
   }
 }
 
@@ -2195,15 +1866,15 @@ async function refreshTsunamis() {
     if (response.ok) {
       const geo = await response.json();
       if (geo.features && Array.isArray(geo.features)) {
-        // filter features where properties.tsunami === 1, or fall back to high magnitudes
-        const tsunamiFeatures = geo.features.filter((f: any) => f.properties.tsunami === 1 || f.properties.mag >= 6.8);
+        // Solo los seísmos que el USGS marca con aviso de tsunami; no se deduce nada de la magnitud
+        const tsunamiFeatures = geo.features.filter((f: any) => f.properties.tsunami === 1);
         
         fetchedAlerts = tsunamiFeatures.map((f: any) => {
           const props = f.properties;
           const geom = f.geometry;
           const lon = geom.coordinates[0];
           const lat = geom.coordinates[1];
-          const mag = props.mag || 6.5;
+          const mag = props.mag;
           const place = props.place || 'Océano Abierto';
           
           let severity: 'GREEN' | 'ADVISORY' | 'WATCH' | 'WARNING' = 'GREEN';
@@ -2229,7 +1900,6 @@ async function refreshTsunamis() {
             distanceKm,
             source: 'USGS / PTWC',
             active: props.tsunami === 1,
-            maxWaveHeightMeter: parseFloat((0.15 + (mag - 5.0) * 0.75 + Math.random() * 0.3).toFixed(2)),
             link: props.url
           };
         });
@@ -2507,58 +2177,6 @@ async function refreshEarthquakes() {
   }
 }
 
-function generateSimulatedSismos() {
-  const currentStationLat = gpsdState.lat;
-  const currentStationLon = gpsdState.lon;
-
-  // Andalucia, Pyrenees, Mar de Alborán are highly active
-  const seismicCenters = [
-    { name: 'Salar, Granada (ES)', lat: 37.15, lon: -4.01 },
-    { name: 'Mar de Alborán', lat: 35.80, lon: -4.20 },
-    { name: 'Lugo, Galicia (ES)', lat: 42.85, lon: -7.21 },
-    { name: 'Pyrénées-Atlantiques', lat: 43.05, lon: -0.60 },
-    { name: 'Lorquí, Murcia (ES)', lat: 38.08, lon: -1.25 }
-  ];
-
-  const now = new Date();
-  
-  const rawSim = seismicCenters.map((c, i) => {
-    // Add small random noise to make them unique
-    const lat = c.lat + (Math.random() - 0.5) * 0.15;
-    const lon = c.lon + (Math.random() - 0.5) * 0.15;
-    const mag = parseFloat((2.0 + Math.random() * 2.8).toFixed(1));
-    const depth = Math.round(5 + Math.random() * 15);
-    
-    // Make simulation times fresh relative to when the system was powered ON
-    const time = new Date(Math.max(systemPowerOnTime, now.getTime() - i * 600000)).toISOString();
-    
-    const dist = calculateDistance(currentStationLat, currentStationLon, lat, lon);
-    const enRango = dist <= config.filterRadiusKm;
-
-    const eqEvent: EarthquakeEvent = {
-      id: `sim_eq_${i}_${Date.now().toString().slice(-4)}`,
-      time,
-      latitude: parseFloat(lat.toFixed(5)),
-      longitude: parseFloat(lon.toFixed(5)),
-      depthKm: depth,
-      magnitud: mag,
-      magType: 'mbLg',
-      localizacion: c.name,
-      distanciaKm: dist,
-      enRango
-    };
-
-    if (enRango && mag >= (config.minMagnitudBaliza || 4.0)) {
-      eqEvent.aprsPacket = generateEarthquakePacket(eqEvent);
-    }
-    return eqEvent;
-  });
-
-  // Filter to keep only events since the system was powered ON (comenzar registros)
-  earthquakes = rawSim
-    .filter((e) => new Date(e.time).getTime() >= systemPowerOnTime)
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-}
 
 // Generate fallback / real NOAA space alerts
 async function refreshNoaaAlerts() {
@@ -2627,29 +2245,6 @@ async function refreshNoaaAlerts() {
   }
 }
 
-function generateSimulatedNoaa() {
-  const now = new Date();
-  noaaAlerts = [
-    {
-      id: 'sim_noaa_r3',
-      issueTime: new Date(now.getTime() - 1000 * 3600).toISOString(),
-      scaleType: 'R',
-      nivel: 3,
-      descripcion: 'Apagón de radio ionosférico fuerte. Bloqueo total o fuerte de telecomunicaciones HF en banda soleada.',
-      frecuenciasAfectadas: 'Bloqueo severo en banda HF de 3 a 30 MHz',
-      aprsPacket: `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:BLN1REMER: ALERTA NOAA R3: APAGON FUERTE RADIO HF`
-    },
-    {
-      id: 'sim_noaa_g2',
-      issueTime: new Date(now.getTime() - 1000 * 3600 * 4).toISOString(),
-      scaleType: 'G',
-      nivel: 2,
-      descripcion: 'Tormenta geomagnética moderada. Auroras visibles hasta latitudes medias. Correcciones en voltajes de sistemas eléctricos.',
-      frecuenciasAfectadas: 'Flctuaciones menores en la propagación de onda de 144 MHz',
-      aprsPacket: `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:BLN2REMER: ADVERTENCIA NOAA G2: TORMENTA MAGNETICA MODERADA`
-    }
-  ];
-}
 
 async function refreshTrafficIncidents() {
   try {
@@ -2661,9 +2256,10 @@ async function refreshTrafficIncidents() {
       const parsed = parseDgtXml(xmlText);
       if (parsed.length > 0) {
         dgtDatosReales = true;
-        dgtIncidentsList = parsed.map((item, idx) => {
-          const lat = parseFloat(item.latitud) || gpsdState.lat;
-          const lon = parseFloat(item.longitud) || gpsdState.lon;
+        // Una incidencia sin coordenadas no se puede situar: se descarta (antes se ponía en la estación)
+        dgtIncidentsList = parsed.filter((item) => Number.isFinite(parseFloat(item.latitud)) && Number.isFinite(parseFloat(item.longitud))).map((item, idx) => {
+          const lat = parseFloat(item.latitud);
+          const lon = parseFloat(item.longitud);
           const dist = calculateDistance(gpsdState.lat, gpsdState.lon, lat, lon);
           
           let cleanNivel: 'VERDE' | 'AMARILLO' | 'ROJO' | 'NEGRO' = 'VERDE';
@@ -2675,7 +2271,7 @@ async function refreshTrafficIncidents() {
           return {
             id: `dgt_${idx}_${Date.now()}`,
             tipo: item.tipo || 'OTROS',
-            carretera: item.carretera || 'N-III',
+            carretera: item.carretera || '',
             provincia: item.provincia || 'España',
             poblacion: item.poblacion || 'Varios',
             fecha: item.fecha,
@@ -2692,11 +2288,13 @@ async function refreshTrafficIncidents() {
         return;
       }
     }
-    addLog('SYS', 'DGT_FALLBACK', 'LOCAL', 'SYNC', 'Fallo de respuesta eTraffic o RDF vacío. Generando incidencias de tráfico localizadas para la Península.', false, 'Reintentando');
-    generateSimulatedIncidents();
+    addLog('SYS', 'DGT', 'LOCAL', 'SYNC', 'La DGT no responde o no da incidencias: sin datos de tráfico.', false, 'Sin datos');
+    dgtDatosReales = false;
+    dgtIncidentsList = [];
   } catch (err: any) {
-    addLog('SYS', 'DGT_ERROR', 'LOCAL', 'FAIL', `Error conectando con DGT eTraffic DATEX2 RDF (${err.message}). Utilizando simulación activa.`, false, 'Error');
-    generateSimulatedIncidents();
+    addLog('SYS', 'DGT', 'LOCAL', 'FAIL', `Sin conexión con la DGT (${err.message}): sin datos de tráfico.`, false, 'Error');
+    dgtDatosReales = false;
+    dgtIncidentsList = [];
   }
 }
 
@@ -2776,107 +2374,6 @@ function parseDgtXml(xmlString: string): any[] {
   return incidents;
 }
 
-function generateSimulatedIncidents() {
-  const currentStationLat = gpsdState.lat;
-  const currentStationLon = gpsdState.lon;
-
-  const nodes = [
-    {
-      tipo: 'ACCIDENTE',
-      carretera: 'A-6',
-      provincia: 'Madrid',
-      poblacion: 'Las Rozas de Madrid',
-      descripcion: 'Accidente por colisión múltiple de 3 vehículos. Carril izquierdo obstruido. Retenciones severas.',
-      nivel: 'ROJO',
-      lat: 40.518,
-      lon: -3.874,
-      causa: 'Accidente',
-      sentido: 'Entrada Madrid'
-    },
-    {
-      tipo: 'OBRAS',
-      carretera: 'A-4',
-      provincia: 'Jaén',
-      poblacion: 'Despeñaperros / Santa Elena',
-      descripcion: 'Mantenimiento del firme asfáltico en viaducto. Estrechamiento de carril con señalización luminosa activa.',
-      nivel: 'AMARILLO',
-      lat: 38.332,
-      lon: -3.511,
-      causa: 'Obras',
-      sentido: 'Creciente'
-    },
-    {
-      tipo: 'METEOROLÓGICA',
-      carretera: 'AP-6',
-      provincia: 'Segovia',
-      poblacion: 'Gisando / Túnel de Guadarrama',
-      descripcion: 'Aviso por bancos de niebla de alta densidad. Visibilidad inferior a 50 metros. Modere velocidad AP-6.',
-      nivel: 'AMARILLO',
-      lat: 40.781,
-      lon: -4.120,
-      causa: 'Niebla',
-      sentido: 'Ambos'
-    },
-    {
-      tipo: 'RETENCIÓN',
-      carretera: 'AP-7',
-      provincia: 'Valencia',
-      poblacion: 'Sagunto / Sagunt',
-      descripcion: 'Congestión circulatoria persistente motivada por embotellamiento en salida metropolitana de fin de semana.',
-      nivel: 'AMARILLO',
-      lat: 39.682,
-      lon: -0.281,
-      causa: 'Retención de tráfico',
-      sentido: 'Decreciente'
-    },
-    {
-      tipo: 'OTROS',
-      carretera: 'N-330',
-      provincia: 'Huesca',
-      poblacion: 'Canfranc / Frontera Francesa',
-      descripcion: 'Corte preventivo por desprendimiento menor de piedras sobre calzada en vertiente montañosa.',
-      nivel: 'NEGRO',
-      lat: 42.716,
-      lon: -0.515,
-      causa: 'Desprendimiento',
-      sentido: 'Ambos'
-    },
-    {
-      tipo: 'ACCIDENTE',
-      carretera: 'A-2',
-      provincia: 'Guadalajara',
-      poblacion: 'Chiloeches / Alovera',
-      descripcion: 'Avería mecánica de camión de transporte articulado. Obstrucción parcial de arcén exterior.',
-      nivel: 'VERDE',
-      lat: 40.551,
-      lon: -3.221,
-      causa: 'Avería camión',
-      sentido: 'Salida Madrid'
-    }
-  ];
-
-  const now = new Date();
-
-  dgtDatosReales = false;
-  dgtIncidentsList = nodes.map((node, i) => {
-    const dist = calculateDistance(currentStationLat, currentStationLon, node.lat, node.lon);
-    return {
-      id: `sim_dgt_${i}_${now.getTime()}`,
-      tipo: node.tipo,
-      carretera: node.carretera,
-      provincia: node.provincia,
-      poblacion: node.poblacion,
-      fecha: new Date(now.getTime() - i * 45 * 60000).toISOString().replace('T', ' ').slice(0, 19),
-      descripcion: node.descripcion,
-      nivel: node.nivel as any,
-      latitud: node.lat,
-      longitud: node.lon,
-      distanciaKm: dist,
-      causa: node.causa,
-      sentido: node.sentido
-    };
-  }).sort((a, b) => (a.distanciaKm || 0) - (b.distanciaKm || 0));
-}
 
 // Initial pull on start
 refreshWeather();
@@ -2892,23 +2389,9 @@ setInterval(() => {
   // Sin fijo GPS la estación está parada en su posición fija
   if (gpsdState.isFallback) gpsdState.speedKmh = 0;
   
-  // Minor NTPSEC microsecond jitter
+  // Estado del equipo: medidas reales del sistema operativo
+  medirEquipo();
 
-  // Dynamic Intel NUC 5i3 Broadwell (i3-5010U, 14nm Broadwell) telemetry updates
-  nucStats.cpuUsagePct = Math.round(8 + Math.random() * 22);
-  nucStats.cpuTempC = parseFloat((41.2 + (nucStats.cpuUsagePct / 2.5) + Math.random() * 1.2).toFixed(1));
-  nucStats.ramUsagePct = parseFloat((27.5 + Math.sin(Date.now() / 100000) * 1.5).toFixed(1));
-  nucStats.ramUsedGb = parseFloat((8.00 * (nucStats.ramUsagePct / 100)).toFixed(2));
-  
-  const minutes = Math.floor((Date.now() / 60000) % 60);
-  const hours = Math.floor((Date.now() / 3600000) % 24);
-  const uptimeDays = 4;
-  nucStats.uptime = `${uptimeDays}d ${hours}h ${minutes}m`;
-  
-  const loadVal = (nucStats.cpuUsagePct / 100).toFixed(2);
-  nucStats.loadAverage = `${loadVal}, ${(nucStats.cpuUsagePct * 0.9 / 100).toFixed(2)}, 0.12`;
-
-  // Real Linux system updates
   if (process.platform === 'linux') {
     // Read real temperature
     try {
@@ -2921,195 +2404,65 @@ setInterval(() => {
       }
     } catch (tempErr) {}
 
-    // Read real load average
-    try {
-      if (fs.existsSync('/proc/loadavg')) {
-        const loadavg = fs.readFileSync('/proc/loadavg', 'utf8').trim().split(' ').slice(0, 3).join(', ');
-        nucStats.loadAverage = loadavg;
-      }
-    } catch (loadErr) {}
 
-    // Read real uptime
-    try {
-      if (fs.existsSync('/proc/uptime')) {
-        const uptimeSeconds = parseFloat(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0]);
-        const days = Math.floor(uptimeSeconds / (24 * 3600));
-        const hrs = Math.floor((uptimeSeconds % (24 * 3600)) / 3600);
-        const mins = Math.floor((uptimeSeconds % 3600) / 60);
-        nucStats.uptime = `${days}d ${hrs}h ${mins}m`;
-      }
-    } catch (uptimeErr) {}
-
-    // Query real systemd service statuses
-    const servicesToQuery = {
-      aprsc: 'aprsc',
-      aprx: 'aprx',
-      direwolf: 'direwolf',
-      gpsd: 'gpsd',
-      ntpsec: 'ntpsec',
-      aiscatcher: 'aiscatcher',
-      pat: 'pat',
-      weewx: 'weewx'
-    };
-    
-    for (const [key, unitName] of Object.entries(servicesToQuery)) {
-      try {
-        const status = execFileSync('systemctl', ['is-active', unitName], { encoding: 'utf8', timeout: 3000 }).trim();
-        nucStats.services[key as keyof typeof nucStats.services] = (status === 'active') ? 'active' : 'inactive';
-      } catch (e) {
-        // Fallback for custom service naming on standard Debian
-        if (key === 'aiscatcher') {
-          try {
-            const status = execFileSync('systemctl', ['is-active', 'ais-catcher'], { encoding: 'utf8', timeout: 3000 }).trim();
-            nucStats.services.aiscatcher = (status === 'active') ? 'active' : 'inactive';
-            continue;
-          } catch (e2) {}
-        }
-        nucStats.services[key as keyof typeof nucStats.services] = 'inactive';
-      }
-    }
   }
-
-  // Continuous micro-fluctuations to mimic high-frequency real-time sensors
-  if (weatherState) {
-    // Slighly drift temperatures, wind, and pressure in real-time
-    const tempDrift = (Math.random() - 0.5) * 0.08;
-    const humDrift = (Math.random() - 0.5) * 0.4;
-    const windDrift = (Math.random() - 0.5) * 0.15;
-    const pressDrift = (Math.random() - 0.5) * 0.06;
-
-    weatherState.tempC = parseFloat(Math.max(-10, Math.min(50, weatherState.tempC + tempDrift)).toFixed(2));
-    weatherState.humidityPct = Math.round(Math.max(5, Math.min(100, weatherState.humidityPct + humDrift)));
-    weatherState.windSpeedKts = parseFloat(Math.max(0, weatherState.windSpeedKts + windDrift).toFixed(2));
-    weatherState.pressureHpa = parseFloat(Math.max(900, Math.min(1100, weatherState.pressureHpa + pressDrift)).toFixed(2));
-    weatherState.gustKts = parseFloat(Math.max(weatherState.windSpeedKts, weatherState.windSpeedKts * 1.25).toFixed(2));
-    weatherState.time = new Date().toISOString();
-    weatherState.rawAprsWx = generateWxPayload(weatherState);
-  }
-
-  // Drift Air Quality continuously in sync with the weather data
-  if (iqairState) {
-    const aqiDrift = Math.round((Math.random() - 0.5) * 1.2);
-    iqairState.aqi = Math.max(1, Math.min(500, iqairState.aqi + aqiDrift));
-    iqairState.tempC = weatherState.tempC;
-    iqairState.humidityPct = weatherState.humidityPct;
-    iqairState.pressureHpa = Math.round(weatherState.pressureHpa);
-    iqairState.windSpeedMs = parseFloat((weatherState.windSpeedKts * 0.5144).toFixed(2));
-    iqairState.windDirDeg = weatherState.windDirDeg;
-    iqairState.lastUpdated = new Date().toISOString();
-  }
-
-  // Drift ocean buoys continuously
-  refreshErddapBuoys();
-  refreshPortusStations();
-
-  // Drift space weather / HF propagation metrics
-  driftSpaceWeatherAndHf();
-
-  // Evolve weather radar and lightning strikes (AEMET)
-  evolveAemetRadarAndStrikes();
-
-  // Drift tsunami warning telemetry
-  driftTsunamiAlerts();
 
   // Drift and evaluate AEMET GPSD-based weather alerts
   driftAemetAlerts();
 }, 1500);
 
-function driftSpaceWeatherAndHf() {
-  // Drift levels inside active space alerts (noaaAlerts)
-  noaaAlerts = noaaAlerts.map(alert => {
-    const levelChange = (Math.random() - 0.5) * 0.15;
-    const newNivel = Math.max(1, Math.min(5, Number((alert.nivel + levelChange).toFixed(1))));
-    
-    let descripcion = alert.descripcion;
-    let frecuenciasAfectadas = alert.frecuenciasAfectadas;
-    
-    if (alert.scaleType === 'R') {
-      if (newNivel >= 4) {
-        descripcion = "Bloqueo extremo de comunicaciones de radio en HF (R4 Extreme)";
-        frecuenciasAfectadas = "Pérdida completa de señal HF de 3 a 30 MHz en la cara iluminada de la Tierra durante 1-2 horas.";
-      } else if (newNivel >= 3) {
-        descripcion = "Bloqueo severo de comunicaciones de radio en HF (R3 Strong)";
-        frecuenciasAfectadas = "Atenuación severa o pérdida de comunicaciones de radio en HF (3 a 30 MHz) de forma generalizada.";
-      } else {
-        descripcion = "Bloqueo moderado de comunicaciones en HF (R2 Moderate)";
-        frecuenciasAfectadas = "Degradación parcial de señales HF, afectando principalmente frecuencias menores a 15 MHz.";
-      }
-    } else if (alert.scaleType === 'G') {
-      if (newNivel >= 4) {
-        descripcion = "Tormenta geomagnética extrema (G4 Severe)";
-        frecuenciasAfectadas = "Fluctuaciones críticas en repetidores. Propagación HF severamente perturbada en altas latitudes.";
-      } else if (newNivel >= 3) {
-        descripcion = "Tormenta geomagnética severa (G3 Strong)";
-        frecuenciasAfectadas = "Fluctuaciones de voltaje en repetidores y degradación de la propagación satelital y de HF.";
-      } else {
-        descripcion = "Tormenta geomagnética moderada (G2 Moderate)";
-        frecuenciasAfectadas = "Auroras visibles en latitudes medias. Ruido estático incrementado en la banda de 40m y 80m.";
+
+
+// Uso de CPU: diferencia entre dos lecturas de los contadores del sistema
+let cpuAnterior: { activo: number; total: number } | null = null;
+function medirEquipo() {
+  let activo = 0;
+  let total = 0;
+  for (const nucleo of os.cpus()) {
+    const t = nucleo.times;
+    activo += t.user + t.nice + t.sys + t.irq;
+    total += t.user + t.nice + t.sys + t.irq + t.idle;
+  }
+  if (cpuAnterior && total > cpuAnterior.total) {
+    nucStats.cpuUsagePct = Math.round(((activo - cpuAnterior.activo) / (total - cpuAnterior.total)) * 100);
+  }
+  cpuAnterior = { activo, total };
+  const totalGb = os.totalmem() / 1024 ** 3;
+  const usadaGb = (os.totalmem() - os.freemem()) / 1024 ** 3;
+  nucStats.ramTotalGb = parseFloat(totalGb.toFixed(2));
+  nucStats.ramUsedGb = parseFloat(usadaGb.toFixed(2));
+  nucStats.ramUsagePct = parseFloat(((usadaGb / totalGb) * 100).toFixed(1));
+  const seg = os.uptime();
+  nucStats.uptime = `${Math.floor(seg / 86400)}d ${Math.floor((seg % 86400) / 3600)}h ${Math.floor((seg % 3600) / 60)}m`;
+  nucStats.loadAverage = os.loadavg().map((v) => v.toFixed(2)).join(', ');
+}
+
+// Estado real de los servicios (systemd). Es una consulta lenta: se hace aparte, cada 15 s.
+function medirServicios() {
+  if (process.platform !== 'linux') return;
+  const unidades: Record<string, string[]> = {
+    aprsc: ['aprsc'], aprx: ['aprx'], direwolf: ['direwolf'], gpsd: ['gpsd'], ntpsec: ['ntpsec'],
+    aiscatcher: ['aiscatcher', 'ais-catcher'], pat: ['pat'], weewx: ['weewx'],
+  };
+  for (const [clave, nombres] of Object.entries(unidades)) {
+    let estado: 'active' | 'inactive' | 'failed' = 'inactive';
+    for (const unidad of nombres) {
+      try {
+        const r = execFileSync('systemctl', ['is-active', unidad], { encoding: 'utf8', timeout: 3000 }).trim();
+        if (r === 'active') { estado = 'active'; break; }
+      } catch (e: any) {
+        if (String(e?.stdout ?? '').trim() === 'failed') estado = 'failed';
       }
     }
-
-    return {
-      ...alert,
-      nivel: newNivel,
-      descripcion,
-      frecuenciasAfectadas
-    };
-  });
-
-  // Drift cachedNoaaForecast if present
-  if (cachedNoaaForecast && cachedNoaaForecast.geom) {
-    cachedNoaaForecast.geom = cachedNoaaForecast.geom.map((g: any) => {
-      const kpDrift = (Math.random() - 0.5) * 0.25;
-      const kp = Math.max(1, Math.min(9, Math.round(g.kp + kpDrift)));
-      return {
-        ...g,
-        kp
-      };
-    });
-    cachedNoaaForecast.rad = cachedNoaaForecast.rad.map((r: any) => {
-      if (Math.random() > 0.9) {
-        const level = Math.random() > 0.8 ? 1 : 0;
-        return {
-          ...r,
-          level,
-          desc: level > 0 ? 'S1 (Minor - Simulado)' : 'None'
-        };
-      }
-      return r;
-    });
-    cachedNoaaForecast.blackout = cachedNoaaForecast.blackout.map((b: any) => {
-      if (Math.random() > 0.9) {
-        const level = Math.random() > 0.8 ? 1 : 0;
-        return {
-          ...b,
-          level,
-          desc: level > 0 ? 'R1 (Minor - Simulado)' : 'None'
-        };
-      }
-      return b;
-    });
-    cachedNoaaForecast.lastUpdated = new Date().toLocaleTimeString('es-ES');
+    nucStats.services[clave as keyof typeof nucStats.services] = estado;
   }
 }
-
-function driftTsunamiAlerts() {
-  tsunamiAlerts = tsunamiAlerts.map(a => {
-    const waveDelta = (Math.random() - 0.5) * 0.008;
-    const maxWaveHeightMeter = parseFloat(Math.max(0.01, a.maxWaveHeightMeter + waveDelta).toFixed(3));
-    
-    let etaSpain = a.etaSpain;
-    if (a.id === 'tsu_med_alboran_sim') {
-      etaSpain = `Boyas de Alborán registrando micro-oscilaciones de ${maxWaveHeightMeter.toFixed(2)}m (Vigilancia Activa)`;
-    }
-
-    return {
-      ...a,
-      maxWaveHeightMeter,
-      etaSpain
-    };
-  });
-}
+medirServicios();
+setInterval(medirServicios, 15000);
+try {
+  const m = fs.readFileSync('/etc/os-release', 'utf8').match(/^PRETTY_NAME="?([^"\n]+)"?/m);
+  if (m) nucStats.debianVersion = m[1];
+} catch { /* sin fichero: queda vacío */ }
 
 let lastAemetRefreshTime = 0;
 function driftAemetAlerts() {
@@ -3120,101 +2473,8 @@ function driftAemetAlerts() {
   }
 }
 
-// ERDDAP automatic background syncing and telemetry update simulation
-function refreshErddapBuoys() {
-  erddapBuoys = erddapBuoys.map(b => {
-    // Generate slight, realistic ocean fluctuations
-    const waveDelta = (Math.random() - 0.5) * 0.15;
-    const tempDelta = (Math.random() - 0.5) * 0.08;
-    const windDelta = (Math.random() - 0.5) * 1.2;
-    const pressureDelta = (Math.random() - 0.5) * 0.4;
-    
-    const waveHeightM = Math.max(0.2, parseFloat((b.waveHeightM + waveDelta).toFixed(2)));
-    const waterTempC = Math.max(1.5, parseFloat((b.waterTempC + tempDelta).toFixed(1)));
-    const windSpeedKts = Math.max(0.0, parseFloat((b.windSpeedKts + windDelta).toFixed(1)));
-    const pressureHpa = Math.max(950.0, parseFloat((b.pressureHpa + pressureDelta).toFixed(1)));
-    
-    // Periodically update some status message details to simulate dynamic events
-    let desc = b.statusDescription;
-    if (Math.random() > 0.85) {
-      if (waveHeightM > 3.2) {
-        desc = `[ALERTA TEMPORAL] Marcadas resacas marinas y frentes de olas significativos reportados vía ERDDAP.`;
-      } else if (windSpeedKts > 20.0) {
-        desc = `Rachas de viento moderadas a fuertes reportadas. Protocolo Tabledap transmitiendo en frecuencia nominal.`;
-      } else {
-        desc = `Boya oceánica sintonizada correctamente. Telemetría de paso de olas y meteorología marina estable.`;
-      }
-    }
 
-    return {
-      ...b,
-      waveHeightM,
-      waterTempC,
-      windSpeedKts,
-      pressureHpa,
-      statusDescription: desc,
-      lastUpdatedTime: new Date().toISOString()
-    };
-  });
 
-  const timestamp = new Date().toLocaleTimeString('es-ES');
-  addLog('SYS', 'ERDDAP', 'PROXY', 'SYNC', `Bases de datos de boyas ERDDAP sincronizada automáticamente vía Tabledap.`, true, 'Automático');
-}
-
-function refreshPortusStations() {
-  portusStations = portusStations.map(st => {
-    // Generate slight, realistic wave/water-temp/sea-level/wind changes
-    const waveDelta = (Math.random() - 0.5) * 0.12;
-    const tempDelta = (Math.random() - 0.5) * 0.1;
-    const tideDelta = (Math.random() - 0.5) * 0.05;
-    const windDelta = (Math.random() - 0.5) * 1.5;
-
-    const waveHeightM = Math.max(0.1, parseFloat((st.waveHeightM + waveDelta).toFixed(2)));
-    const waterTempC = Math.max(5.0, parseFloat((st.waterTempC + tempDelta).toFixed(1)));
-    const seaLevelM = parseFloat((st.seaLevelM + tideDelta).toFixed(2));
-    const windSpeedKts = Math.max(0.0, parseFloat((st.windSpeedKts + windDelta).toFixed(1)));
-
-    // Re-evaluate safety status based on wave heights and wind
-    let status: 'Nominal' | 'Precaución' | 'Temporal' = 'Nominal';
-    let statusDescription = st.statusDescription;
-
-    if (waveHeightM > 4.0 || windSpeedKts > 30.0) {
-      status = 'Temporal';
-      statusDescription = `🚨 Alerta marítima por oleaje severo (${waveHeightM}m) o viento fuerte (${windSpeedKts} kts). Operativa restringida.`;
-    } else if (waveHeightM > 2.2 || windSpeedKts > 20.0) {
-      status = 'Precaución';
-      statusDescription = `⚠️ Fuerte marejada (${waveHeightM}m) o viento moderado a fuerte (${windSpeedKts} kts). Precaución en amarras.`;
-    } else {
-      status = 'Nominal';
-      if (st.id === 'BOY-GATA') statusDescription = 'Régimen de vientos moderados de levante. Alturas de ola seguras para navegación costera.';
-      else if (st.id === 'BOY-BARC') statusDescription = 'Régimen de brisa térmica regular (embat). Aguas calmas en dársenas exteriores.';
-      else if (st.id === 'BOY-TENER') statusDescription = 'Vientos alisios estables del NE. Condiciones normales del archipiélago.';
-      else if (st.id === 'MAR-ALGE') statusDescription = 'Canal de mareas estable. Sobremarea astronómica de tránsito estándar.';
-      else if (st.id === 'MAR-VALE') statusDescription = 'Aguas tranquilas en el frente portuario. Operativa civil de estiba sin contingencias.';
-      else if (st.id === 'MAR-MALI') statusDescription = 'Amplitud de marea regular Atlántica. Registro instrumental de puertos del estado.';
-      else if (st.id === 'BOY-CABOPAL') statusDescription = 'Estado nominal del viento. Corrientes estables bajo el relieve de acantilados costeros.';
-      else if (st.id === 'MAR-CADIZ') statusDescription = 'Marea menguante normalizada dentro de la cubeta de la bahía interior.';
-    }
-
-    return {
-      ...st,
-      waveHeightM,
-      waterTempC,
-      seaLevelM,
-      windSpeedKts,
-      status,
-      statusDescription
-    };
-  });
-
-  addLog('SYS', 'PORTUS', 'PROXY', 'SYNC', `Base de datos física de aguas de Puertos del Estado (PORTUS) sincronizada con telemetría en tiempo real.`, true, 'Automático');
-}
-
-// Run ERDDAP sync interval every 15 seconds
-setInterval(refreshErddapBuoys, 15000);
-
-// Run PORTUS stations sync interval every 12 seconds
-setInterval(refreshPortusStations, 12000);
 
 // Run NAVAREA/NAVTEX warnings refresh interval every 16 seconds
 // setInterval(refreshNavareaWarnings, 16000);
@@ -3222,7 +2482,6 @@ setInterval(refreshPortusStations, 12000);
 // Regularly refresh outer components with dynamic sync scheduler adjustments
 let timerWeather: NodeJS.Timeout;
 let timerEarthquakes: NodeJS.Timeout;
-let timerJrc: NodeJS.Timeout;
 let timerIQAir: NodeJS.Timeout;
 let timerNoaa: NodeJS.Timeout;
 let timerTrafficIncidents: NodeJS.Timeout;
@@ -3287,13 +2546,11 @@ function executeAgpsSync() {
 function startSchedules() {
   if (timerWeather) clearInterval(timerWeather);
   if (timerEarthquakes) clearInterval(timerEarthquakes);
-  if (timerJrc) clearInterval(timerJrc);
   if (timerTsunamis) clearInterval(timerTsunamis);
   if (timerAgps) clearInterval(timerAgps);
 
   const weatherInterval = (config.pollIntervalAemet || 1) * 60000;
   const ignInterval = (config.pollIntervalIgn || 2) * 60000;
-  const jrcInterval = (config.pollIntervalJrc || 5) * 60000;
 
   timerWeather = setInterval(() => {
     addLog('SYS', 'AEMET', 'LOCAL', 'CRON', `Ejecutando sondeo programado AEMET (Frecuencia: ${config.pollIntervalAemet} min).`, true, 'Automático');
@@ -3305,9 +2562,6 @@ function startSchedules() {
     refreshEarthquakes();
   }, ignInterval);
 
-  timerJrc = setInterval(() => {
-    addLog('SYS', 'JRC', 'PROXY', 'CRON', `Sincronizando feed de estaciones y datasets EURDEP JRC (Frecuencia: ${config.pollIntervalJrc} min).`, true, 'Automático');
-  }, jrcInterval);
 
   if (!timerIQAir) timerIQAir = setInterval(refreshIQAir, 150000); // 2.5 min
   if (!timerNoaa) timerNoaa = setInterval(refreshNoaaAlerts, 180000); // 3 min
@@ -3419,11 +2673,15 @@ function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string
   return { ok: true, packet };
 }
 
-startSchedules();
-programarAvisosMeteo();
-programarOtrasFuentes();
-ajustarAprsIs();
-ajustarEntradasMapa();
+// El arranque se aplaza hasta que el módulo ha terminado de cargarse: así ninguna
+// de estas funciones encuentra una variable de más abajo todavía sin inicializar.
+setImmediate(() => {
+  startSchedules();
+  programarAvisosMeteo();
+  programarOtrasFuentes();
+  ajustarAprsIs();
+  ajustarEntradasMapa();
+});
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
 setInterval(ajustarAprsIs, 5 * 60_000);
 
@@ -3465,7 +2723,8 @@ app.get('/api/telemetry', async (req, res) => {
     erddapBuoys,
     portusStations,
     aemetAlerts,
-    meteoSimulada,
+    meteoSinDatos,
+    meteoFuente,
     propagation: propagationData && propagationData.completa ? propagationData : undefined,
     propagacionFaltan: propagationData ? propagationData.faltan : ['todas las fuentes'],
     navareas: navareaWarnings
@@ -4416,15 +3675,6 @@ app.get('/api/hf', async (_req, res) => {
   }
 });
 
-app.get('/api/space-weather/propagacion', async (req, res) => {
-  try {
-    const isEco = req.query.eco === '1';
-    const data = await getPropagationData(isEco);
-    res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 app.get('/api/space-weather/forecast-3day', async (req, res) => {
   const force = req.query.force === 'true';
@@ -4581,406 +3831,17 @@ app.post('/api/system/clear-service-logs', (req, res) => {
   })();
 });
 
-app.post('/api/erddap/sync', (req, res) => {
-  refreshErddapBuoys();
-  res.json({ success: true, msg: 'Sincronización forzada con bases de datos ERDDAP completada.', erddapBuoys });
-});
 
-app.post('/api/erddap/add', (req, res) => {
-  const { id, name, datasetId, lat, lon, waveHeightM, wavePeriodSec, waterTempC, windSpeedKts, windDirDeg, pressureHpa, region, statusDescription } = req.body;
-  if (!id || !name || !datasetId || lat === undefined || lon === undefined) {
-    return res.status(400).json({ success: false, msg: 'Suministre id, name, datasetId, lat, lon.' });
-  }
 
-  const exists = erddapBuoys.some(b => b.id === id);
-  if (exists) {
-    return res.status(400).json({ success: false, msg: `ID ${id} ya existe en base de datos ERDDAP.` });
-  }
 
-  const newBuoy: ERDDAPBuoy = {
-    id,
-    name,
-    datasetId,
-    lat: parseFloat(lat),
-    lon: parseFloat(lon),
-    waveHeightM: parseFloat(waveHeightM || '1.0'),
-    wavePeriodSec: parseFloat(wavePeriodSec || '6.0'),
-    waterTempC: parseFloat(waterTempC || '18.0'),
-    windSpeedKts: parseFloat(windSpeedKts || '10.0'),
-    windDirDeg: parseInt(windDirDeg || '180'),
-    pressureHpa: parseFloat(pressureHpa || '1013.2'),
-    region: (region || 'Atlántico') as any,
-    statusDescription: statusDescription || 'Dispositivo oceanográfico registrado e integrado en vivo.',
-    lastUpdatedTime: new Date().toISOString()
-  };
 
-  erddapBuoys.unshift(newBuoy);
-  addLog('SYS', 'ERDDAP', 'PROXY', 'ADD', `Nueva boya registrada en base de datos ERDDAP: ${id} (${name})`, true, 'Operador');
-  res.json({ success: true, msg: `Boya ${id} agregada exitosamente a la base de datos ERDDAP.`, buoy: newBuoy, erddapBuoys });
-});
 
-// NOAA NDBC Latest Observations Feed Parser and Generator HELPERS
-const NDBC_MOCK_STATIONS = [
-  '41001', '41002', '41004', '41008', '41009', '41010', '41013', '42001', '42002', '42003',
-  '42019', '42020', '42036', '44005', '44007', '44008', '44013', '44025', '45001', '45002',
-  '46001', '46002', '46005', '46006', '46011', '46012', '46013', '46014', '46025', '46026',
-  '51001', '51002', '51003', '51004'
-];
 
-function generateMockLatestObs(): string {
-  const now = new Date();
-  const yyyy = now.getUTCFullYear();
-  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(now.getUTCDate()).padStart(2, '0');
-  const hh = String(now.getUTCHours()).padStart(2, '0');
-  const min = String(now.getUTCMinutes()).padStart(2, '0');
-  
-  let out = `#STN   LAT    LON  YYYY MM DD hh mm WDIR WSPD  GST WVHT  DPD  APD MWD   PRES  PTDY  ATMP  WTMP  DEWP  VIS  PPH TIDE\n`;
-  
-  const stnLocs: Record<string, { lat: number, lon: number }> = {
-    '41001': { lat: 34.68, lon: -72.63 },
-    '41002': { lat: 31.76, lon: -74.84 },
-    '41004': { lat: 32.50, lon: -79.10 },
-    '41008': { lat: 31.40, lon: -80.87 },
-    '41009': { lat: 28.53, lon: -80.18 },
-    '41010': { lat: 28.88, lon: -78.48 },
-    '41013': { lat: 33.44, lon: -77.74 },
-    '42001': { lat: 25.90, lon: -89.65 },
-    '42002': { lat: 26.06, lon: -93.41 },
-    '42003': { lat: 25.94, lon: -85.61 },
-    '42019': { lat: 27.91, lon: -95.36 },
-    '42020': { lat: 26.96, lon: -97.02 },
-    '42036': { lat: 28.50, lon: -84.50 },
-    '44005': { lat: 43.20, lon: -69.12 },
-    '44007': { lat: 43.53, lon: -70.14 },
-    '44008': { lat: 40.50, lon: -69.25 },
-    '44013': { lat: 42.35, lon: -70.69 },
-    '44025': { lat: 40.25, lon: -73.17 },
-    '45001': { lat: 48.06, lon: -87.78 },
-    '45002': { lat: 45.34, lon: -86.41 },
-    '46001': { lat: 56.30, lon: -148.17 },
-    '46002': { lat: 42.61, lon: -130.49 },
-    '46005': { lat: 46.05, lon: -131.02 },
-    '46006': { lat: 40.85, lon: -137.47 },
-    '46011': { lat: 35.02, lon: -120.99 },
-    '46012': { lat: 37.36, lon: -122.88 },
-    '46013': { lat: 38.24, lon: -123.33 },
-    '46014': { lat: 39.24, lon: -123.97 },
-    '46025': { lat: 33.75, lon: -119.06 },
-    '46026': { lat: 37.76, lon: -122.84 },
-    '51001': { lat: 24.38, lon: -162.52 },
-    '51002': { lat: 17.09, lon: -157.79 },
-    '51003': { lat: 19.12, lon: -160.74 },
-    '51004': { lat: 17.43, lon: -152.52 }
-  };
-
-  for (const st of NDBC_MOCK_STATIONS) {
-    const loc = stnLocs[st] || { lat: 30.0, lon: -75.0 };
-    const latStr = loc.lat.toFixed(2).padStart(6);
-    const lonStr = loc.lon.toFixed(2).padStart(7);
-    
-    const wdir = String(Math.floor(Math.random() * 36) * 10).padStart(4);
-    const wspd = (Math.random() * 21).toFixed(1).padStart(5);
-    const gst = (parseFloat(wspd) * (1.1 + Math.random() * 0.3)).toFixed(1).padStart(5);
-    
-    const wvht = (Math.random() * 3.8).toFixed(2).padStart(5);
-    const dpd = (5 + Math.random() * 8).toFixed(1).padStart(5);
-    const apd = (parseFloat(dpd) * 0.8).toFixed(1).padStart(5);
-    const mwd = String(Math.floor(Math.random() * 36) * 10).padStart(4);
-    
-    const pres = (1008 + Math.random() * 12).toFixed(1).padStart(7);
-    const ptdy = ((Math.random() - 0.5) * 2).toFixed(1).padStart(5);
-    
-    const atmp = (12 + Math.random() * 18).toFixed(1).padStart(5);
-    const wtmp = (parseFloat(atmp) + (Math.random() - 0.5) * 3).toFixed(1).padStart(5);
-    
-    const dewp = (parseFloat(atmp) * 0.75).toFixed(1).padStart(5);
-    const vis = "   MM";
-    const pph = "   MM";
-    const tide = "   MM";
-
-    out += `${st.padEnd(6)} ${latStr} ${lonStr}  ${yyyy} ${mm} ${dd} ${hh} ${min} ${wdir} ${wspd} ${gst} ${wvht} ${dpd} ${apd} ${mwd} ${pres} ${ptdy} ${atmp} ${wtmp} ${dewp} ${vis} ${pph} ${tide}\n`;
-  }
-  return out;
-}
-
-function parseLatestObs(text: string) {
-  const lineArray = text.split('\n');
-  const records = [];
-  let headers: string[] = [];
-
-  for (let line of lineArray) {
-    line = line.trim();
-    if (!line) continue;
-    if (line.startsWith('#')) {
-      // It's the header line
-      headers = line.substring(1).trim().split(/\s+/);
-      continue;
-    }
-
-    const parts = line.split(/\s+/);
-    if (parts.length >= 8 && headers.length > 0) {
-      const record: Record<string, string> = {};
-      for (let i = 0; i < parts.length; i++) {
-        if (i < headers.length) {
-          record[headers[i]] = parts[i];
-        } else {
-          record[`COL_${i}`] = parts[i];
-        }
-      }
-      records.push(record);
-    }
-  }
-  return { headers, records };
-}
-
-// Endpoint NOAA NDBC Latest Observations 
-app.get('/api/ndbc/latest-obs', async (req, res) => {
-  const url = 'https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt';
-  let rawText = '';
-  let isMock = false;
-
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    if (response.ok) {
-      rawText = await response.text();
-    } else {
-      throw new Error(`NOAA response status ${response.status}`);
-    }
-  } catch (err: any) {
-    console.error("Could not fetch NDBC latest_obs.txt, falling back to simulated data", err.message);
-    rawText = generateMockLatestObs();
-    isMock = true;
-  }
-
-  const { headers, records } = parseLatestObs(rawText);
-
-  res.json({
-    success: true,
-    isMock,
-    timestamp: new Date().toISOString(),
-    rawTextPreview: rawText.substring(0, 4000),
-    headers,
-    recordsCount: records.length,
-    records
-  });
-});
-
-app.post('/api/navareas/simulate', (req, res) => {
-  const { warning } = req.body;
-  if (warning) {
-    navareaWarnings.unshift(warning);
-    if (navareaWarnings.length > 30) {
-      navareaWarnings = navareaWarnings.slice(0, 30);
-    }
-    addLog(
-      'RX',
-      'SIM-NAV-INJECT',
-      'NAVTEX',
-      'COMSAR',
-      `Manual inject warning: ${warning.id} - ${warning.title}`,
-      true,
-      'Socorro'
-    );
-    res.json({ success: true, warning });
-  } else {
-    res.status(400).json({ success: false, error: 'Warning is required in body' });
-  }
-});
 
 // —— SISTEMA DE MONITOREO DE INCENDIOS EN TIEMPO REAL (NASA FIRMS & COPERNICUS) ——
 
-let cachedAemetRadar: any = null;
-let cachedAemetStrikes: any = null;
 
-// AEMET OPEN DATA - SIMULATORY OR REAL SYSTEM INTERFACE
-function evolveAemetRadarAndStrikes() {
-  const now = new Date();
 
-  // Evolve Radar Echoes
-  if (!cachedAemetRadar) {
-    const echoes = [];
-    const stations = ['Madrid', 'Zaragoza', 'Sevilla', 'Valencia', 'Barcelona', 'Málaga', 'Santiago', 'Cáceres'];
-    for (let i = 0; i < 40; i++) {
-      const lat = 36.0 + Math.random() * 8.0;
-      const lon = -9.0 + Math.random() * 11.0;
-      const dbz = Math.round(15 + Math.random() * 45);
-      let intensity = 'Débil';
-      if (dbz > 45) intensity = 'Muy Fuerte / Granizo';
-      else if (dbz > 30) intensity = 'Moderada / Chubasco';
-      
-      echoes.push({
-        id: `RAD-ECHO-${1000 + i}`,
-        lat: parseFloat(lat.toFixed(4)),
-        lon: parseFloat(lon.toFixed(4)),
-        dbz,
-        intensity,
-        altitudKm: parseFloat((1.2 + Math.random() * 5.0).toFixed(1)),
-        estacionCercana: stations[Math.floor(Math.random() * stations.length)]
-      });
-    }
-    cachedAemetRadar = {
-      producto: "AEMET RADAR ESCURRIMIENTO Y REFLECTIVIDAD NACIONAL",
-      tipo: "Radar regional y de superficie",
-      fechaEmision: now.toISOString(),
-      unidadMedida: "dBZ (Unidad decibélica de reflectividad)",
-      numeroEcos: echoes.length,
-      ecos: echoes,
-      isobarasSimuladasHpa: [1012, 1014, 1016, 1008],
-      avisoRadar: "Frente inestable avanzando por el cuadrante noroeste, con reflectividades cumulonimbus aisladas en el Sistema Central."
-    };
-  } else {
-    // Evolve existing echoes slightly
-    cachedAemetRadar.fechaEmision = now.toISOString();
-    cachedAemetRadar.ecos = cachedAemetRadar.ecos.map((e: any) => {
-      const latMovement = (Math.random() - 0.45) * 0.003; 
-      const lonMovement = 0.004 + (Math.random() - 0.5) * 0.002; 
-      const dbzChange = Math.round((Math.random() - 0.5) * 4);
-      const dbz = Math.max(10, Math.min(65, e.dbz + dbzChange));
-      
-      let intensity = 'Débil';
-      if (dbz > 45) intensity = 'Muy Fuerte / Granizo';
-      else if (dbz > 30) intensity = 'Moderada / Chubasco';
-
-      return {
-        ...e,
-        lat: parseFloat((e.lat + latMovement).toFixed(4)),
-        lon: parseFloat((e.lon + lonMovement).toFixed(4)),
-        dbz,
-        intensity
-      };
-    });
-
-    // Reset if they drift too far off Spain
-    cachedAemetRadar.ecos = cachedAemetRadar.ecos.map((e: any) => {
-      if (e.lon > 4.5 || e.lat > 45.0 || e.lat < 35.0 || e.lon < -11.0) {
-        return {
-          ...e,
-          lat: parseFloat((36.0 + Math.random() * 8.0).toFixed(4)),
-          lon: parseFloat((-10.0 + Math.random() * 2.0).toFixed(4)),
-          dbz: Math.round(15 + Math.random() * 45)
-        };
-      }
-      return e;
-    });
-    cachedAemetRadar.numeroEcos = cachedAemetRadar.ecos.length;
-  }
-
-  // Evolve Lightning Strikes
-  if (!cachedAemetStrikes) {
-    const strikes = [];
-    for (let i = 0; i < 28; i++) {
-      const lat = 37.0 + Math.random() * 6.5;
-      const lon = -7.5 + Math.random() * 9.5;
-      const polaridad = Math.random() > 0.15 ? 'NEGATIVA (-)' : 'POSITIVA (+)';
-      const corrienteKiloamperios = Math.round(10 + Math.random() * 110);
-      strikes.push({
-        id: `STRIKE-${Date.now()}-${i}`,
-        lat: parseFloat(lat.toFixed(4)),
-        lon: parseFloat(lon.toFixed(4)),
-        polaridad,
-        corrienteKa: corrienteKiloamperios,
-        milisegundos: Math.round(Math.random() * 999),
-        gravedad: corrienteKiloamperios > 80 ? 'CRÍTICO' : 'ELEVADO'
-      });
-    }
-    cachedAemetStrikes = {
-      producto: "RED NACIONAL DE DETECCIÓN DE DESCARGAS ELÉCTRICAS",
-      cobertura: "Península Ibérica, Baleares y Zonas Marítimas Adyacentes",
-      resolucionMicrosegundos: 0.1,
-      totalDescargas: strikes.length,
-      fechaMonitoreo: now.toISOString().slice(0, 10),
-      descargas: strikes,
-      observacionSismologicaAsociada: "Ausencia de perturbaciones electromagnéticas inducidas en sensores corticales del CSN."
-    };
-  } else {
-    let strikes = [...cachedAemetStrikes.descargas];
-    const removeCount = Math.floor(Math.random() * 3) + 1;
-    if (strikes.length > 15) {
-      strikes = strikes.slice(removeCount);
-    }
-
-    const addCount = Math.floor(Math.random() * 3) + 1;
-    for (let i = 0; i < addCount; i++) {
-      const lat = 38.0 + Math.random() * 5.0;
-      const lon = -4.0 + Math.random() * 6.0;
-      const polaridad = Math.random() > 0.15 ? 'NEGATIVA (-)' : 'POSITIVA (+)';
-      const corrienteKiloamperios = Math.round(15 + Math.random() * 105);
-      
-      strikes.push({
-        id: `STRIKE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        lat: parseFloat(lat.toFixed(4)),
-        lon: parseFloat(lon.toFixed(4)),
-        polaridad,
-        corrienteKa: corrienteKiloamperios,
-        milisegundos: Math.round(Math.random() * 999),
-        gravedad: corrienteKiloamperios > 80 ? 'CRÍTICO' : 'ELEVADO'
-      });
-    }
-
-    cachedAemetStrikes.descargas = strikes;
-    cachedAemetStrikes.totalDescargas = strikes.length;
-    cachedAemetStrikes.fechaMonitoreo = now.toISOString().slice(0, 10);
-  }
-}
-
-function getSimulatedAemetProduct(endpoint: string) {
-  const norm = endpoint.toLowerCase();
-  
-  if (norm.includes('radar')) {
-    if (!cachedAemetRadar) {
-      evolveAemetRadarAndStrikes();
-    }
-    return cachedAemetRadar;
-  } else if (norm.includes('rayos')) {
-    if (!cachedAemetStrikes) {
-      evolveAemetRadarAndStrikes();
-    }
-    return cachedAemetStrikes;
-  } else if (norm.includes('municipio')) {
-    const cities = [
-      { name: 'Madrid', min: 14, max: 29, general: 'Despejado con intervalos de nubes altas', uv: 8 },
-      { name: 'Barcelona', min: 18, max: 26, general: 'Poco nuboso con brisas marinas', uv: 7 },
-      { name: 'Valencia', min: 19, max: 28, general: 'Despejado y templado', uv: 8 },
-      { name: 'Sevilla', min: 21, max: 37, general: 'Muy caluroso, despejado', uv: 9 },
-      { name: 'Bilbao', min: 12, max: 21, general: 'Intervalos nubosos con llovizna ocasional', uv: 4 },
-      { name: 'Zaragoza', min: 15, max: 31, general: 'Nubosidad de evolución por la tarde', uv: 8 }
-    ];
-    return {
-      producto: "PREDICCIÓN METEOROLÓGICA MUNICIPAL DETALLADA",
-      validez: "48 Horas",
-      resolucionTemporal: "Por períodos trihorarios",
-      ciudades: cities.map(c => {
-        const drift = Math.sin(Date.now() / 150000) * 1.5;
-        return {
-          ...c,
-          temperaturaActualC: parseFloat((c.min + (c.max - c.min)/2 + drift).toFixed(1)),
-          minimaEsperadaC: Math.round(c.min + drift),
-          maximaEsperadaC: Math.round(c.max + drift),
-          humedadRelativaPct: Math.round(45 + Math.sin(Date.now() / 200000) * 15),
-          vientoDireccion: ['NE', 'SO', 'N', 'S', 'O', 'NO'][Math.floor(Math.random() * 6)],
-          vientoVelocidadKmh: Math.round(10 + Math.random() * 25)
-        };
-      })
-    };
-  } else {
-    return {
-      producto: "CENTRO DE DESCARGAS DE PRODUCTOS AEMET - CATÁLOGO GENERAL",
-      enlaceOficial: "https://opendata.aemet.es/centrodedescargas/productosAEMET",
-      versionCatalogo: "v4.2.16-2026",
-      productosDisponibles: [
-        { id: "rad-nac", nombre: "Imágenes de Radar de Reflectividad Nacional", formato: "JSON / PNG", frecuencia: "10 Minutos" },
-        { id: "rayos-nac", nombre: "Histórico Diario de Descargas Eléctricas", formato: "JSON / XML", frecuencia: "Continuo" },
-        { id: "sat-msg-ir", nombre: "Satélite MSG - Canal Infrarrojo de Alta Resolución", formato: "HDF5 / GeoTIFF", frecuencia: "15 Minutos" },
-        { id: "clim-est", nombre: "Valores Climatológicos Diarios por Estación", formato: "JSON", frecuencia: "Diaria" },
-        { id: "pred-aut", nombre: "Boletines de Predicción Meteorológica Autonómicos", formato: "XML / Texto", frecuencia: "2 veces al día" },
-        { id: "mod-grib", nombre: "Modelo de Predicción Numérica HARMCONE 2.5km (GRIB2)", formato: "GRIB2", frecuencia: "6 Horas" }
-      ],
-      notaIntegracion: "Este catálogo replica exactamente la interfaz técnica del portal OpenData de la Agencia Estatal de Meteorología de España.",
-      servidorOrigen: "aemet-opendata-core-proxy-madrid"
-    };
-  }
-}
 
 app.get('/api/aemet/request', async (req, res) => {
   try {
@@ -4995,13 +3856,7 @@ app.get('/api/aemet/request', async (req, res) => {
     }
 
     if (!config.aemetApiKey || config.aemetApiKey.length < 5) {
-      const simData = getSimulatedAemetProduct(cleanEndpoint);
-      return res.json({
-        success: true,
-        isSimulated: true,
-        endpoint: cleanEndpoint,
-        data: simData
-      });
+      return res.status(503).json({ success: false, endpoint: cleanEndpoint, error: 'Falta la clave de AEMET OpenData.' });
     }
 
     let apiPath = cleanEndpoint;
@@ -5025,15 +3880,8 @@ app.get('/api/aemet/request', async (req, res) => {
 
     const wrapper = await wrapperResponse.json() as any;
     if (wrapper.estado !== 200 || !wrapper.datos) {
-      addLog('SYS', 'AEMET', 'PROXY', 'WARNING', `AEMET retornó estado ${wrapper.estado}: ${wrapper.descripcion || ''}. Usando fallback simulado.`, false, 'Fallback de contingencia');
-      const simData = getSimulatedAemetProduct(cleanEndpoint);
-      return res.json({
-        success: true,
-        isSimulated: true,
-        endpoint: cleanEndpoint,
-        data: simData,
-        warning: `AEMET API error code: ${wrapper.estado} - ${wrapper.descripcion}`
-      });
+      addLog('SYS', 'AEMET', 'PROXY', 'WARNING', `AEMET retornó estado ${wrapper.estado}: ${wrapper.descripcion || ''}.`, false, 'Sin datos');
+      return res.status(502).json({ success: false, endpoint: cleanEndpoint, error: `AEMET: ${wrapper.estado} - ${wrapper.descripcion}` });
     }
 
     const dataResponse = await fetch(wrapper.datos);
@@ -5061,16 +3909,8 @@ app.get('/api/aemet/request', async (req, res) => {
     });
 
   } catch (err: any) {
-    addLog('SYS', 'AEMET', 'PROXY', 'ERROR', `Fallo de conexión: ${err.message}. Usando simulación.`, false, 'Error');
-    const cleanEndpoint = (req.query.endpoint as string || '').trim();
-    const simData = getSimulatedAemetProduct(cleanEndpoint);
-    return res.json({
-      success: true,
-      isSimulated: true,
-      endpoint: cleanEndpoint,
-      data: simData,
-      error: err.message
-    });
+    addLog('SYS', 'AEMET', 'PROXY', 'ERROR', `Fallo de conexión: ${err.message}.`, false, 'Error');
+    return res.status(502).json({ success: false, error: err.message });
   }
 });
 
@@ -5374,428 +4214,9 @@ app.post('/api/aemet/warnings/clear', (req, res) => {
   });
 });
 
-// JOINT RESEARCH CENTRE (JRC) PUBLIC DATASETS API PROXY & SIMULATION CONTINGENCY
-const JRC_SIMULATED_DATASETS = [
-  {
-    pid: 'jrc-effis-wildfire-perimeter-spain',
-    title: 'EFFIS - Fire Perimeters and Burnt Area Telemetry (Spain and Southern Europe)',
-    description: 'Daily vector and raster mapping of active forest fire perimeters and aggregate burnt area estimations. Compiled in near-real-time via MODIS, VIIRS sensors and Copernicus Sentinels. Critical for civil protection units (REMER) mapping of forest fire hazard severity.',
-    publisher: 'Joint Research Centre (JRC), European Commission',
-    issued: '2019-01-15',
-    modified: '2026-06-18',
-    themes: ['Wildfires', 'Natural Disasters', 'Emergency Management'],
-    spatial: 'Kingdom of Spain, Portuguese Republic, Italian Republic, Southern Europe',
-    temporal: '2019 - Present (Daily updates)',
-    status: 'Operational',
-    citation: 'European Commission, Joint Research Centre (JRC). EFFIS Fire History Database v3.2.',
-    metrics: {
-      totalBurntHectares: 142300,
-      activeFireFociCount: 14,
-      severityIndex: 'HIGH'
-    },
-    resources: [
-      { name: 'Active Perimeters (GeoJSON)', format: 'JSON', size: '2.4 MB' },
-      { name: 'Fire Hazard Risk Matrix (CSV)', format: 'CSV', size: '412 KB' },
-      { name: 'Copernicus Sentinel Raster Layers (NetCDF)', format: 'NetCDF', size: '45.1 MB' }
-    ]
-  },
-  {
-    pid: 'jrc-eurdep-nuclear-rem-average-gamma',
-    title: 'EURDEP (REM) - Radioactivity Environmental Monitoring Live Network Data',
-    description: 'Aggregated ambient gamma dose rate averages collected hourly across 39 European countries via the EURDEP (European Union Radioactivity Data Exchange Platform). Integrates seamlessly with Spain\'s CSN RAR/RAN networks to track radioactive incidents of civilian concern.',
-    publisher: 'Joint Research Centre (JRC), European Commission',
-    issued: '2012-04-01',
-    modified: '2026-06-19',
-    themes: ['Radioactivity', 'Nuclear Safety', 'Radiation Monitoring'],
-    spatial: 'EU-27, Western Europe, Mediterranean Basin',
-    temporal: '2012 - Continuous (Hourly aggregates)',
-    status: 'Operational',
-    citation: 'European Commission, Joint Research Centre (JRC). Radioactivity Environmental Monitoring (REM) Portal.',
-    metrics: {
-      averageDoseRateUsVh: 0.115,
-      reportingStationsCount: 4320,
-      safetyStatus: 'NOMINAL_STABLE'
-    },
-    resources: [
-      { name: 'Hourly Dose Rate Sync (JSON)', format: 'JSON', size: '128 KB' },
-      { name: 'EURDEP Weekly Reports (XML)', format: 'XML', size: '890 KB' }
-    ]
-  },
-  {
-    pid: 'jrc-edgar-air-emissions-iberian-trends',
-    title: 'EDGAR v8.2 - Atmospheric Emissions and Pollutant Concentrations for Iberia',
-    description: 'Emissions Database for Global Atmospheric Research (EDGAR). Tracks grid-specific industrial, transport, and agricultural greenhouse gases (CO2, CH4, N2O) and atmospheric pollutants (PM10, PM2.5, NOx, SO2) overlaid across the Iberian geographic zone.',
-    publisher: 'Joint Research Centre (JRC), European Commission',
-    issued: '2015-08-10',
-    modified: '2026-05-30',
-    themes: ['Atmosphere and Emissions', 'Climate Change', 'Air Quality'],
-    spatial: 'Iberian Peninsula (Spain & Portugal), Balearic and Canary Islands',
-    temporal: '1970 - 2025 (Annual historical series)',
-    status: 'Dataset Published',
-    citation: 'European Commission, Joint Research Centre (JRC). Emissions Database for Global Atmospheric Research, v8.2.',
-    metrics: {
-      carbonTonsCo2e: 247800000,
-      pm25AverageUgm3: 11.2,
-      trendPercentage: -3.4
-    },
-    resources: [
-      { name: 'Grid Emissions Map 0.1 deg (NetCDF)', format: 'NetCDF', size: '120.4 MB' },
-      { name: 'Pollutant Aggregated Time-series (CSV)', format: 'CSV', size: '1.2 MB' }
-    ]
-  },
-  {
-    pid: 'jrc-efas-extreme-precipitation-flash-floods',
-    title: 'EFAS - Hydrospheric Flash Flood Forecasts and River Discharge Alerts',
-    description: 'Simulation-driven warning triggers and runoff thresholds generated by the European Flood Awareness System (EFAS). Used to predict extreme river overflow risks along the Ebro, Duero, Tajo, and Guadalquivir hydrological networks.',
-    publisher: 'Joint Research Centre (JRC), European Commission',
-    issued: '2018-02-20',
-    modified: '2026-06-19',
-    themes: ['Hydro-meteorology', 'Natural Disasters', 'Emergency Management'],
-    spatial: 'Ebro, Duero, Tajo, Guadalquivir, Guadiana and Segura Basins',
-    temporal: '2018 - Present (Twice daily)',
-    status: 'Operational',
-    citation: 'European Commission, Joint Research Centre (JRC). EFAS River Hazard Indicators v5.',
-    metrics: {
-      alertLevelsActive: 2,
-      dischargeMaxM3s: 1840,
-      probabilityPct: 88
-    },
-    resources: [
-      { name: 'Runoff Forecasting Thresholds (JSON)', format: 'JSON', size: '340 KB' },
-      { name: 'Flash Flood Hazard Maps (SHP)', format: 'ZIP', size: '18.7 MB' }
-    ]
-  },
-  {
-    pid: 'jrc-gdacs-global-emergency-alert-events',
-    title: 'GDACS - Global Disaster Alert Coordination & Multi-hazard Catalogue',
-    description: 'Joint JRC / United Nations disaster tracking system providing direct alerts on major tropical storms, tsunamis, earthquakes, and volcanic eruptive columns. Contains coordinates, population affected, and warning color levels (Green, Orange, Red).',
-    publisher: 'Joint Research Centre / United Nations',
-    issued: '2005-09-01',
-    modified: '2026-06-19',
-    themes: ['Natural Disasters', 'Emergency Management', 'Seismic Hazards'],
-    spatial: 'Global / European Regional Warning Zones',
-    temporal: '2005 - Active Continuous',
-    status: 'Operational',
-    citation: 'United Nations / European Commission JRC. GDACS Warning Dissemination Portal.',
-    metrics: {
-      activeRedAlerts: 1,
-      activeOrangeAlerts: 3,
-      earthquakeIndicatorCount: 5
-    },
-    resources: [
-      { name: 'Global Disaster Alert RSS feed (XML)', format: 'XML', size: '45 KB' },
-      { name: 'Tsunami & Flood Threat Matrix (GeoJSON)', format: 'JSON', size: '180 KB' }
-    ]
-  },
-  {
-    pid: 'jrc-esdac-heavy-metal-soil-contamination',
-    title: 'ESDAC - Heavy Metal and Soil Degradation Maps for Agricultural Zones',
-    description: 'European Soil Data Centre (ESDAC) surveys documenting concentrations of Copper, Mercury, Lead, and Cadmium in topsoil samples across agricultural and industrial monitoring sites in Spain, France and Portugal.',
-    publisher: 'Joint Research Centre (JRC), European Commission',
-    issued: '2020-03-12',
-    modified: '2025-10-18',
-    themes: ['Geology and Suelos', 'Soil Quality', 'Environmental Pollution'],
-    spatial: 'Spain, Southern France, Northern Portugal, Canary Islands',
-    temporal: '2009 - 2024 (Periodic surveys)',
-    status: 'Dataset Published',
-    citation: 'European Commission, Joint Research Centre (JRC). ESDAC Topsoil Physical-Chemical Indicators.',
-    metrics: {
-      cadmiumAvgMgKg: 0.18,
-      leadAvgMgKg: 15.4,
-      degradationRiskIndex: 'MEDIUM'
-    },
-    resources: [
-      { name: 'Heavy Metal Surface Distribution (GeoTIFF)', format: 'GRIB2', size: '32.1 MB' },
-      { name: 'LUCAS Soil Sampling Microdata (CSV)', format: 'CSV', size: '4.8 MB' }
-    ]
-  }
-];
 
-app.get('/api/jrc/datasets', async (req, res) => {
-  const query = (req.query.q as string || '').toLowerCase().trim();
-  const theme = (req.query.theme as string || '').toLowerCase().trim();
 
-  addLog('SYS', 'JRC', 'PROXY', 'REQUEST', `Petición JRC datasets (Filtro Q: "${query}", Theme: "${theme}")`, true, 'Iniciada');
 
-  try {
-    // 1. Intentar contactar con el API oficial de la Comisión Europea (data.jrc.ec.europa.eu)
-    // Usamos un timeout corto (3.5 segundos) para no mermar la interactividad si hay restricciones en la red
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-    const targetUrl = `https://data.jrc.ec.europa.eu/api/v2/datasets?q=${encodeURIComponent(query)}&limit=15`;
-    const jrcResponse = await fetch(targetUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (jrcResponse.ok) {
-      const resultJson = await jrcResponse.json() as any;
-      addLog('SYS', 'JRC', 'PROXY', 'SUCCESS', `Carga oficial completada. ${resultJson.total || 0} datasets encontrados.`, true, 'Conexión Real');
-
-      return res.json({
-        success: true,
-        isSimulated: false,
-        total: resultJson.total || 0,
-        datasets: resultJson.results || resultJson.datasets || [],
-        simulatedFallback: JRC_SIMULATED_DATASETS // También pasamos los recomendados para enriquecer
-      });
-    } else {
-      throw new Error(`Servidor respondio con codigo: ${jrcResponse.status}`);
-    }
-
-  } catch (err: any) {
-    // 2. Fallback de Contingencia (Simulado pero altamente realista e interactivo con el resto de la consola)
-    addLog('SYS', 'JRC', 'PROXY', 'WARNING', `Fallo de conexión JRC API: ${err.message || 'Timeout'}. Sirviendo dataset científico local.`, false, 'Contingencia Activa');
-
-    // Filtrar los datos locales simulados
-    let filtered = [...JRC_SIMULATED_DATASETS];
-
-    if (query) {
-      filtered = filtered.filter(d => 
-        d.title.toLowerCase().includes(query) || 
-        d.description.toLowerCase().includes(query) ||
-        d.publisher.toLowerCase().includes(query) ||
-        d.themes.some(t => t.toLowerCase().includes(query))
-      );
-    }
-
-    if (theme && theme !== 'all') {
-      filtered = filtered.filter(d => 
-        d.themes.some(t => t.toLowerCase() === theme)
-      );
-    }
-
-    return res.json({
-      success: true,
-      isSimulated: true,
-      total: filtered.length,
-      datasets: filtered,
-      error: err.message
-    });
-  }
-});
-
-// REMAP (Radioactivity Environmental Monitoring) Stations Database (https://remap.jrc.ec.europa.eu/Advanced.aspx)
-const REMAP_STATIONS = [
-  // España (ES) - Red REA CSN
-  { id: 'ES0001', name: 'Madrid, CSN Sede Central', country: 'ES', lat: 40.4168, lon: -3.7038, alt: 657, baseVal: 120, network: 'CSN REA', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'ES0002', name: 'Almaraz, Cáceres (CN Area)', country: 'ES', lat: 39.8081, lon: -5.6984, alt: 255, baseVal: 155, network: 'CSN REA', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'ES0003', name: 'Ascó, Tarragona (CN Area)', country: 'ES', lat: 41.2185, lon: 0.5672, alt: 75, baseVal: 124, network: 'CSN REA', sensorHeight: 1.0, frequency: '10 Min' },
-  { id: 'ES0004', name: 'Cofrentes, Valencia (CN Area)', country: 'ES', lat: 39.2275, lon: -1.0618, alt: 370, baseVal: 110, network: 'CSN REA', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'ES0005', name: 'Vandellós, Tarragona (CN Area)', country: 'ES', lat: 40.9575, lon: 0.8804, alt: 30, baseVal: 105, network: 'CSN REA', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'ES0006', name: 'Trillo, Guadalajara (CN Area)', country: 'ES', lat: 40.8031, lon: -2.6289, alt: 730, baseVal: 135, network: 'CSN REA', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'ES0007', name: 'Santiago de Compostela, GA', country: 'ES', lat: 42.8782, lon: -8.5448, alt: 260, baseVal: 165, network: 'CSN REA', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'ES0008', name: 'Barcelona, Diagonal UPC', country: 'ES', lat: 41.3851, lon: 2.1734, alt: 94, baseVal: 92, network: 'CSN REA', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'ES0009', name: 'Bilbao, San Mamés Campus', country: 'ES', lat: 43.2630, lon: -2.9350, alt: 102, baseVal: 115, network: 'CSN REA', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'ES0010', name: 'Sevilla, Av. Reina Mercedes', country: 'ES', lat: 37.3891, lon: -5.9845, alt: 10, baseVal: 88, network: 'CSN REA', sensorHeight: 1.0, frequency: 'Hourly' },
-  { id: 'ES0011', name: 'Cabo de Gata, Almería', country: 'ES', lat: 36.7201, lon: -2.2039, alt: 45, baseVal: 82, network: 'CSN REA', sensorHeight: 1.5, frequency: 'Hourly' },
-  { id: 'ES0012', name: 'Zaragoza, Campus San Francisco', country: 'ES', lat: 41.6488, lon: -0.8891, alt: 240, baseVal: 112, network: 'CSN REA', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'ES0013', name: 'Granada, Fuentenueva', country: 'ES', lat: 37.1700, lon: -3.5900, alt: 738, baseVal: 138, network: 'CSN REA', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'ES0014', name: 'Murcia, Campus Espinardo', country: 'ES', lat: 37.9922, lon: -1.1307, alt: 125, baseVal: 96, network: 'CSN REA', sensorHeight: 1.5, frequency: 'Hourly' },
-
-  // Portugal (PT) - APA RADNET
-  { id: 'PT0101', name: 'Lisboa, APA Sede', country: 'PT', lat: 38.7223, lon: -9.1393, alt: 110, baseVal: 95, network: 'APA RADNET', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'PT0102', name: 'Porto, Univ Ciências', country: 'PT', lat: 41.1500, lon: -8.6100, alt: 85, baseVal: 148, network: 'APA RADNET', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'PT0103', name: 'Coimbra, Observatório', country: 'PT', lat: 40.2115, lon: -8.4292, alt: 140, baseVal: 135, network: 'APA RADNET', sensorHeight: 1.0, frequency: 'Hourly' },
-  { id: 'PT0104', name: 'Évora, Geofísica', country: 'PT', lat: 38.5667, lon: -7.9000, alt: 300, baseVal: 158, network: 'APA RADNET', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'PT0105', name: 'Faro, Aeroporto CP', country: 'PT', lat: 37.0175, lon: -7.9697, alt: 8, baseVal: 80, network: 'APA RADNET', sensorHeight: 1.2, frequency: 'Hourly' },
-
-  // Francia (FR) - IRSN Téléray
-  { id: 'FR0201', name: 'Paris, Parc Montsouris', country: 'FR', lat: 48.8566, lon: 2.3522, alt: 35, baseVal: 85, network: 'IRSN Téléray', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'FR0202', name: 'Civaux, Vienne (CN Area)', country: 'FR', lat: 46.4552, lon: 0.6550, alt: 80, baseVal: 115, network: 'IRSN Téléray', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'FR0203', name: 'Gravelines, Nord (CN Area)', country: 'FR', lat: 51.0150, lon: 2.1350, alt: 5, baseVal: 90, network: 'IRSN Téléray', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'FR0204', name: 'Bugey, Ain (CN Area)', country: 'FR', lat: 45.7950, lon: 5.2750, alt: 195, baseVal: 108, network: 'IRSN Téléray', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'FR0205', name: 'Marseille, Observatoire', country: 'FR', lat: 43.2965, lon: 5.3698, alt: 50, baseVal: 96, network: 'IRSN Téléray', sensorHeight: 1.0, frequency: 'Hourly' },
-  { id: 'FR0206', name: 'Strasbourg, Campus CNRS', country: 'FR', lat: 48.5734, lon: 7.7521, alt: 140, baseVal: 110, network: 'IRSN Téléray', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'FR0207', name: 'Bordeaux, Univ Talence', country: 'FR', lat: 44.8378, lon: -0.5792, alt: 15, baseVal: 84, network: 'IRSN Téléray', sensorHeight: 1.2, frequency: 'Hourly' },
-
-  // Alemania (DE) - BfS ODL-Info
-  { id: 'DE0301', name: 'Berlin, Tempelhof Airport', country: 'DE', lat: 52.5200, lon: 13.4050, alt: 40, baseVal: 78, network: 'BfS ODL-Info', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'DE0302', name: 'München, Neuherberg BfS', country: 'DE', lat: 48.1351, lon: 11.5820, alt: 520, baseVal: 130, network: 'BfS ODL-Info', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'DE0303', name: 'Gundremmingen (CN Area)', country: 'DE', lat: 48.5150, lon: 10.4020, alt: 430, baseVal: 112, network: 'BfS ODL-Info', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'DE0304', name: 'Hamburg, St. Pauli Hafen', country: 'DE', lat: 53.5511, lon: 9.9937, alt: 15, baseVal: 72, network: 'BfS ODL-Info', sensorHeight: 1.5, frequency: 'Hourly' },
-  { id: 'DE0305', name: 'Feldberg, Schwarzwald Peak', country: 'DE', lat: 47.8800, lon: 8.0000, alt: 1493, baseVal: 175, network: 'BfS ODL-Info', sensorHeight: 1.0, frequency: '10 Min' },
-
-  // Italia (IT) - ISPRA RESORAD
-  { id: 'IT0401', name: 'Roma, ISPRA Sede Central', country: 'IT', lat: 41.9028, lon: 12.4964, alt: 50, baseVal: 105, network: 'ISPRA RESORAD', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'IT0402', name: 'Milano, Brera Astronomical', country: 'IT', lat: 45.4642, lon: 9.1900, alt: 120, baseVal: 95, network: 'ISPRA RESORAD', sensorHeight: 1.2, frequency: 'Hourly' },
-  { id: 'IT0403', name: 'Caorso, Piacenza (NPP Area)', country: 'IT', lat: 45.0483, lon: 9.8711, alt: 46, baseVal: 98, network: 'ISPRA RESORAD', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'IT0404', name: 'Napoli, Capodimonte Observ.', country: 'IT', lat: 40.8518, lon: 14.2681, alt: 150, baseVal: 145, network: 'ISPRA RESORAD', sensorHeight: 1.0, frequency: 'Hourly' },
-
-  // Suiza (CH) - ENSI MADUK
-  { id: 'CH0501', name: 'Bern, ENSI HQ Office', country: 'CH', lat: 46.9480, lon: 7.4474, alt: 540, baseVal: 125, network: 'ENSI MADUK', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'CH0502', name: 'Leibstadt NPP, Aargau', country: 'CH', lat: 47.6017, lon: 8.1833, alt: 330, baseVal: 138, network: 'ENSI MADUK', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'CH0503', name: 'Gösgen NPP, Solothurn', country: 'CH', lat: 47.3639, lon: 7.9692, alt: 380, baseVal: 132, network: 'ENSI MADUK', sensorHeight: 1.5, frequency: '10 Min' },
-
-  // Bélgica (BE) - FANC TELERAD
-  { id: 'BE0601', name: 'Brussels, FANC Office Sede', country: 'BE', lat: 50.8503, lon: 4.3517, alt: 60, baseVal: 82, network: 'FANC TELERAD', sensorHeight: 1.2, frequency: '10 Min' },
-  { id: 'BE0602', name: 'Doel NPP, Antwerpen', country: 'BE', lat: 51.3253, lon: 4.2589, alt: 4, baseVal: 86, network: 'FANC TELERAD', sensorHeight: 1.5, frequency: '10 Min' },
-  { id: 'BE0603', name: 'Tihange NPP, Huy (Liège)', country: 'BE', lat: 50.5332, lon: 5.2711, alt: 70, baseVal: 98, network: 'FANC TELERAD', sensorHeight: 1.5, frequency: '10 Min' }
-];
-
-// In-memory pointer to simulate severe radiation levels at a station for testing alarm scenarios
-let simulatedRemapAlertStationId: string | null = null;
-let simulatedRemapAlertSirenAcitve = false;
-
-app.get('/api/jrc/remap-stations', (req, res) => {
-  const query = (req.query.q as string || '').toLowerCase().trim();
-  const country = (req.query.country as string || '').toUpperCase().trim();
-  const statusFilter = (req.query.status as string || '').toLowerCase().trim();
-
-  const currentLat = gpsdState.lat;
-  const currentLon = gpsdState.lon;
-
-  const results = REMAP_STATIONS.map(st => {
-    const dist = calculateDistance(currentLat, currentLon, st.lat, st.lon);
-    
-    // Ambient gamma rays naturally oscillate inside a 2.5% drift range
-    const variationSin = Math.sin(Date.now() / 120000 + parseInt(st.id.replace(/[A-Z]/g, '')) * 3);
-    const variationNoise = (Math.random() - 0.5) * 4;
-    const isAlertStation = (st.id === simulatedRemapAlertStationId);
-    
-    // Normal ambient gamma is about 60 - 180 nSv/h.
-    // If under test alert scenario, inject high radiation (e.g. 3500 nSv/h, which is 3.5 uSv/h, a major alarm!)
-    const valueNsvhVal = isAlertStation 
-      ? Math.round(3500 + Math.sin(Date.now() / 5000) * 150)
-      : Math.round(st.baseVal + (st.baseVal * 0.03 * variationSin) + variationNoise);
-    
-    const valueNsvh = Math.max(10, valueNsvhVal);
-    const valueUsvh = parseFloat((valueNsvh / 1000).toFixed(4));
-    
-    let status: 'NORMAL' | 'WARN' | 'ALARM' = 'NORMAL';
-    if (valueNsvh >= 200) status = 'WARN';
-    if (valueNsvh >= 500) status = 'ALARM';
-
-    return {
-      ...st,
-      valueNsvh,
-      valueUsvh,
-      unit: 'nSv/h',
-      status,
-      distanciaKm: dist,
-      lastUpdated: new Date(Date.now() - (Math.random() * 8) * 60000).toISOString()
-    };
-  });
-
-  // Filter stations
-  let filtered = [...results];
-
-  if (query) {
-    filtered = filtered.filter(st => 
-      st.id.toLowerCase().includes(query) || 
-      st.name.toLowerCase().includes(query) ||
-      st.network.toLowerCase().includes(query)
-    );
-  }
-
-  if (country && country !== 'ALL') {
-    filtered = filtered.filter(st => st.country === country);
-  }
-
-  if (statusFilter && statusFilter !== 'all') {
-    if (statusFilter === 'alert') {
-      filtered = filtered.filter(st => st.status !== 'NORMAL');
-    } else {
-      filtered = filtered.filter(st => st.status.toLowerCase() === statusFilter);
-    }
-  }
-
-  // Sort by Spain-first, then by distance
-  filtered.sort((a, b) => {
-    if (a.country === 'ES' && b.country !== 'ES') return -1;
-    if (a.country !== 'ES' && b.country === 'ES') return 1;
-    return a.distanciaKm - b.distanciaKm;
-  });
-
-  addLog('SYS', 'REMAP', 'PROXY', 'INTEGRATION', `Filtro Estaciones REMAP: query="${query}", country="${country}", total=${filtered.length}`, true, 'OK');
-
-  return res.json({
-    success: true,
-    isSimulated: true,
-    total: filtered.length,
-    stations: filtered,
-    sirenActive: simulatedRemapAlertSirenAcitve,
-    alertStationId: simulatedRemapAlertStationId
-  });
-});
-
-// GET historical 24h radioactivity values for a REMAP station
-app.get('/api/jrc/remap-stations/:id/history', (req, res) => {
-  const { id } = req.params;
-  const station = REMAP_STATIONS.find(st => st.id === id);
-
-  if (!station) {
-    return res.status(404).json({ success: false, error: `Estación REMAP ${id} no encontrada` });
-  }
-
-  const isAlertStation = (station.id === simulatedRemapAlertStationId);
-  const now = Date.now();
-  const history = [];
-
-  // Generate 24 hourly data points representing the last 24 hours of ambient radioactivity
-  for (let i = 23; i >= 0; i--) {
-    const timeRef = now - i * 3600000;
-    const dateObj = new Date(timeRef);
-    const label = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    
-    // Variations
-    const sinCycle = Math.sin(dateObj.getUTCHours() / 4);
-    const drift = (Math.sin(i / 2) * 5) + (Math.random() * 4 - 2);
-    
-    let doseRateVal = Math.round(station.baseVal + (station.baseVal * 0.02 * sinCycle) + drift);
-    
-    // If it is the selected alert station, make the last 6 entries spike into critical alert
-    if (isAlertStation && i <= 5) {
-      doseRateVal = Math.round(3500 - (i * 200) + (Math.random() * 100 - 50));
-    }
-
-    const valueNsvh = Math.max(10, doseRateVal);
-    const valueUsvh = parseFloat((valueNsvh / 1000).toFixed(4));
-
-    history.push({
-      index: 23 - i,
-      timestamp: dateObj.toISOString(),
-      label,
-      valueNsvh,
-      valueUsvh,
-    });
-  }
-
-  return res.json({
-    success: true,
-    stationId: station.id,
-    name: station.name,
-    history
-  });
-});
-
-// Trigger REMAP Emergency Alert Scenario for tests
-app.post('/api/jrc/remap-stations/trigger-alert', (req, res) => {
-  const { stationId, active } = req.body;
-
-  if (active) {
-    const station = REMAP_STATIONS.find(st => st.id === stationId);
-    if (!station) {
-      return res.status(400).json({ success: false, error: 'Código de estación REMAP no válido' });
-    }
-    simulatedRemapAlertStationId = station.id;
-    simulatedRemapAlertSirenAcitve = true;
-    
-    // Inject emergency bulletin into APRS logs
-    const pack = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;REMAP-RAD*192200z${latToAprs(station.lat)}/${lonToAprs(station.lon)}[CRITICAL REMAP EURDEP ERROR: ALERT RADIATION ${station.name} SENS_VAL:3.50uSv/h`;
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, pack, true, `Urgente: Alerta por radiación gamma emitida para ${station.name}`, { simulated: true });
-    addLog('SYS', 'SIREN_ALERT', 'LOCAL', 'REMAP', `ALERTA DE SEGURIDAD NUCLEAR: Nivel de radiación por encima de umbral de riesgo en estación ${station.name}. Sirenas de evacuación civil simuladas activadas.`, false, 'CRÍTICO');
-  } else {
-    addLog('SYS', 'SIREN_ALERT', 'LOCAL', 'REMAP', 'Fin de escenario de prueba de seguridad nuclear. Niveles radiológicos regresando a la normalidad.', true, 'INFO');
-    simulatedRemapAlertStationId = null;
-    simulatedRemapAlertSirenAcitve = false;
-  }
-
-  return res.json({
-    success: true,
-    alertStationId: simulatedRemapAlertStationId,
-    sirenActive: simulatedRemapAlertSirenAcitve
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Avisos: lista única de todo lo que pasa por la cadena, con su decisión
@@ -5874,6 +4295,37 @@ app.get('/api/aire/medidores', async (_req, res) => {
     medidores: (vigente?.medidores ?? []).slice(0, 12).map((m) => ({
       id: m.id, lat: m.lat, lon: m.lon, distanciaKm: Math.round(m.distanciaKm * 10) / 10,
       pm25: m.pm25 ?? null, pm10: m.pm10 ?? null, clase: clasePm25(m.pm25), sensor: m.sensor, cuando: m.cuando,
+    })),
+  });
+});
+
+// Boyas y estaciones costeras más cercanas a la posición actual, en tiempo real (NDBC)
+let boyasLeidas: { boyas: Omit<Boya, 'distanciaKm'>[]; cuando: number } | null = null;
+let consultaBoyas = 0;
+
+app.get('/api/boyas', async (_req, res) => {
+  const ahora = Date.now();
+  // El fichero se renueva cada pocos minutos: se relee cada 10
+  if (ahora - consultaBoyas > 10 * 60_000) {
+    consultaBoyas = ahora;
+    const r = await descargarBoyas((origen, texto, ok) => { if (!ok) addLog('SYS', origen, 'LOCAL', 'API', texto, false, 'Sin datos'); });
+    if (r) boyasLeidas = { boyas: r, cuando: ahora };
+    anotarFuente('boyas', 'Boyas · NOAA NDBC', r !== null, r ? `${r.length} estaciones con observación` : 'Sin respuesta');
+  }
+  res.set('Cache-Control', 'no-store');
+  // Una lectura de hace más de 40 minutos ya no es «ahora»: no se sirve
+  const vigente = boyasLeidas && ahora - boyasLeidas.cuando < 40 * 60_000 ? boyasLeidas : null;
+  // La distancia se calcula en cada consulta, con la posición actual de la estación
+  const cerca = vigente ? boyasCercanas(vigente.boyas, { lat: gpsdState.lat, lon: gpsdState.lon }, { ahora }) : [];
+  res.json({
+    disponible: !!vigente,
+    consultado: vigente?.cuando ?? null,
+    estacion: { lat: gpsdState.lat, lon: gpsdState.lon },
+    boyas: cerca.map((b) => ({
+      id: b.id, lat: b.lat, lon: b.lon, distanciaKm: b.distanciaKm, cuando: b.cuando,
+      vientoDirGrados: b.vientoDirGrados ?? null, vientoNudos: b.vientoNudos ?? null, rachaNudos: b.rachaNudos ?? null,
+      olaM: b.olaM ?? null, periodoS: b.periodoS ?? null, olaDirGrados: b.olaDirGrados ?? null,
+      presionHpa: b.presionHpa ?? null, aireC: b.aireC ?? null, aguaC: b.aguaC ?? null,
     })),
   });
 });
@@ -7115,25 +5567,8 @@ app.get('/api/system/journal', (req, res) => {
   const journalArgs = ['-u', 'sat-aprs.service', '-n', '50', '--no-pager'];
   execFile(isAuthorizedRequest(req) ? 'journalctl' : 'false', isAuthorizedRequest(req) ? journalArgs : [], { timeout: 5000 }, (error, stdout, stderr) => {
     if (error) {
-      // Fallback pseudo-logs for local sandbox / environment without journalctl
-      const mockLog = `jun 22 20:16:30 aprs systemd[1]: Started sat-aprs.service - Console S.A.T-APRS Dashboard Service.
-jun 22 20:16:31 aprs node[856]: [APRS S.A.T. SERVER] Running on port 3000 in production mode
-jun 22 20:16:31 aprs node[856]: [Inmarsat UDP Server] Listening on 0.0.0.0:9999
-jun 22 20:16:32 aprs node[856]: [NtpSyncStatus] NTP stratum 1 synchronization verified
-jun 22 20:34:34 aprs node[856]: Error refreshing Earthquakes: connect ECONNREFUSED 127.0.0.1:80
-jun 22 20:34:34 aprs node[856]:     [errors]: [
-jun 22 20:34:34 aprs node[856]:       [Error: Connection Refused], [Error: Timeout],
-jun 22 20:34:34 aprs node[856]:       [Error], [Error],
-jun 22 20:34:34 aprs node[856]:       [Error], [Error],
-jun 22 20:34:34 aprs node[856]:       [Error], [Error],
-jun 22 20:34:34 aprs node[856]:       [Error], [Error],
-jun 22 20:34:34 aprs node[856]:       [Error], [Error]
-jun 22 20:34:34 aprs node[856]:     ]
-jun 22 20:34:34 aprs node[856]:   }
-jun 22 20:34:34 aprs node[856]: }
-jun 22 20:35:01 aprs systemd[1]: sat-aprs.service: Sentinel heartbeat checked (OK)
-(ENTORNO DE DESARROLLO SIMULADO - Comando local falló: ${error.message})`;
-      return res.json({ success: true, simulated: true, logs: mockLog });
+      // Sin journalctl o sin permiso: se dice, no se enseña un diario de ejemplo
+      return res.json({ success: false, simulated: false, logs: `Diario del sistema no disponible: ${isAuthorizedRequest(req) ? error.message : 'requiere sesión de administrador'}` });
     }
     return res.json({ success: true, simulated: false, logs: stdout || stderr || 'Sin registros en el journal' });
   });

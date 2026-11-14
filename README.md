@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.20.0)
+## 📌 Qué hace hoy (v1.21.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -46,6 +46,8 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | HF y propagación en directo: bandas para enlace local (NVIS) y de larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; pendiente de validar en la estación |
 | Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
 | Medidores de calidad del aire más cercanos, en tiempo real (Sensor.Community) | Operativo desde la v1.20.0; pendiente de validar en la estación |
+| Meteorología de la consola: OpenWeatherMap, AEMET u Open-Meteo (sin clave), nunca simulada | Operativo desde la v1.21.0; pendiente de validar en la estación |
+| Boyas y estaciones costeras más cercanas, en tiempo real (NOAA NDBC) | Operativo desde la v1.21.0; pendiente de validar en la estación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 | Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
@@ -125,7 +127,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 
 S.A.T.-APRS es una estación real: lo que emite llega a la red APRS-IS mundial y al aire con su indicativo. Por eso el sistema aplica estas reglas y **no hay forma de saltárselas desde la interfaz**:
 
-1. **Nada simulado sale al aire.** Los datos de demostración (sismos de prueba, radiación modelada, incendios de ejemplo, meteorología simulada, avisos de ejemplo) se muestran en pantalla pero nunca se transmiten. En el registro aparecen marcados como `[NO EMITIDO: datos simulados o de prueba]`.
+1. **Nada simulado sale al aire.** Lo que se inyecta desde «Pruebas y simulación» (un sismo o un aviso de prueba) se muestra en pantalla pero nunca se transmite. En el registro aparecen marcados como `[NO EMITIDO: datos simulados o de prueba]`.
 2. **Sin indicativo válido no se transmite.** Con el indicativo de plantilla (`N0CALL`) o uno mal formado, el sistema no emite ni por Internet ni por radio.
 3. **APRS-IS exige su passcode.** Si el passcode no corresponde al indicativo, no se inyecta nada en APRS-IS (la RF no lo necesita).
 4. **La consola web no transmite por defecto.** Hay que activarla expresamente con `SAT_APRS_TX=on` en `.env`. Con la emisión activada, solo un administrador verificado puede modificar la estación o provocar transmisiones.

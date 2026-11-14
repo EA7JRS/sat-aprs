@@ -2,6 +2,19 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.21.0] - 2026-11-14
+### El servidor deja de simular: meteorología, boyas, tráfico y equipo
+- **Meteorología siempre real** (`server/fuentes/meteoAbierta.ts`): sin clave de OpenWeatherMap ni de AEMET, o si fallan, se usa Open-Meteo (sin clave): estado actual y previsión de cinco días en la posición de la estación, indicado en pantalla como dato de modelo. Desaparecen el simulador de clima, la previsión inventada y las «microfluctuaciones» que alteraban cada 1,5 s los valores leídos. Si ninguna fuente responde, se conserva una hora la última lectura real y después se muestra «sin datos».
+- **Boyas más cercanas, en tiempo real** (`server/fuentes/boyas.ts`, `GET /api/boyas`): la pantalla Boyas enseña la última observación de las boyas y estaciones costeras del NDBC de la NOAA más próximas a la posición actual (ola, viento, presión, aire, agua), sin rellenar lo que una boya no mide. Sustituye a las boyas y mareógrafos de ejemplo, cuyos valores variaban al azar.
+- **Estado del equipo real**: uso de CPU, memoria, carga, tiempo encendido y versión del sistema se leen del sistema operativo (antes, la CPU y la memoria eran valores al azar). El estado de los servicios se consulta cada 15 s en lugar de cada 1,5 s.
+- **Tráfico de la DGT**: si la DGT no responde no hay incidencias (antes, seis de ejemplo); las incidencias sin coordenadas se descartan en vez de situarse en la estación.
+- **Tsunamis**: solo los seísmos que el USGS marca con aviso de tsunami; se retiran la altura de ola estimada al azar y la deducción por magnitud.
+- **Clima espacial**: fuera la variación al azar de las alertas y de la previsión a 3 días.
+- **Gráfica de tráfico APRS**: empieza a cero y solo cuenta tramas reales (antes, una hora de actividad inventada).
+- **Fuera**: radar y rayos simulados, catálogo y estaciones de radiación del JRC de ejemplo (y su pantalla, que ya no se usaba), observaciones NDBC inventadas, diario del sistema de ejemplo y las respuestas simuladas del acceso a AEMET OpenData. Rutas retiradas: `/api/erddap/*`, `/api/ndbc/latest-obs`, `/api/jrc/*`, `/api/navareas/simulate` y `/api/space-weather/propagacion`.
+
+---
+
 ## [v1.20.0] - 2026-11-14
 ### Sin datos de demostración ni valores supuestos
 - **Retirados los datos de demostración** de NAVTEX, Inmarsat, AIS y radiación: los avisos náuticos y mensajes Inmarsat de ejemplo, los barcos inventados alrededor de la estación y los valores de radiación modelados, con sus balizas y sus pantallas (Marítimos y Radiación). La entrada real de Inmarsat-C por UDP se conserva. Los paneles que mostraban barcos reciben ahora los **reales recibidos por AIS**.

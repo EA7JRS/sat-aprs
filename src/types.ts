@@ -482,7 +482,10 @@ export interface ServerTelemetryData {
   /** Fuentes de clima espacial que no han respondido; con alguna, `propagation` no se envía. */
   propagacionFaltan?: string[];
   /** La meteorología mostrada sale del simulador (no hay fuente real configurada o no responde). */
-  meteoSimulada?: boolean;
+  /** true = ninguna fuente meteorológica real responde */
+  meteoSinDatos?: boolean;
+  /** De dónde sale la meteorología mostrada */
+  meteoFuente?: string;
   trafficTrends: TrafficDataPoint[];
   iqair?: IQAirStatus;
   rarRan?: RarRanStatus;

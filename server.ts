@@ -32,6 +32,9 @@ import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './serv
 import { distanciaAZonaKm } from './server/core/zona';
 import { EstacionesOidas } from './server/estaciones';
 import { ClienteAprsIs } from './server/aprsIs';
+import { Barcos, LectorAis, claseBarco } from './server/ais';
+import { Aeronaves, emergenciaSquawk } from './server/adsb';
+import { EnlaceTcp } from './server/enlaceTcp';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
 import { gcDistanceKm } from './server/formulas/geo';
@@ -286,6 +289,15 @@ let config: TelemetryConfig = {
   aprsBeaconEnabled: false,
   // Sesión permanente con APRS-IS para recibir las estaciones cercanas (capa APRS del mapa)
   aprsIsRxEnabled: true,
+  // Entradas para el mapa. AIS: sentencias NMEA por UDP (AIS-catcher «-u», rtl_ais) y,
+  // opcionalmente, un servidor TCP. ADS-B: puerto SBS (30003) de readsb o dump1090.
+  aisEnabled: true,
+  aisUdpPort: 10110,
+  aisTcpHost: '',
+  aisTcpPort: 0,
+  adsbEnabled: true,
+  adsbHost: '127.0.0.1',
+  adsbPort: 30003,
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -615,6 +627,65 @@ function ajustarAprsIs() {
   if (firma === firmaAprsIs) return;
   firmaAprsIs = firma;
   clienteAprsIs.iniciar(opciones);
+}
+
+// ---------------------------------------------------------------------------
+// Entradas AIS y ADS-B (solo para el mapa: no se retransmiten)
+// ---------------------------------------------------------------------------
+const barcos = new Barcos();
+const lectorAis = new LectorAis();
+const aeronaves = new Aeronaves();
+const recibirAis = (linea: string) => {
+  const m = lectorAis.linea(linea);
+  if (m) barcos.anotar(m);
+};
+const enlaceAisTcp = new EnlaceTcp(recibirAis);
+const enlaceAdsb = new EnlaceTcp((linea) => aeronaves.linea(linea));
+let udpAis: dgram.Socket | null = null;
+let udpAisPuerto = 0;
+let udpAisError = '';
+
+const puertoValido = (p: unknown): number => {
+  const n = Math.round(Number(p));
+  return Number.isFinite(n) && n >= 1 && n <= 65535 ? n : 0;
+};
+
+/** Abre, cambia o cierra las entradas AIS y ADS-B según la configuración. */
+function ajustarEntradasMapa() {
+  const encendido = config.systemPower !== false;
+
+  // AIS por UDP: aquí se escucha; quien emite es AIS-catcher o el receptor
+  const puertoUdp = encendido && config.aisEnabled !== false ? puertoValido(config.aisUdpPort) : 0;
+  if (puertoUdp !== udpAisPuerto) {
+    if (udpAis) { try { udpAis.close(); } catch { /* ya cerrado */ } udpAis = null; }
+    udpAisPuerto = puertoUdp;
+    udpAisError = '';
+    if (puertoUdp) {
+      const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      udpAis = s;
+      s.on('message', (datos) => { for (const l of datos.toString('latin1').split(/\r?\n/)) if (l) recibirAis(l); });
+      s.on('error', (e) => {
+        if (udpAis !== s) return;
+        udpAisError = e.message;
+        addLog('SYS', 'AIS', 'LOCAL', 'UDP', `No se puede escuchar AIS en el puerto UDP ${puertoUdp}: ${e.message}.`, false, 'Entrada AIS');
+        try { s.close(); } catch { /* ya cerrado */ }
+        udpAis = null;
+      });
+      s.bind(puertoUdp);
+    }
+  }
+
+  // AIS por TCP (opcional): un servidor de sentencias NMEA
+  const hostAis = String(config.aisTcpHost || '').trim();
+  const puertoAis = puertoValido(config.aisTcpPort);
+  if (encendido && config.aisEnabled !== false && hostAis && puertoAis) enlaceAisTcp.iniciar(hostAis, puertoAis);
+  else enlaceAisTcp.parar();
+
+  // ADS-B: puerto SBS de readsb / dump1090
+  const hostAdsb = String(config.adsbHost || '').trim();
+  const puertoAdsb = puertoValido(config.adsbPort);
+  if (encendido && config.adsbEnabled !== false && hostAdsb && puertoAdsb) enlaceAdsb.iniciar(hostAdsb, puertoAdsb);
+  else enlaceAdsb.parar();
 }
 
 let kissClient: net.Socket | null = null;
@@ -4505,6 +4576,7 @@ function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string
 startSchedules();
 programarAvisosMeteo();
 ajustarAprsIs();
+ajustarEntradasMapa();
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
 setInterval(ajustarAprsIs, 5 * 60_000);
 
@@ -7639,6 +7711,17 @@ app.get('/api/enlaces', (_req, res) => {
     aprsIs: { estado: clienteAprsIs.estado, detalle: clienteAprsIs.detalle, desde: clienteAprsIs.desde, recibidas: clienteAprsIs.recibidas },
     kiss: { conectado: !!kissClient && !kissClient.destroyed && !kissClient.connecting && kissClient.writable, puerto: config.kissTcpPort },
     estacionesOidas: estacionesOidas.total,
+    ais: {
+      activo: config.aisEnabled !== false,
+      udpPuerto: udpAisPuerto, udpEscuchando: !!udpAis, udpError: udpAisError,
+      tcp: { estado: enlaceAisTcp.estado, destino: enlaceAisTcp.destinoActual, detalle: enlaceAisTcp.detalle },
+      sentencias: lectorAis.sentencias, barcos: barcos.total,
+    },
+    adsb: {
+      activo: config.adsbEnabled !== false,
+      estado: enlaceAdsb.estado, destino: enlaceAdsb.destinoActual, detalle: enlaceAdsb.detalle,
+      mensajes: aeronaves.mensajes, aeronaves: aeronaves.total,
+    },
   });
 });
 
@@ -7678,6 +7761,14 @@ app.get('/api/mapa', (_req, res) => {
     aprs: estacionesOidas.lista(ahora).slice(0, 1500).map((x) => ({
       nombre: x.nombre, origen: x.origen, clase: x.clase, lat: Number(x.lat.toFixed(5)), lon: Number(x.lon.toFixed(5)),
       simbolo: x.simbolo, comentario: x.comentario, via: x.via, ultima: x.ultima,
+    })),
+    ais: barcos.lista(ahora).slice(0, 2000).map((b) => ({
+      mmsi: b.mmsi, nombre: b.nombre || '', clase: claseBarco(b.tipoBarco), indicativo: b.indicativo || '', destino: b.destino || '',
+      lat: Number(b.lat!.toFixed(5)), lon: Number(b.lon!.toFixed(5)), sog: b.sog ?? null, rumbo: b.cog ?? b.proa ?? null, ultima: b.ultima,
+    })),
+    adsb: aeronaves.lista(ahora).slice(0, 1500).map((a) => ({
+      hex: a.hex, vuelo: a.vuelo || '', lat: Number(a.lat!.toFixed(5)), lon: Number(a.lon!.toFixed(5)), altitud: a.altitud ?? null,
+      velocidad: a.velocidad ?? null, rumbo: a.rumbo ?? null, squawk: a.squawk || '', emergencia: emergenciaSquawk(a.squawk), enTierra: a.enTierra === true, ultima: a.ultima,
     })),
     trafico,
     traficoReal: dgtDatosReales,
@@ -7817,6 +7908,13 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
     if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
     if (updated.aprsIsRxEnabled !== undefined) config.aprsIsRxEnabled = !!updated.aprsIsRxEnabled;
+    if (updated.aisEnabled !== undefined) config.aisEnabled = !!updated.aisEnabled;
+    if (updated.aisUdpPort !== undefined) config.aisUdpPort = puertoValido(updated.aisUdpPort);
+    if (updated.aisTcpHost !== undefined) config.aisTcpHost = String(updated.aisTcpHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
+    if (updated.aisTcpPort !== undefined) config.aisTcpPort = puertoValido(updated.aisTcpPort);
+    if (updated.adsbEnabled !== undefined) config.adsbEnabled = !!updated.adsbEnabled;
+    if (updated.adsbHost !== undefined) config.adsbHost = String(updated.adsbHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
+    if (updated.adsbPort !== undefined) config.adsbPort = puertoValido(updated.adsbPort);
     if (updated.meteoRadioKm !== undefined && Number.isFinite(Number(updated.meteoRadioKm))) config.meteoRadioKm = Math.min(500, Math.max(0, Number(updated.meteoRadioKm)));
     if (updated.meteoGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.meteoGravedadMinima))) config.meteoGravedadMinima = updated.meteoGravedadMinima;
     if (updated.meteoAntelacionH !== undefined && Number.isFinite(Number(updated.meteoAntelacionH))) config.meteoAntelacionH = Math.min(72, Math.max(1, Number(updated.meteoAntelacionH)));
@@ -7975,6 +8073,7 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
     // Quick async update and scheduler restart
     startSchedules();
     ajustarAprsIs();
+    ajustarEntradasMapa();
     refreshWeather();
     refreshIQAir();
     refreshEarthquakes();

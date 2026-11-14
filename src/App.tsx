@@ -1521,7 +1521,7 @@ export default function App() {
         ) : activeTab === 'avisos' ? (
           <Avisos config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'mapa' ? (
-          <Mapa onIr={setActiveTab} />
+          <Mapa onIr={setActiveTab} config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'perfil' ? (
           <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} initialTab="profile" />
         ) : activeTab === 'monitor' ? (

@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.12.0] - 2026-11-14
+### AIS y ADS-B reales en el mapa
+- **AIS** (`server/ais.ts`): lectura de sentencias NMEA `!AIVDM` (posiciones de clase A, clase B y largo alcance, y datos estáticos para el nombre, el indicativo, el tipo y el destino), con reensamblado de fragmentos y suma de comprobación. Entrada por **UDP** (puerto 10110; AIS-catcher con `-u`, rtl_ais, un receptor) y, opcionalmente, por **TCP** contra un servidor de sentencias.
+- **ADS-B** (`server/adsb.ts`): lectura del formato SBS-1 (BaseStation) que readsb y dump1090 sirven en el puerto 30003; resalta los códigos de emergencia 7500, 7600 y 7700.
+- **Capas AIS y ADS-B** en el mapa: una flecha orientada al rumbo, con nombre o vuelo, velocidad, altitud y antigüedad. Los barcos se conservan 20 minutos y las aeronaves 90 segundos.
+- **Entradas AIS y ADS-B** configurables desde la propia página del mapa (puertos y servidores), con su estado: si se escucha, si hay conexión y cuánto se ha recibido.
+- Solo son para verlos en el mapa: no se retransmiten por APRS. Los paneles antiguos de AIS siguen usando datos de demostración.
+
+---
+
 ## [v1.11.0] - 2026-11-14
 ### Recepción APRS y capa APRS del mapa
 - **Lectura de posiciones APRS** (`server/aprsPosicion.ts`): posición sin comprimir y comprimida, objetos, ítems, Mic-E y tramas de terceros.

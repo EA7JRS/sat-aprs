@@ -207,6 +207,15 @@ export interface TelemetryConfig {
   meteoRepetirMin?: number;
   /** Mantener una sesión con APRS-IS para recibir las estaciones cercanas. */
   aprsIsRxEnabled?: boolean;
+  /** Entrada AIS para el mapa: sentencias NMEA por UDP y, opcionalmente, un servidor TCP. */
+  aisEnabled?: boolean;
+  aisUdpPort?: number;
+  aisTcpHost?: string;
+  aisTcpPort?: number;
+  /** Entrada ADS-B para el mapa: puerto SBS (30003) de readsb o dump1090. */
+  adsbEnabled?: boolean;
+  adsbHost?: string;
+  adsbPort?: number;
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

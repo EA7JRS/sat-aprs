@@ -29,9 +29,10 @@ const ESTILOS: Record<TipoEmergencia, Estilo> = {
   meteo:          { simbolo: ['\\', 'W'], prefijo: 'WX', grupo: 'METEO', rotulo: 'METEO' },
   huracan:        { simbolo: ['\\', '@'], prefijo: 'HU', grupo: 'HURAC', rotulo: 'HURACAN' },
   tornado:        { simbolo: ['\\', 't'], prefijo: 'TO', grupo: 'TORNA', rotulo: 'TORNADO' },
-  incendio:       { simbolo: ['/', ':'],  prefijo: 'FG', grupo: 'FUEGO', rotulo: 'INCENDIO' },
+  incendio:       { simbolo: ['/', ':'],  prefijo: 'FG', grupo: 'FUEGO', rotulo: 'FUEGO' },
   radiacion:      { simbolo: ['\\', '!'], prefijo: 'RD', grupo: 'RADIA', rotulo: 'RADIACION' },
   clima_espacial: { simbolo: ['\\', '!'], prefijo: 'SW', grupo: 'ESPAC', rotulo: 'CLIMA ESPACIAL' },
+  calidad_aire:   { simbolo: ['\\', '!'], prefijo: 'AQ', grupo: 'AIRE', rotulo: 'AIRE' },
   maritimo:       { simbolo: ['\\', '!'], prefijo: 'MA', grupo: 'MARIT', rotulo: 'AVISO MARITIMO' },
   otro:           { simbolo: ['\\', '!'], prefijo: 'EM', grupo: 'EMERG', rotulo: 'AVISO' },
 };

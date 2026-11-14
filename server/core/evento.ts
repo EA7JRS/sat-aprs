@@ -17,6 +17,7 @@ export type TipoEmergencia =
   | 'incendio'
   | 'radiacion'
   | 'clima_espacial'
+  | 'calidad_aire'
   | 'maritimo'
   | 'otro';
 

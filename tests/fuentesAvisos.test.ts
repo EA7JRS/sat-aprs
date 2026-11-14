@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { escalaAEvento, gravedadEscala, leerEscalasNoaa } from '../server/fuentes/climaEspacial';
+import { agruparFocos, gravedadFocos, grupoAEvento, leerCsvFirms } from '../server/fuentes/incendios';
+import { aireAEvento, claseAire, leerCalidadAire } from '../server/fuentes/calidadAire';
+import { evaluar, Politica } from '../server/core/reglas';
+import { boletinAprs, objetoAprs } from '../server/core/aprsAvisos';
+
+const T = Date.parse('2026-11-14T12:40:00Z');
+const SEVILLA = { lat: 37.3891, lon: -5.9845 };
+const politica = (p: Partial<Politica>): Politica => ({ radioKm: 50, gravedadMinima: 'amarillo', vigenciaMs: 12 * 3600_000, repetirCadaMs: 3600_000, boletin: true, ...p });
+
+test('clima espacial: escalas actuales de la NOAA', () => {
+  const json = {
+    '0': { DateStamp: '2026-11-14', TimeStamp: '12:30:00', R: { Scale: '3', Text: 'strong' }, S: { Scale: '0', Text: 'none' }, G: { Scale: '1', Text: 'minor' } },
+    '1': { DateStamp: '2026-11-15', TimeStamp: '00:00:00', R: { Scale: null }, S: { Scale: null }, G: { Scale: '2' } },
+    '-1': { DateStamp: '2026-11-13', TimeStamp: '12:30:00', R: { Scale: '5' }, S: { Scale: '5' }, G: { Scale: '5' } },
+  };
+  const n = leerEscalasNoaa(json, T);
+  assert.deepEqual(n.map((x) => `${x.escala}${x.nivel}`), ['R3', 'S0', 'G1']);
+  assert.equal(n[0].cuando, Date.parse('2026-11-14T12:30:00Z'));
+  assert.deepEqual(leerEscalasNoaa({}), []);
+  assert.deepEqual(leerEscalasNoaa({ '0': { R: { Scale: '9' }, S: {}, G: { Scale: 'x' } } }), []);
+  assert.deepEqual([1, 2, 3, 4, 5].map(gravedadEscala), ['info', 'amarillo', 'naranja', 'rojo', 'rojo']);
+});
+
+test('clima espacial: boletín sin posición, vigente mientras dure la escala', () => {
+  const [r3, s0, g1] = leerEscalasNoaa({ '0': { DateStamp: '2026-11-14', TimeStamp: '12:30:00', R: { Scale: '3' }, S: { Scale: '0' }, G: { Scale: '1' } } }, T);
+  assert.equal(escalaAEvento(s0, T), null);
+  const e = escalaAEvento(r3, T)!;
+  assert.equal(e.id, 'NOAA-R3-20261114');
+  assert.equal(objetoAprs('EA7ZZZ-13', e), null);
+  assert.equal(boletinAprs('EA7ZZZ-13', e), 'EA7ZZZ-13>APZSAT::BLN2ESPAC:EMERGENCIA CLIMA ESPACIAL R3 Apagon de radio HF fuerte (NOAA)');
+  const p = politica({ radioKm: null });
+  assert.equal(evaluar(e, p, SEVILLA, T).emitir, true);
+  assert.equal(evaluar(e, p, SEVILLA, T + 60 * 60_000).emitir, false);                 // la escala bajó: caduca
+  assert.equal(evaluar(escalaAEvento(g1, T)!, p, SEVILLA, T).emitir, false);            // G1 es informativo
+  assert.equal(escalaAEvento(g1, T)!.titulo, 'Tormenta geomagnetica menor');
+});
+
+const CSV_VIIRS = `latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight
+37.5010,-5.9000,340.1,0.4,0.4,2026-11-14,1218,N,n,2.0NRT,295.1,40.5,D
+37.5040,-5.9030,350.2,0.4,0.4,2026-11-14,1218,N,h,2.0NRT,296.0,80.0,D
+37.5060,-5.8990,330.0,0.4,0.4,2026-11-14,230,N,n,2.0NRT,290.0,12.5,N
+37.5050,-5.9010,320.0,0.4,0.4,2026-11-14,1218,N,l,2.0NRT,290.0,5.0,D
+38.9000,-3.0000,330.0,0.4,0.4,2026-11-14,1218,N,n,2.0NRT,290.0,3.0,D
+`;
+const CSV_MODIS = `latitude,longitude,brightness,scan,track,acq_date,acq_time,satellite,confidence,version,bright_t31,frp,daynight
+37.5030,-5.9020,320.5,1.0,1.0,2026-11-14,1105,T,74,6.1NRT,290.1,30.0,D
+37.5030,-5.9020,320.5,1.0,1.0,2026-11-14,1105,T,20,6.1NRT,290.1,30.0,D
+`;
+
+test('focos FIRMS: lectura de VIIRS y MODIS, descartando baja confianza', () => {
+  const v = leerCsvFirms(CSV_VIIRS);
+  assert.equal(v.length, 4);                                            // se descarta el de confianza «l»
+  assert.equal(v[0].cuando, Date.parse('2026-11-14T12:18:00Z'));
+  assert.equal(v[2].cuando, Date.parse('2026-11-14T02:30:00Z'));        // hora «230» = 02:30
+  assert.equal(leerCsvFirms(CSV_MODIS).length, 1);                      // 74 % sí, 20 % no
+  assert.deepEqual(leerCsvFirms('<html>error</html>'), []);
+  assert.deepEqual(leerCsvFirms('a,b\n1,2\n'), []);
+});
+
+test('focos FIRMS: agrupación, importancia y aviso', () => {
+  const grupos = agruparFocos([...leerCsvFirms(CSV_VIIRS), ...leerCsvFirms(CSV_MODIS)]);
+  assert.equal(grupos.length, 2);
+  const g = grupos.find((x) => x.focos === 4)!;
+  assert.equal(Math.round(g.frp), 163);
+  assert.equal(g.cuando, Date.parse('2026-11-14T12:18:00Z'));
+  assert.equal(gravedadFocos(g), 'naranja');
+  assert.equal(gravedadFocos({ ...g, focos: 1, frp: 3 }), 'info');
+  assert.equal(gravedadFocos({ ...g, focos: 25 }), 'rojo');
+  const e = grupoAEvento(g);
+  assert.match(e.nombre!, /^FG[0-9A-Z]{7}$/);
+  assert.equal(e.detalle, '4 puntos 163MW');
+  assert.equal(grupoAEvento(g).id, e.id);                                // estable entre descargas
+  const d = evaluar(e, politica({ gravedadMinima: 'naranja' }), SEVILLA, T);
+  assert.equal(d.emitir, true);
+  assert.equal(Math.round(d.distanciaKm!), 15);
+  assert.match(boletinAprs('EA7ZZZ-13', e, d.distanciaKm), /:BLN2FUEGO:FUEGO 4 puntos 163MW Foco de calor por satelite a 15km \(FIRMS\)$/);
+  assert.match(objetoAprs('EA7ZZZ-13', e, T)!, /^EA7ZZZ-13>APZSAT:;FG[0-9A-Z]{7}\*141218z3730\.\d\dN\/00554\.\d\dW:4 puntos 163MW/);
+  // El foco aislado y débil no pasa el nivel mínimo; el lejano, el radio
+  const lejano = grupoAEvento(grupos.find((x) => x.focos === 1)!);
+  assert.equal(evaluar(lejano, politica({ gravedadMinima: 'info' }), SEVILLA, T).emitir, false);
+});
+
+test('calidad del aire: índice europeo y aviso solo si es mala', () => {
+  const a = leerCalidadAire({ current: { time: '2026-11-14T12:00', european_aqi: 86, pm10: 60.2, pm2_5: 41.7, nitrogen_dioxide: 30, ozone: 80 } })!;
+  assert.equal(a.cuando, Date.parse('2026-11-14T12:00:00Z'));
+  assert.deepEqual([a.indice, a.pm25], [86, 41.7]);
+  assert.equal(leerCalidadAire({ current: { time: 'x', european_aqi: null } }), null);
+  assert.equal(leerCalidadAire({}), null);
+  assert.deepEqual([10, 30, 50, 70, 90, 130].map((i) => claseAire(i).gravedad), [null, null, null, 'amarillo', 'naranja', 'rojo']);
+  assert.equal(aireAEvento({ ...a, indice: 35 }, T), null);
+  const e = aireAEvento(a, T)!;
+  assert.equal(e.id, 'CAMS-naranja-20261114');
+  assert.equal(objetoAprs('EA7ZZZ-13', e), null);
+  assert.equal(boletinAprs('EA7ZZZ-13', e), 'EA7ZZZ-13>APZSAT::BLN2AIRE :AIRE Indice 86 PM2.5 42ug Calidad del aire muy mala (CAMS)');
+  assert.equal(evaluar(e, politica({ radioKm: null, gravedadMinima: 'naranja' }), SEVILLA, T).emitir, true);
+});

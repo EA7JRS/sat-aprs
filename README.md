@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.14.0)
+## 📌 Qué hace hoy (v1.15.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -43,7 +43,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Parte meteorológico por APRS con datos de WeeWX, wxnow.txt, OWM o AEMET | Operativo desde la v1.14.0 |
 | Posición por gpsd y estado real de ntpsec | Operativo |
 | Fórmulas físicas, náuticas, astronómicas, meteorológicas y de radio (`server/formulas/`) | Operativo |
-| Clima espacial (NOAA), incendios y calidad del aire | En la consola; pendientes de pasar a la cadena de avisos |
+| Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
 | NAVTEX, Inmarsat y los paneles antiguos de AIS | **Demostración**: datos simulados, nunca se emiten |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 | Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
@@ -109,7 +109,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/aprs.ts` | Protocolo APRS / AX.25 / KISS y política de emisión |
 | `server/aprsIs.ts`, `server/aprsPosicion.ts`, `server/estaciones.ts` | Sesión con APRS-IS, lectura de posiciones recibidas y estaciones oídas |
 | `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
-| `server/fuentes/` | Fuentes oficiales (sismos del IGN y avisos de AEMET) |
+| `server/fuentes/` | Fuentes oficiales: sismos (IGN), avisos (AEMET), clima espacial (NOAA), focos de calor (FIRMS) y calidad del aire (CAMS) |
 | `server/estacion/` | Baliza de posición y parte meteorológico de la estación |
 | `server/formulas/` | Fórmulas comunes con el plotter APRS LoRa+ |
 | `server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts` | Entradas AIS y ADS-B para el mapa |

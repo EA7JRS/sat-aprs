@@ -123,7 +123,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Sismos (IGN, respaldo USGS) | Hecho: primera fuente sobre la cadena |
 | Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
 | Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
-| Clima espacial (NOAA), incendios (FIRMS), calidad del aire | En `server.ts`; pendientes de pasar a `server/fuentes/` |
+| Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |
 | Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía |
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |

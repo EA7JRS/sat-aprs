@@ -224,6 +224,16 @@ export interface TelemetryConfig {
   /** Base de datos de WeeWX y, opcionalmente, archivo wxnow.txt de la estación propia. */
   wxWeewxDb?: string;
   wxWxnowPath?: string;
+  /** Clima espacial (NOAA): nivel mínimo (1-5) de las escalas R, S y G que se anuncia. */
+  climaEspacialEnabled?: boolean;
+  climaEspacialNivelMin?: number;
+  /** Focos de calor por satélite (NASA FIRMS): radio y nivel mínimo. */
+  fuegoEnabled?: boolean;
+  fuegoRadioKm?: number;
+  fuegoGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  /** Calidad del aire en la estación (CAMS): nivel mínimo. */
+  aireEnabled?: boolean;
+  aireGravedadMinima?: 'amarillo' | 'naranja' | 'rojo';
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

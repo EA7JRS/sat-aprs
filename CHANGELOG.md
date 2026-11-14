@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.15.0] - 2026-11-14
+### Clima espacial, focos de calor y calidad del aire en la cadena de avisos
+- **Clima espacial** (`server/fuentes/climaEspacial.ts`): estado actual de las escalas R (apagones de radio en HF), S (radiación solar) y G (tormentas geomagnéticas) de la NOAA. Boletín `BLNnESPAC` a partir de la escala 2, repetido cada 3 horas mientras dure; si sube de nivel se anuncia de nuevo.
+- **Focos de calor por satélite** (`server/fuentes/incendios.ts`): anomalías térmicas de NASA FIRMS (VIIRS y MODIS) a menos de 50 km de la estación. Se descartan las de baja confianza y se agrupan las cercanas; objeto en el mapa y boletín `BLNnFUEGO` cuando el grupo tiene 5 puntos o 100 MW o más. El aviso dice siempre «foco de calor por satélite»: no es un incendio confirmado.
+- **Calidad del aire** (`server/fuentes/calidadAire.ts`): índice europeo calculado por Copernicus CAMS para la posición de la estación. Boletín `BLNnAIRE` solo cuando el aire es muy malo o peor.
+- Los tres aparecen en **Avisos**, con sus reglas editables, en el **mapa** (los focos) y en **Fuentes** de la portada.
+- La baliza automática de incendios anterior queda retirada: emitía un foco elegido de una lista que mezclaba focos reales con otros de demostración.
+
+---
+
 ## [v1.14.0] - 2026-11-14
 ### Parte meteorológico de la estación por APRS
 - **Parte meteorológico** (`server/estacion/meteo.ts`): trama APRS completa con posición y hora de la medida (viento, racha, temperatura, lluvia, humedad y presión). Lo que la fuente no da se envía como puntos, tal como pide el protocolo; no se rellena con valores supuestos.

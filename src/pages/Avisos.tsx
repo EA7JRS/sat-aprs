@@ -39,47 +39,79 @@ type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
 
 const campo = 'w-full min-h-[40px] bg-slate-950 border border-slate-700 rounded-lg px-2.5 text-slate-100 text-sm';
 
+interface CampoRegla {
+  clave: keyof TelemetryConfig;
+  rotulo: string;
+  /** «nivel» = amarillo/naranja/rojo; lo demás, número con su unidad. */
+  unidad: string;
+  porDefecto: number | string;
+}
+
+/** Reglas que el administrador puede cambiar, por tipo de aviso. */
+const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
+  meteo: { titulo: 'los avisos meteorológicos', campos: [
+    { clave: 'meteoRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 25 },
+    { clave: 'meteoGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'amarillo' },
+    { clave: 'meteoAntelacionH', rotulo: 'Antelación', unidad: 'h', porDefecto: 12 },
+    { clave: 'meteoRepetirMin', rotulo: 'Repetición', unidad: 'min', porDefecto: 60 },
+  ] },
+  sismo: { titulo: 'los sismos', campos: [
+    { clave: 'filterRadiusKm', rotulo: 'Radio', unidad: 'km', porDefecto: 200 },
+    { clave: 'minMagnitudBaliza', rotulo: 'Magnitud mínima', unidad: 'M', porDefecto: 4 },
+    { clave: 'ignSeismoInterval', rotulo: 'Repetición', unidad: 'min', porDefecto: 30 },
+  ] },
+  incendio: { titulo: 'los focos de calor', campos: [
+    { clave: 'fuegoRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 50 },
+    { clave: 'fuegoGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
+  clima_espacial: { titulo: 'el clima espacial', campos: [
+    { clave: 'climaEspacialNivelMin', rotulo: 'Escala mínima (R, S, G)', unidad: '1-5', porDefecto: 2 },
+  ] },
+  calidad_aire: { titulo: 'la calidad del aire', campos: [
+    { clave: 'aireGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
+};
+
+const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 /** Reglas de difusión del tipo de aviso, editables por el administrador. */
 function Reglas({ a, config, onGuardar, onGuardado }: { a: Aviso; config: TelemetryConfig; onGuardar: Guardar; onGuardado: () => void }) {
   const session = useAdminSession();
   const [editando, setEditando] = useState(false);
   const [v, setV] = useState<Record<string, string>>({});
   const [estado, setEstado] = useState<string | null>(null);
-  const esMeteo = a.tipo === 'meteo';
-  const editable = esMeteo || a.tipo === 'sismo';
+  const regla = REGLAS[a.tipo];
+  const actual = (c: CampoRegla) => String((config as any)[c.clave] ?? c.porDefecto);
 
   const abrir = () => {
-    setV(esMeteo
-      ? { radio: String(config.meteoRadioKm ?? 25), nivel: String(config.meteoGravedadMinima ?? 'amarillo'), antelacion: String(config.meteoAntelacionH ?? 12), repetir: String(config.meteoRepetirMin ?? 60) }
-      : { radio: String(config.filterRadiusKm ?? 200), magnitud: String(config.minMagnitudBaliza ?? 4), repetir: String(config.ignSeismoInterval ?? 30) });
+    if (!regla) return;
+    setV(Object.fromEntries(regla.campos.map((c) => [c.clave, actual(c)])));
     setEstado(null);
     setEditando(true);
   };
 
   const guardar = async () => {
-    const n = (x: string) => Number(String(x).replace(',', '.'));
-    const cambios: Partial<TelemetryConfig> = esMeteo
-      ? { meteoRadioKm: n(v.radio), meteoGravedadMinima: v.nivel as TelemetryConfig['meteoGravedadMinima'], meteoAntelacionH: n(v.antelacion), meteoRepetirMin: n(v.repetir) }
-      : { filterRadiusKm: n(v.radio), minMagnitudBaliza: n(v.magnitud), ignSeismoInterval: n(v.repetir) };
-    if (Object.values(cambios).some((x) => typeof x === 'number' && !Number.isFinite(x))) { setEstado('Hay un valor que no es un número.'); return; }
+    if (!regla) return;
+    const cambios: Record<string, number | string> = {};
+    for (const c of regla.campos) {
+      if (c.unidad === 'nivel') cambios[c.clave] = v[c.clave];
+      else {
+        const n = Number(String(v[c.clave]).replace(',', '.'));
+        if (!Number.isFinite(n)) { setEstado(`«${c.rotulo}» no es un número.`); return; }
+        cambios[c.clave] = n;
+      }
+    }
     setEstado('Guardando…');
-    const ok = await onGuardar(cambios);
+    const ok = await onGuardar(cambios as Partial<TelemetryConfig>);
     setEstado(ok ? null : 'No se pudo guardar.');
     if (ok) { setEditando(false); onGuardado(); }
   };
 
-  const entrada = (clave: string, rotulo: string, unidad: string) => (
-    <label className="flex flex-col gap-1 text-xs text-slate-400">
-      {rotulo} ({unidad})
-      <input type="number" inputMode="decimal" className={campo} value={v[clave] ?? ''} onChange={(e) => setV((x) => ({ ...x, [clave]: e.target.value }))} />
-    </label>
-  );
-
   return (
     <div className="border-t border-slate-800 pt-3.5 flex flex-col gap-2.5" id="reglas-aviso">
       <div className="flex items-baseline justify-between">
-        <div className="font-semibold text-slate-100">Reglas de {esMeteo ? 'los avisos meteorológicos' : a.tipo === 'sismo' ? 'los sismos' : 'este tipo de aviso'}</div>
-        {editable && !editando && (
+        <div className="font-semibold text-slate-100">Reglas de {regla?.titulo ?? 'este tipo de aviso'}</div>
+        {regla && !editando && (
           <button type="button" id="reglas-cambiar" onClick={abrir} disabled={!session.isAdmin} title={session.isAdmin ? '' : 'Solo el administrador'} className="text-sm font-semibold text-sky-400 disabled:opacity-40 cursor-pointer min-h-[32px]">
             Cambiar
           </button>
@@ -87,29 +119,34 @@ function Reglas({ a, config, onGuardar, onGuardado }: { a: Aviso; config: Teleme
       </div>
       {!editando ? (
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <Dato rotulo="Radio">{a.reglas.radioKm === null ? 'Sin límite' : `${a.reglas.radioKm} km${a.deZona ? ' del borde de la zona' : ''}`}</Dato>
-          {esMeteo
-            ? <Dato rotulo="Nivel mínimo">{a.reglas.gravedadMinima.charAt(0).toUpperCase() + a.reglas.gravedadMinima.slice(1)}</Dato>
-            : a.tipo === 'sismo' ? <Dato rotulo="Magnitud mínima">{config.minMagnitudBaliza ?? 4}</Dato> : <Dato rotulo="Nivel mínimo">{a.reglas.gravedadMinima}</Dato>}
-          {esMeteo && <Dato rotulo="Antelación">{a.reglas.antelacionH} h</Dato>}
-          <Dato rotulo="Repetición">Cada {a.reglas.repetirMin} min</Dato>
+          {regla
+            ? regla.campos.map((c) => (
+              <div key={c.clave}>
+                <Dato rotulo={c.rotulo}>
+                  {c.unidad === 'nivel' ? mayuscula(actual(c)) : c.unidad === 'km' ? `${actual(c)} km${a.deZona ? ' del borde de la zona' : ''}` : c.unidad === '1-5' ? `Nivel ${actual(c)}` : c.unidad === 'min' ? `Cada ${actual(c)} min` : `${actual(c)} ${c.unidad}`}
+                </Dato>
+              </div>
+            ))
+            : <Dato rotulo="Nivel mínimo">{mayuscula(a.reglas.gravedadMinima)}</Dato>}
+          {(!regla || !regla.campos.some((c) => c.unidad === 'min')) && <Dato rotulo="Repetición">Cada {a.reglas.repetirMin} min</Dato>}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
-            {entrada('radio', 'Radio', 'km')}
-            {esMeteo ? (
-              <label className="flex flex-col gap-1 text-xs text-slate-400">
-                Nivel mínimo
-                <select className={campo} value={v.nivel} onChange={(e) => setV((x) => ({ ...x, nivel: e.target.value }))}>
-                  <option value="amarillo">Amarillo</option>
-                  <option value="naranja">Naranja</option>
-                  <option value="rojo">Rojo</option>
-                </select>
+            {regla!.campos.map((c) => (
+              <label key={c.clave} className="flex flex-col gap-1 text-xs text-slate-400">
+                {c.rotulo}{c.unidad === 'nivel' ? '' : ` (${c.unidad})`}
+                {c.unidad === 'nivel' ? (
+                  <select className={campo} value={v[c.clave]} onChange={(e) => setV((x) => ({ ...x, [c.clave]: e.target.value }))}>
+                    <option value="amarillo">Amarillo</option>
+                    <option value="naranja">Naranja</option>
+                    <option value="rojo">Rojo</option>
+                  </select>
+                ) : (
+                  <input type="number" inputMode="decimal" className={campo} value={v[c.clave] ?? ''} onChange={(e) => setV((x) => ({ ...x, [c.clave]: e.target.value }))} />
+                )}
               </label>
-            ) : entrada('magnitud', 'Magnitud mínima', 'M')}
-            {esMeteo && entrada('antelacion', 'Antelación', 'h')}
-            {entrada('repetir', 'Repetición', 'min')}
+            ))}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <button type="button" id="reglas-guardar" onClick={guardar} className="min-h-[40px] px-4 rounded-lg bg-sky-400 text-slate-950 font-bold cursor-pointer">Guardar</button>
@@ -225,7 +262,7 @@ export default function Avisos({ config, onGuardar }: { config: TelemetryConfig;
 
       {error && <Tarjeta className="text-amber-300">No se pudo consultar la lista de avisos.</Tarjeta>}
       {!error && avisos.length === 0 && (
-        <Tarjeta className="text-slate-300">No hay avisos en vigor en las fuentes conectadas (sismos del IGN y avisos de AEMET).</Tarjeta>
+        <Tarjeta className="text-slate-300">No hay avisos en vigor en las fuentes conectadas: sismos (IGN), meteorología (AEMET), focos de calor (FIRMS), clima espacial (NOAA) y calidad del aire (CAMS).</Tarjeta>
       )}
 
       <div className="flex flex-wrap gap-5 items-start">

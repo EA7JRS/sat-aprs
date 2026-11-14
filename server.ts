@@ -30,6 +30,9 @@ import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
 import { distanciaAZonaKm } from './server/core/zona';
+import { descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
+import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
+import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { EstacionesOidas } from './server/estaciones';
 import { ClienteAprsIs } from './server/aprsIs';
 import { Barcos, LectorAis, claseBarco } from './server/ais';
@@ -290,6 +293,17 @@ let config: TelemetryConfig = {
   aprsBeaconEnabled: false,
   // Sesión permanente con APRS-IS para recibir las estaciones cercanas (capa APRS del mapa)
   aprsIsRxEnabled: true,
+  // Más fuentes sobre la cadena de avisos (server/fuentes/)
+  // Clima espacial (NOAA): se anuncia a partir de este nivel de las escalas R, S y G (1-5)
+  climaEspacialEnabled: true,
+  climaEspacialNivelMin: 2,
+  // Focos de calor por satélite (NASA FIRMS) cerca de la estación
+  fuegoEnabled: true,
+  fuegoRadioKm: 50,
+  fuegoGravedadMinima: 'naranja',
+  // Calidad del aire en la estación (CAMS): solo cuando es mala
+  aireEnabled: true,
+  aireGravedadMinima: 'naranja',
   // Parte meteorológico de la estación por APRS. Apagado por defecto: actívelo solo
   // si WeeWX, Direwolf o aprx no emiten ya el parte con este indicativo.
   wxBeaconEnabled: false,
@@ -4565,11 +4579,8 @@ function startSchedules() {
 
   // Activate automatic APRS Wildfire Beacon schedule (checks every 60s, transmits every 20-30 min while fire active)
   // startSchedules() se vuelve a llamar al guardar la configuración: un único temporizador
-  if (!timerWildfireBeacon) {
-    timerWildfireBeacon = setInterval(() => {
-      transmitWildfireBeacon(false);
-    }, 60000);
-  }
+  // La baliza automática de incendios anterior (un foco elegido de una lista que mezclaba
+  // focos de demostración) queda sustituida por los focos de FIRMS sobre la cadena de avisos.
 
   // Baliza de posición de la estación (perfil de la estación APRS)
   if (timerStationBeacon) clearInterval(timerStationBeacon);
@@ -4664,6 +4675,7 @@ function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string
 
 startSchedules();
 programarAvisosMeteo();
+programarOtrasFuentes();
 ajustarAprsIs();
 ajustarEntradasMapa();
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
@@ -7225,6 +7237,83 @@ function programarAvisosMeteo() {
   setTimeout(descargarAvisosMeteo, 5000);
 }
 
+// ---------------------------------------------------------------------------
+// Clima espacial, focos de calor y calidad del aire sobre la cadena de avisos
+// ---------------------------------------------------------------------------
+let eventosEspacio: Evento[] = [];
+let eventosFuego: Evento[] = [];
+let eventosAire: Evento[] = [];
+const registrarFuente = (origen: string, texto: string, ok: boolean) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Sin datos');
+const gravedadDe = (valor: unknown, porDefecto: Gravedad): Gravedad => (GRAVEDADES.includes(valor as Gravedad) ? (valor as Gravedad) : porDefecto);
+
+// Global, sin límite geográfico: a partir del nivel configurado y cada 3 horas mientras dure
+function politicaEspacio(): Politica {
+  const minimo = Math.min(5, Math.max(1, Math.round(Number(config.climaEspacialNivelMin ?? 2))));
+  return {
+    radioKm: null, gravedadMinima: 'info', vigenciaMs: 3600_000, repetirCadaMs: 180 * 60_000,
+    boletin: true, filtro: (e) => (e.datos?.nivel ?? 0) >= minimo,
+  };
+}
+
+// Focos de calor a menos de `fuegoRadioKm`; valen 12 horas desde la pasada del satélite
+function politicaFuego(): Politica {
+  return {
+    radioKm: Math.min(300, Math.max(5, Number(config.fuegoRadioKm ?? 50))), gravedadMinima: gravedadDe(config.fuegoGravedadMinima, 'naranja'),
+    vigenciaMs: 12 * 3600_000, repetirCadaMs: 60 * 60_000, boletin: config.autoGenerarBoletinEmergencia !== false,
+  };
+}
+
+// Aire malo en la propia estación: cada 2 horas mientras dure
+function politicaAire(): Politica {
+  return { radioKm: null, gravedadMinima: gravedadDe(config.aireGravedadMinima, 'naranja'), vigenciaMs: 2 * 3600_000, repetirCadaMs: 120 * 60_000, boletin: true };
+}
+
+async function descargarClimaEspacialAvisos() {
+  if (config.systemPower === false || config.climaEspacialEnabled === false) { eventosEspacio = []; return; }
+  const niveles = await descargarClimaEspacial(registrarFuente);
+  anotarFuente('espacio', 'Clima espacial · NOAA', niveles !== null, niveles ? niveles.map((n) => `${n.escala}${n.nivel}`).join(' ') : 'Sin respuesta');
+  if (niveles) eventosEspacio = niveles.map((n) => escalaAEvento(n)).filter((e): e is Evento => e !== null);
+  difundirAvisos(eventosEspacio, politicaEspacio());
+}
+
+async function descargarFuegoAvisos() {
+  if (config.systemPower === false || config.fuegoEnabled === false) { eventosFuego = []; return; }
+  // Se descarga algo más que el radio de aviso para que el mapa muestre el entorno
+  const radio = Math.max(politicaFuego().radioKm ?? 50, config.filterRadiusKm || 200);
+  const grupos = await descargarFocos({ lat: gpsdState.lat, lon: gpsdState.lon }, radio, registrarFuente);
+  anotarFuente('fuego', 'Focos de calor · FIRMS', grupos !== null, grupos ? `${grupos.length} grupos de focos` : 'Sin respuesta');
+  if (grupos) eventosFuego = grupos.map(grupoAEvento);
+  difundirAvisos(eventosFuego, politicaFuego());
+}
+
+async function descargarAireAvisos() {
+  if (config.systemPower === false || config.aireEnabled === false) { eventosAire = []; return; }
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const aire = await descargarCalidadAire(estacion, registrarFuente);
+  anotarFuente('aire', 'Calidad del aire · CAMS', aire !== null, aire ? `Índice europeo ${Math.round(aire.indice)}` : 'Sin respuesta');
+  if (aire) {
+    const evento = aireAEvento(aire);
+    eventosAire = evento ? [evento] : [];
+  }
+  difundirAvisos(eventosAire, politicaAire());
+}
+
+function programarOtrasFuentes() {
+  const seguro = (f: () => Promise<void>) => () => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
+  setInterval(seguro(descargarClimaEspacialAvisos), 15 * 60_000);
+  setInterval(seguro(descargarFuegoAvisos), 30 * 60_000);
+  setInterval(seguro(descargarAireAvisos), 30 * 60_000);
+  setTimeout(seguro(descargarClimaEspacialAvisos), 8000);
+  setTimeout(seguro(descargarFuegoAvisos), 12000);
+  setTimeout(seguro(descargarAireAvisos), 16000);
+  // Entre descargas: repeticiones y cambios de posición de una estación móvil
+  setInterval(() => {
+    difundirAvisos(eventosEspacio, politicaEspacio());
+    difundirAvisos(eventosFuego, politicaFuego());
+    difundirAvisos(eventosAire, politicaAire());
+  }, 60_000);
+}
+
 // REST API endpoints for GPSD subscription and warning injections
 app.post('/api/aemet/subscription/toggle', (req, res) => {
   const { enabled } = req.body;
@@ -7751,6 +7840,9 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
   return [
     { eventos: eventosSismos, politica: politicaSismos(), activo: config.ignSeismoEnabled !== false },
     { eventos: eventosMeteo, politica: politicaMeteo(), activo: !!config.aemetAlertsSubscriptionEnabled },
+    { eventos: eventosFuego, politica: politicaFuego(), activo: config.fuegoEnabled !== false },
+    { eventos: eventosEspacio, politica: politicaEspacio(), activo: config.climaEspacialEnabled !== false },
+    { eventos: eventosAire, politica: politicaAire(), activo: config.aireEnabled !== false },
   ];
 }
 
@@ -8025,6 +8117,13 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
     if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
     if (updated.aprsIsRxEnabled !== undefined) config.aprsIsRxEnabled = !!updated.aprsIsRxEnabled;
+    if (updated.climaEspacialEnabled !== undefined) config.climaEspacialEnabled = !!updated.climaEspacialEnabled;
+    if (updated.climaEspacialNivelMin !== undefined && Number.isFinite(Number(updated.climaEspacialNivelMin))) config.climaEspacialNivelMin = Math.min(5, Math.max(1, Math.round(Number(updated.climaEspacialNivelMin))));
+    if (updated.fuegoEnabled !== undefined) config.fuegoEnabled = !!updated.fuegoEnabled;
+    if (updated.fuegoRadioKm !== undefined && Number.isFinite(Number(updated.fuegoRadioKm))) config.fuegoRadioKm = Math.min(300, Math.max(5, Number(updated.fuegoRadioKm)));
+    if (updated.fuegoGravedadMinima !== undefined && GRAVEDADES.includes(updated.fuegoGravedadMinima as Gravedad)) config.fuegoGravedadMinima = updated.fuegoGravedadMinima;
+    if (updated.aireEnabled !== undefined) config.aireEnabled = !!updated.aireEnabled;
+    if (updated.aireGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.aireGravedadMinima))) config.aireGravedadMinima = updated.aireGravedadMinima;
     if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
     if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));
     if (updated.wxFuente !== undefined && ['auto', 'propia', 'internet'].includes(String(updated.wxFuente))) config.wxFuente = updated.wxFuente;

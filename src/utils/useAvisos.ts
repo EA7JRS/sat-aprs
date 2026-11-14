@@ -111,5 +111,5 @@ export function haceCuanto(ms: number, ahora = Date.now()): string {
 
 export const NOMBRE_TIPO: Record<string, string> = {
   sismo: 'Sismos', meteo: 'Meteo', tsunami: 'Tsunamis', incendio: 'Incendios', maritimo: 'Marítimos',
-  clima_espacial: 'Clima espacial', radiacion: 'Radiación', huracan: 'Huracanes', tornado: 'Tornados', otro: 'Otros',
+  clima_espacial: 'Clima espacial', calidad_aire: 'Calidad del aire', radiacion: 'Radiación', huracan: 'Huracanes', tornado: 'Tornados', otro: 'Otros',
 };

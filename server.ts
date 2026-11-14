@@ -37,6 +37,7 @@ import { AuthInfo, createAuthenticator } from './server/auth';
 import { Evento, Gravedad } from './server/core/evento';
 import { Politica, RegistroAvisos, evaluar } from './server/core/reglas';
 import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
+import { ServicioN2k } from './server/conectividad/nmea2000Servicio';
 import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
@@ -1650,6 +1651,19 @@ let observacionInternet: Observacion | null = null;
 let observacionPropia: Observacion | null = null;
 // true mientras no haya ninguna lectura real que mostrar
 let meteoSinDatos = true;
+
+// Emisión NMEA 2000 (SocketCAN): pone en el bus la posición (gpsd), la meteo y los avisos de emergencia de la estación.
+const obsN2k = (): Observacion | null => elegirObservacion('auto', observacionPropia, observacionInternet, Date.now());
+const servicioN2k = new ServicioN2k((config as unknown as Record<string, unknown>).nmea2000 as never, {
+  posicion: () => (gpsdState.mode >= 2 ? { lat: gpsdState.lat, lon: gpsdState.lon, sogMs: gpsdState.speedKmh / 3.6 } : null),
+  horaUnix: () => { const t = Date.parse(gpsdState.time); return Number.isFinite(t) ? t / 1000 : Date.now() / 1000; },
+  viento: () => { const o = obsN2k(); return o && o.vientoKmh != null && o.dirGrados != null ? { velMs: o.vientoKmh / 3.6, direccionRad: (o.dirGrados * Math.PI) / 180 } : null; },
+  presionPa: () => { const o = obsN2k(); return o?.presionHpa != null ? o.presionHpa * 100 : null; },
+  temperaturaK: () => { const o = obsN2k(); return o?.tempC != null ? o.tempC + 273.15 : null; },
+  guardar: () => { (config as unknown as Record<string, unknown>).nmea2000 = servicioN2k.cfg; try { fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8'); } catch { /* best-effort */ } },
+  autorizado: (req) => isAuthorizedRequest(req),
+});
+app.use(servicioN2k.router());
 // De dónde sale lo que se muestra: «OpenWeatherMap», «AEMET <estación>», «Open-Meteo (modelo)»
 let meteoFuente = '';
 let meteoLeida = 0;
@@ -1978,6 +1992,7 @@ function difundirAvisos(eventos: Evento[], politica: Politica, forzar: boolean =
     if (politica.boletin) {
       addLog('TX', config.callsign, 'APRS-IS', destino, boletinAprs(config.callsign, evento, decision.distanciaKm), true, `Boletín de emergencia (${evento.fuente}): ${resumen}${aKm}.`, { urgente });
     }
+    servicioN2k.emitirAviso(`${(evento.titulo || resumen).slice(0, 90)}${aKm}`);   // también al bus NMEA 2000 (129802)
     registroAvisos.anotar(evento.id, ahora);
     difundidos++;
   }

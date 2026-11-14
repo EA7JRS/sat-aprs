@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.25.0)
+## 📌 Qué hace hoy (v1.26.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -52,7 +52,8 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor); un spot sintoniza y gira | Operativo desde la v1.23.0; pendiente de validar en la estación |
 | Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna, con la estación fija o en movimiento y objetivos en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
 | Satélites: descarga de TLE, próximos pasos, transmisores con Doppler y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
-| Grupo de estaciones (ARTS), consola de comandos y salida NMEA 2000 (Conectividad) | En preparación |
+| Conectividad · salida NMEA 2000 (SocketCAN): posición (gpsd), hora, meteorología y avisos de emergencia al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
+| Grupo de estaciones (ARTS) y consola de comandos | En preparación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 | Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
@@ -92,6 +93,13 @@ Consola táctica unificada para la gestión de emergencias:
 - **Incendios Forestales**: Monitoreo de perímetros, velocidad de avance, recursos aéreos y terrestres desplegados.
 - **Indicadores Sísmicos IGN**: Captura de actividad tectónica reciente mediante micro-sismógrafos.
 - **Radioavisos Marítimos (NAVAREA)**: Descifrado y reporte de avisos a navegantes, boletines hidrográficos (IHM Armada) y rescates activos de SASEMAR.
+
+### 6. Conectividad · Salida NMEA 2000
+
+- **El NUC como nodo NMEA 2000** por **SocketCAN** (adaptador CAN, 250 kbit/s): reclama una dirección en el bus y pone en él los datos **propios** de la estación para un plotter (Garmin GPSMAP y otros).
+- **Datos emitidos**: posición, rumbo y velocidad del **GPS (gpsd)** (PGN 129025/129026) y la hora (126992); **meteorología** de la estación/Internet — viento (130306), presión (130314) y temperatura (130316); **navegación** si hay objetivo o ruta (129283/129284); y los **avisos de emergencia** como **mensaje de seguridad AIS** (129802), además de por APRS.
+- Lo recibido por RF (**AIS, ADS-B, APRS**) **no** se retransmite: es solo para el mapa.
+- Se configura en **Sistema → Conectividad**. Requiere `can-utils` y la interfaz levantada: `sudo ip link set can0 up type can bitrate 250000`.
 
 ---
 

@@ -9,6 +9,7 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import RadioPrincipal from './pages/RadioPrincipal';
+import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
 import BoyasCercanas from './components/environment/BoyasCercanas';
@@ -1376,6 +1377,15 @@ export default function App() {
               systemLogs={data?.logs}
               onInjectRaw={handleInjectRaw}
             />
+          </motion.div>
+        ) : activeTab === 'conectividad' ? (
+          /* CONECTIVIDAD: emisión NMEA 2000 (SocketCAN) */
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col gap-4"
+          >
+            <Nmea2000Card isAdmin={adminSession.isAdmin} showToast={showToast} />
           </motion.div>
         ) : activeTab === 'sistema' ? (
           /* DIÁGNOSTICOS Y CONTROL DE SISTEMA RED SAT */

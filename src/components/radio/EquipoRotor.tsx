@@ -3,7 +3,7 @@
 //
 // Radio · Principal: equipo de radio por CAT (rigctld) y rotor (rotctld o la
 // caja APRS LoRa+ Rotor). Solo enseña lo que el equipo y el rotor dicen.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Tarjeta } from '../shell/Etiquetas';
 import { customFetch } from '../../utils/customFetch';
 import { TelemetryConfig } from '../../types';
@@ -182,16 +182,69 @@ export function PanelEquipo({ datos, admin, config, onGuardar, onCambio }: { dat
   );
 }
 
+// Esfera del rotor: graduada cada 5°, numerada cada 30°, con la aguja del
+// acimut (punta y contrapeso) y un índice en el borde para el objetivo.
 function Brujula({ az, objetivo }: { az: number | null; objetivo: number | null }) {
-  const punto = (a: number, r: number) => [90 + r * Math.sin((a * Math.PI) / 180), 90 - r * Math.cos((a * Math.PI) / 180)];
+  const C = 110;
+  const punto = (a: number, r: number): [number, number] => [C + r * Math.sin((a * Math.PI) / 180), C - r * Math.cos((a * Math.PI) / 180)];
+  const marcas = Array.from({ length: 72 }, (_, i) => i * 5);
+  const CARDINALES: Record<number, string> = { 0: 'N', 90: 'E', 180: 'S', 270: 'O' };
+  // Ángulo acumulado: al pasar por el norte la aguja sigue girando por el lado corto, sin dar la vuelta entera
+  const giro = useRef<number | null>(null);
+  if (az !== null) giro.current = giro.current === null ? az : giro.current + ((((az - giro.current) % 360) + 540) % 360) - 180;
   return (
-    <svg role="img" aria-label={az === null ? 'Rotor sin lectura' : `Rotor a ${Math.round(az)} grados${objetivo !== null ? `, objetivo ${Math.round(objetivo)} grados` : ''}`} width="170" height="170" viewBox="0 0 180 180" className="shrink-0">
-      <circle cx="90" cy="90" r="80" className="fill-slate-950 stroke-slate-700" strokeWidth="2" />
-      {Array.from({ length: 12 }, (_, i) => { const [x1, y1] = punto(i * 30, 73); const [x2, y2] = punto(i * 30, 80); return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-slate-500" strokeWidth={i % 3 === 0 ? 2 : 1} />; })}
-      {[['N', 90, 27], ['E', 157, 95], ['S', 90, 163], ['O', 23, 95]].map(([t, x, y]) => <text key={t as string} x={x as number} y={y as number} textAnchor="middle" fontSize="13" className="fill-slate-300">{t}</text>)}
-      {objetivo !== null && (() => { const [x, y] = punto(objetivo, 66); return <line x1="90" y1="90" x2={x} y2={y} stroke="#fbbf24" strokeWidth="2" strokeDasharray="4 4" />; })()}
-      {az !== null && (() => { const [x, y] = punto(az, 66); return <line x1="90" y1="90" x2={x} y2={y} stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />; })()}
-      <circle cx="90" cy="90" r="5" fill="#38bdf8" />
+    <svg
+      role="img" id="rotor-esfera"
+      aria-label={az === null ? 'Rotor sin lectura' : `Rotor a ${Math.round(az)} grados${objetivo !== null ? `, objetivo ${Math.round(objetivo)} grados` : ''}`}
+      viewBox="0 0 220 220" className="shrink-0 w-[220px] h-[220px] max-w-full"
+    >
+      <defs>
+        <radialGradient id="rotor-fondo" cx="50%" cy="42%" r="65%">
+          <stop offset="0%" stopColor="#16283a" />
+          <stop offset="100%" stopColor="#060b14" />
+        </radialGradient>
+        <linearGradient id="rotor-aguja" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#7dd3fc" />
+          <stop offset="50%" stopColor="#38bdf8" />
+          <stop offset="100%" stopColor="#0284c7" />
+        </linearGradient>
+      </defs>
+      <circle cx={C} cy={C} r="106" fill="url(#rotor-fondo)" stroke="#334155" strokeWidth="2" />
+      <circle cx={C} cy={C} r="62" fill="none" stroke="#1e293b" strokeWidth="1" />
+      {marcas.map((a) => {
+        const mayor = a % 30 === 0;
+        const media = a % 10 === 0;
+        const [x1, y1] = punto(a, mayor ? 90 : media ? 94 : 97);
+        const [x2, y2] = punto(a, 103);
+        return <line key={a} x1={x1} y1={y1} x2={x2} y2={y2} stroke={mayor ? '#e2e8f0' : media ? '#94a3b8' : '#475569'} strokeWidth={mayor ? 2 : 1} strokeLinecap="round" />;
+      })}
+      {marcas.filter((a) => a % 30 === 0).map((a) => {
+        const letra = CARDINALES[a];
+        const [x, y] = punto(a, letra ? 76 : 78);
+        return (
+          <text key={a} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={letra ? 17 : 11} fontWeight={letra ? 700 : 500}
+            fill={a === 0 ? '#f87171' : letra ? '#f1f5f9' : '#94a3b8'} fontFamily={letra ? undefined : 'ui-monospace, monospace'}>
+            {letra ?? a}
+          </text>
+        );
+      })}
+      {objetivo !== null && (
+        <g transform={`rotate(${objetivo} ${C} ${C})`}>
+          <line x1={C} y1={C - 14} x2={C} y2={C - 88} stroke="#fbbf24" strokeWidth="1.5" strokeDasharray="3 5" strokeLinecap="round" />
+          <path d={`M ${C} ${C - 91} L ${C - 7} ${C - 105} L ${C + 7} ${C - 105} Z`} fill="#fbbf24" stroke="#060b14" strokeWidth="1" />
+        </g>
+      )}
+      {az !== null && (
+        <g style={{ transform: `rotate(${giro.current}deg)`, transformOrigin: `${C}px ${C}px`, transition: 'transform 1.4s linear' }}>
+          {/* contrapeso */}
+          <path d={`M ${C - 5} ${C} L ${C} ${C + 34} L ${C + 5} ${C} Z`} fill="#475569" />
+          {/* punta */}
+          <path d={`M ${C - 7} ${C} L ${C} ${C - 86} L ${C + 7} ${C} Z`} fill="url(#rotor-aguja)" stroke="#e0f2fe" strokeWidth="0.6" strokeLinejoin="round" />
+          <line x1={C} y1={C - 6} x2={C} y2={C - 80} stroke="#e0f2fe" strokeWidth="0.8" opacity="0.6" />
+        </g>
+      )}
+      <circle cx={C} cy={C} r="9" fill="#0f172a" stroke="#7dd3fc" strokeWidth="2" />
+      <circle cx={C} cy={C} r="3" fill="#7dd3fc" />
     </svg>
   );
 }

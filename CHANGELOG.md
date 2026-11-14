@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.23.0] - 2026-11-14
+### Radio · Principal: equipo por CAT y rotor
+- **Equipo de radio por CAT** (`server/radio/hamlib.ts`): cliente de `rigctld`, así que vale para cualquier equipo que Hamlib maneje. Muestra frecuencia, VFO, modo, filtro, RX/TX y S-meter; permite cambiar de banda, modo y VFO, sintonizar una frecuencia y accionar el PTT (con confirmación, y se suelta solo a los 3 minutos).
+- **Rotor**, por dos vías: `rotctld` de Hamlib o la caja **APRS LoRa+ Rotor** por su protocolo JSON (TCP 4534, con PIN), que además da el objetivo, si gira y sus avisos (viento, atasco). Brújula con acimut y objetivo, pasos de 5°, ir a un acimut y elevación, aparcar y parar.
+- **Tocar la frecuencia de un spot** del cluster sintoniza el equipo y gira el rotor a su rumbo (cada cosa se puede desmarcar).
+- Sin enlace con el equipo o el rotor no se muestra ninguna lectura; lo que un equipo no da (por ejemplo el S-meter) se indica como tal.
+- Las órdenes al equipo y al rotor son solo para el administrador.
+
+---
+
 ## [v1.22.0] - 2026-11-14
 ### Radio · Principal: cluster DX y mensajería
 - **Pantalla nueva «Principal»** en Radio, la consola de operación. Empieza con dos módulos; el equipo por CAT, el rotor, el grupo de estaciones y la consola de comandos llegarán después.

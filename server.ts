@@ -14,6 +14,7 @@ import { Mensajeria, ViaMensaje } from './server/radio/mensajes';
 import { ClusterDx } from './server/radio/clusterDx';
 import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
+import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
 import { gcInitialBearing } from './server/formulas/geo';
 import { TOCALL, IS_PATH } from './server/aprs';
 import net from 'net';
@@ -205,7 +206,7 @@ function isAuthorizedRequest(req: express.Request): boolean {
 }
 
 // Claves y credenciales que solo puede ver un administrador
-const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword'] as const;
+const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword', 'rotorPin'] as const;
 const SECRET_MASK = '********';
 
 function isMaskedSecret(value: unknown): boolean {
@@ -336,6 +337,14 @@ let config: TelemetryConfig = {
   dapnetUser: '',
   dapnetPassword: '',
   dapnetGroup: 'ea-all',
+  // Equipo por CAT (rigctld de Hamlib) y rotor (rotctld o la caja APRS LoRa+ Rotor por TCP)
+  catEnabled: false,
+  catHost: '127.0.0.1',
+  catPort: 4532,
+  rotorMode: 'off',
+  rotorHost: '127.0.0.1',
+  rotorPort: 4533,
+  rotorPin: '',
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -697,6 +706,26 @@ function ajustarCluster() {
   cargarDxcc();
 }
 setInterval(() => { if (clusterDx.estado !== 'parado') cargarDxcc(); }, 3600_000);
+
+// Equipo de radio (CAT) y rotor
+const equipoRadio = new Equipo();
+const rotorAntena = new Rotor();
+
+/** Conecta o suelta el equipo y el rotor según la configuración actual. */
+function ajustarEquipoYRotor() {
+  const encendido = config.systemPower !== false;
+  const hostCat = String(config.catHost || '').trim();
+  if (encendido && config.catEnabled === true && hostCat && Number(config.catPort) > 0) equipoRadio.ajustar(hostCat, Number(config.catPort));
+  else equipoRadio.parar();
+  const hostRotor = String(config.rotorHost || '').trim();
+  const modoRotor = config.rotorMode === 'rotctld' || config.rotorMode === 'caja' ? config.rotorMode : null;
+  if (encendido && modoRotor && hostRotor && Number(config.rotorPort) > 0) rotorAntena.ajustar(modoRotor, hostRotor, Number(config.rotorPort), String(config.rotorPin || ''));
+  else rotorAntena.parar();
+}
+setInterval(() => {
+  equipoRadio.sondear().catch(() => {});
+  rotorAntena.sondear().catch(() => {});
+}, 1500);
 
 const clienteAprsIs = new ClienteAprsIs({
   alRecibir: (linea) => {
@@ -2768,6 +2797,7 @@ setImmediate(() => {
   ajustarAprsIs();
   ajustarEntradasMapa();
   ajustarCluster();
+  ajustarEquipoYRotor();
 });
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
 setInterval(ajustarAprsIs, 5 * 60_000);
@@ -4461,6 +4491,46 @@ app.post('/api/radio/dapnet', async (req, res) => {
   res.status(r.ok ? 200 : 400).json(r);
 });
 
+// Equipo de radio (CAT) y rotor
+app.get('/api/radio/equipo', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const e = equipoRadio.estado;
+  const r = rotorAntena.estado;
+  res.json({
+    equipo: {
+      activo: config.catEnabled === true, destino: equipoRadio.destino || `${config.catHost}:${config.catPort}`,
+      ...e, senal: e.senalDb === null ? null : sMeter(e.senalDb), modos: MODOS,
+    },
+    rotor: { modo: config.rotorMode || 'off', destino: rotorAntena.destino || `${config.rotorHost}:${config.rotorPort}`, pinGuardado: !!config.rotorPin, ...r },
+  });
+});
+
+app.post('/api/radio/equipo', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede manejar el equipo.' });
+  const b = req.body || {};
+  let r: { ok: boolean; error?: string } = { ok: false, error: 'Orden vacía.' };
+  if (b.frecuenciaHz !== undefined) r = await equipoRadio.frecuencia(Number(b.frecuenciaHz));
+  if (b.modo !== undefined && (b.frecuenciaHz === undefined || r.ok)) r = await equipoRadio.modo(String(b.modo));
+  if (b.vfo !== undefined) r = await equipoRadio.vfo(String(b.vfo));
+  if (b.ptt !== undefined) {
+    r = await equipoRadio.ptt(b.ptt === true);
+    if (r.ok) addLog('SYS', 'CAT', 'LOCAL', 'PTT', b.ptt === true ? 'PTT del equipo activado desde la consola (se suelta solo a los 3 minutos).' : 'PTT del equipo soltado desde la consola.', true, 'Equipo');
+  }
+  if (r.ok) await equipoRadio.sondear();
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post('/api/radio/rotor', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede mover el rotor.' });
+  const b = req.body || {};
+  let r: { ok: boolean; error?: string };
+  if (b.accion === 'ir') r = await rotorAntena.ir(Number(b.az), b.el === undefined || b.el === null || b.el === '' ? undefined : Number(b.el));
+  else if (b.accion === 'parar') r = await rotorAntena.detener();
+  else if (b.accion === 'aparcar') r = await rotorAntena.aparcar();
+  else r = { ok: false, error: 'Orden no reconocida.' };
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
 app.get('/api/radio/cluster', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
@@ -4748,6 +4818,13 @@ app.post('/api/config', (req, res) => {
     if (updated.clusterEnabled !== undefined) config.clusterEnabled = !!updated.clusterEnabled;
     if (updated.clusterHost !== undefined) config.clusterHost = String(updated.clusterHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
     if (updated.clusterPort !== undefined) config.clusterPort = puertoValido(updated.clusterPort);
+    if (updated.catEnabled !== undefined) config.catEnabled = !!updated.catEnabled;
+    if (updated.catHost !== undefined) config.catHost = String(updated.catHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
+    if (updated.catPort !== undefined) config.catPort = puertoValido(updated.catPort);
+    if (updated.rotorMode !== undefined && ['off', 'rotctld', 'caja'].includes(String(updated.rotorMode))) config.rotorMode = updated.rotorMode;
+    if (updated.rotorHost !== undefined) config.rotorHost = String(updated.rotorHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
+    if (updated.rotorPort !== undefined) config.rotorPort = puertoValido(updated.rotorPort);
+    if (updated.rotorPin !== undefined && !isMaskedSecret(updated.rotorPin)) config.rotorPin = String(updated.rotorPin).replace(/[^0-9A-Za-z]/g, '').slice(0, 16);
     if (updated.dapnetUser !== undefined) config.dapnetUser = String(updated.dapnetUser).trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
     if (updated.dapnetPassword !== undefined && !isMaskedSecret(updated.dapnetPassword)) config.dapnetPassword = String(updated.dapnetPassword).slice(0, 100);
     if (updated.dapnetGroup !== undefined) config.dapnetGroup = String(updated.dapnetGroup).trim().toLowerCase().replace(/[^a-z0-9\-]/g, '').slice(0, 30);
@@ -4916,6 +4993,7 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
     ajustarAprsIs();
     ajustarEntradasMapa();
     ajustarCluster();
+    ajustarEquipoYRotor();
     refreshWeather();
     refreshIQAir();
     refreshEarthquakes();

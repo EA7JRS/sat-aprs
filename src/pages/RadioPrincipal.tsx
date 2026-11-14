@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// Radio · Principal: la consola de operación. De momento, cluster DX y
-// mensajería (APRS y DAPNET). El equipo por CAT y el rotor llegan después.
+// Radio · Principal: la consola de operación. Equipo por CAT, rotor, cluster
+// DX (un spot sintoniza el equipo y gira el rotor) y mensajería (APRS y DAPNET).
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tarjeta } from '../components/shell/Etiquetas';
 import { customFetch } from '../utils/customFetch';
 import { useAdminSession } from '../utils/session';
 import { haceCuanto, horaUtc } from '../utils/useAvisos';
 import { TelemetryConfig } from '../types';
+import { DatosEquipo, PanelEquipo, PanelRotor, ordenRadio } from '../components/radio/EquipoRotor';
 
 type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
 
@@ -43,7 +44,9 @@ const ESTADO_CLUSTER: Record<string, { texto: string; color: string }> = {
   parado: { texto: 'Parado', color: 'text-slate-400' },
 };
 
-function Cluster({ config, onGuardar, admin }: { config: TelemetryConfig; onGuardar: Guardar; admin: boolean }) {
+interface AlTocar { puedeSintonizar: boolean; puedeGirar: boolean }
+
+function Cluster({ config, onGuardar, admin, alTocar, onCambio }: { config: TelemetryConfig; onGuardar: Guardar; admin: boolean; alTocar: AlTocar; onCambio: () => void }) {
   const [datos, releer] = useSondeo<DatosCluster>('/api/radio/cluster', 5000);
   const [banda, setBanda] = useState('todas');
   const [ajustes, setAjustes] = useState(false);
@@ -52,7 +55,21 @@ function Cluster({ config, onGuardar, admin }: { config: TelemetryConfig; onGuar
   const [orden, setOrden] = useState('');
   const [consola, setConsola] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [sintonizar, setSintonizar] = useState(true);
+  const [girar, setGirar] = useState(true);
+  const [elegido, setElegido] = useState('');
   const ahora = Date.now();
+  const hace = admin && ((alTocar.puedeSintonizar && sintonizar) || (alTocar.puedeGirar && girar));
+
+  // Tocar un spot: el equipo va a su frecuencia y el rotor a su rumbo (lo que esté conectado y marcado)
+  const tocar = async (s: Spot) => {
+    setElegido(`${s.dx}-${s.khz}`);
+    const errores: string[] = [];
+    if (alTocar.puedeSintonizar && sintonizar) { const e = await ordenRadio('equipo', { frecuenciaHz: Math.round(s.khz * 1000) }); if (e) errores.push(e); }
+    if (alTocar.puedeGirar && girar && s.rumbo !== null) { const e = await ordenRadio('rotor', { accion: 'ir', az: s.rumbo }); if (e) errores.push(e); }
+    setAviso(errores.join(' '));
+    onCambio();
+  };
 
   const bandas = useMemo(() => {
     const vistas = new Map<string, number>();
@@ -134,8 +151,10 @@ function Cluster({ config, onGuardar, admin }: { config: TelemetryConfig; onGuar
                 </thead>
                 <tbody>
                   {spots.map((s, i) => (
-                    <tr key={`${s.cuando}-${s.dx}-${s.khz}-${i}`} className="border-t border-slate-800">
-                      <td className="py-1.5 pr-3 font-mono text-sky-400 whitespace-nowrap">{s.khz.toFixed(1)}</td>
+                    <tr key={`${s.cuando}-${s.dx}-${s.khz}-${i}`} className={`border-t border-slate-800 ${elegido === `${s.dx}-${s.khz}` ? 'bg-sky-950' : ''}`}>
+                      <td className="py-1.5 pr-3 font-mono text-sky-400 whitespace-nowrap">
+                        {hace ? <button type="button" className="underline underline-offset-2 cursor-pointer min-h-[32px]" title="Sintonizar y girar a este spot" onClick={() => tocar(s)}>{s.khz.toFixed(1)}</button> : s.khz.toFixed(1)}
+                      </td>
                       <td className="py-1.5 pr-3 font-mono text-slate-100 whitespace-nowrap">{s.dx}</td>
                       <td className="py-1.5 pr-3 text-slate-300 whitespace-nowrap">{s.pais ?? '—'}</td>
                       <td className="py-1.5 pr-3 font-mono text-slate-100 whitespace-nowrap">{s.rumbo === null ? '—' : `${String(s.rumbo).padStart(3, '0')}° · ${s.distanciaKm!.toLocaleString('es-ES')} km`}</td>
@@ -152,6 +171,13 @@ function Cluster({ config, onGuardar, admin }: { config: TelemetryConfig; onGuar
             <p className="text-[13px] text-amber-300">No se ha podido descargar la tabla de países (cty.dat): los spots salen sin país, rumbo ni distancia.</p>
           )}
           <p className="text-[13px] text-slate-400">El rumbo y la distancia son al centro del país del indicativo, desde la posición actual de la estación.</p>
+          {admin && (alTocar.puedeSintonizar || alTocar.puedeGirar) && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-300" id="cluster-al-tocar">
+              <span>Al tocar la frecuencia de un spot:</span>
+              {alTocar.puedeSintonizar && <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-5 h-5" checked={sintonizar} onChange={(e) => setSintonizar(e.target.checked)} /> sintonizar el equipo</label>}
+              {alTocar.puedeGirar && <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-5 h-5" checked={girar} onChange={(e) => setGirar(e.target.checked)} /> girar el rotor</label>}
+            </div>
+          )}
 
           {admin && (
             <div className="border-t border-slate-800 pt-3 flex flex-col gap-2">
@@ -339,14 +365,18 @@ function Mensajes({ config, onGuardar, admin }: { config: TelemetryConfig; onGua
 export default function RadioPrincipal({ config, onGuardar }: { config: TelemetryConfig; onGuardar: Guardar }) {
   const session = useAdminSession();
   const admin = session.admin;
+  const [equipo, releer] = useSondeo<DatosEquipo>('/api/radio/equipo', 1500);
+  const alTocar = { puedeSintonizar: !!equipo?.equipo.enlace, puedeGirar: !!equipo?.rotor.enlace };
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold text-slate-100">Radio · Principal</h1>
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
-        <div className="xl:col-span-3 min-w-0"><Cluster config={config} onGuardar={onGuardar} admin={admin} /></div>
+        <div className="xl:col-span-3 min-w-0"><PanelEquipo datos={equipo} admin={admin} config={config} onGuardar={onGuardar} onCambio={releer} /></div>
+        <div className="xl:col-span-2 min-w-0"><PanelRotor datos={equipo} admin={admin} config={config} onGuardar={onGuardar} onCambio={releer} /></div>
+        <div className="xl:col-span-3 min-w-0"><Cluster config={config} onGuardar={onGuardar} admin={admin} alTocar={alTocar} onCambio={releer} /></div>
         <div className="xl:col-span-2 min-w-0"><Mensajes config={config} onGuardar={onGuardar} admin={admin} /></div>
       </div>
-      <p className="text-[13px] text-slate-400">Próximos módulos de esta pantalla: equipo por CAT (Hamlib), rotor, grupo de estaciones y consola de comandos.</p>
+      <p className="text-[13px] text-slate-400">Próximos módulos de esta pantalla: grupo de estaciones (ARTS) y consola de comandos.</p>
     </div>
   );
 }

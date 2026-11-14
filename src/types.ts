@@ -221,6 +221,13 @@ export interface TelemetryConfig {
   dapnetUser?: string;
   dapnetPassword?: string;
   dapnetGroup?: string;
+  catEnabled?: boolean;
+  catHost?: string;
+  catPort?: number;
+  rotorMode?: 'off' | 'rotctld' | 'caja';
+  rotorHost?: string;
+  rotorPort?: number;
+  rotorPin?: string;
   adsbPort?: number;
   /** Parte meteorológico de la estación por APRS. */
   wxBeaconEnabled?: boolean;

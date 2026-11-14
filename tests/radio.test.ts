@@ -138,3 +138,118 @@ test('DAPNET: validación del envío', () => {
   assert.equal(cuerpoDapnet({ texto: 'hola', indicativos: [], grupos: ['ea-all'] }).ok, false);
   assert.equal(cuerpoDapnet({ texto: 'hola', indicativos: ['ea7urs'], grupos: [] }).ok, false);
 });
+
+// ── Equipo y rotor por Hamlib ───────────────────────────────────────────────
+import net from 'node:net';
+import { ClienteHamlib, Equipo, Rotor, aplicarEventoCaja, leerRespuestaHamlib, sMeter } from '../server/radio/hamlib';
+
+test('Hamlib: lectura de respuestas extendidas y S-meter', () => {
+  assert.deepEqual(leerRespuestaHamlib(['get_freq:', 'Frequency: 14205000'], 0), { codigo: 0, valores: { Frequency: '14205000' }, sueltas: [] });
+  assert.deepEqual(leerRespuestaHamlib(['get_mode:', 'Mode: USB', 'Passband: 2400'], 0).valores, { Mode: 'USB', Passband: '2400' });
+  assert.deepEqual(leerRespuestaHamlib(['get_level: STRENGTH', '-12'], 0).sueltas, ['-12']);
+  assert.deepEqual(leerRespuestaHamlib(['set_freq: 14205000'], 0), { codigo: 0, valores: {}, sueltas: [] });
+  assert.equal(sMeter(0).texto, 'S9');
+  assert.equal(sMeter(-24).texto, 'S5');
+  assert.equal(sMeter(-80).texto, 'S0');
+  assert.equal(sMeter(11).texto, 'S9 +10 dB');
+});
+
+test('rotor: eventos de la caja APRS LoRa+ Rotor', () => {
+  const r = new Rotor();
+  let e = aplicarEventoCaja(r.estado, { e: 'info', hasEl: true, dev: 'APRS LoRa+ Rotor', name: 'APRS-Rotor' }, 1);
+  e = aplicarEventoCaja(e, { e: 'pos', az: 123.4, el: 45, mv: true, f: 'OK', taz: 125, tel: 45 }, 2);
+  assert.equal(e.enlace, true);
+  assert.equal(e.az, 123.4);
+  assert.equal(e.objetivoAz, 125);
+  assert.equal(e.moviendo, true);
+  assert.equal(e.tieneElevacion, true);
+  assert.equal(e.nombre, 'APRS LoRa+ Rotor · APRS-Rotor');
+  // Sin elevación: queda sin dato, no en cero
+  assert.equal(aplicarEventoCaja(e, { e: 'pos', az: 10, mv: false, f: 'WIND' }, 3).el, null);
+  assert.equal(aplicarEventoCaja(e, { e: 'pos', az: 10, mv: false, f: 'WIND' }, 3).fallo, 'WIND');
+  assert.equal(aplicarEventoCaja(e, 'basura', 3), e);
+});
+
+test('Hamlib: equipo y rotor contra demonios simulados', async () => {
+  const equipo = { f: 14205000, modo: 'USB', vfo: 'VFOA', ptt: 0 };
+  const rig = net.createServer((s) => {
+    s.on('error', () => {});
+    s.on('data', (d) => {
+      for (const o of d.toString().split('\n').map((x) => x.trim()).filter(Boolean)) {
+        if (o === '+f') s.write(`get_freq:\nFrequency: ${equipo.f}\nRPRT 0\n`);
+        else if (o === '+m') s.write(`get_mode:\nMode: ${equipo.modo}\nPassband: 2400\nRPRT 0\n`);
+        else if (o === '+v') s.write(`get_vfo:\nVFO: ${equipo.vfo}\nRPRT 0\n`);
+        else if (o === '+t') s.write(`get_ptt:\nPTT: ${equipo.ptt}\nRPRT 0\n`);
+        else if (o === '+l STRENGTH') s.write('get_level: STRENGTH\nRPRT -11\n');
+        else if (o === '+_') s.write('get_info:\nInfo: Dummy\nRPRT 0\n');
+        else if (o.startsWith('+F ')) { equipo.f = Number(o.slice(3)); s.write(`set_freq: ${equipo.f}\nRPRT 0\n`); }
+        else if (o.startsWith('+M ')) { equipo.modo = o.split(' ')[1]; s.write('set_mode:\nRPRT 0\n'); }
+        else if (o.startsWith('+T ')) { equipo.ptt = Number(o.slice(3)); s.write('set_ptt:\nRPRT 0\n'); }
+        else s.write('RPRT -1\n');
+      }
+    });
+  });
+  const pos = { az: 312, el: 0 };
+  const rot = net.createServer((s) => {
+    s.on('error', () => {});
+    s.on('data', (d) => {
+      for (const o of d.toString().split('\n').map((x) => x.trim()).filter(Boolean)) {
+        if (o === '+p') s.write(`get_pos:\nAzimuth: ${pos.az.toFixed(6)}\nElevation: ${pos.el.toFixed(6)}\nRPRT 0\n`);
+        else if (o.startsWith('+P ')) { const [, a, e] = o.split(' '); pos.az = Number(a); pos.el = Number(e); s.write('set_pos:\nRPRT 0\n'); }
+        else if (o === '+S') s.write('stop:\nRPRT 0\n');
+        else s.write('RPRT -11\n');
+      }
+    });
+  });
+  await new Promise<void>((r) => rig.listen(0, '127.0.0.1', r));
+  await new Promise<void>((r) => rot.listen(0, '127.0.0.1', r));
+  const e = new Equipo(1000);
+  const r = new Rotor();
+  try {
+    e.ajustar('127.0.0.1', (rig.address() as net.AddressInfo).port);
+    await e.sondear(1000);
+    assert.equal(e.estado.enlace, true);
+    assert.equal(e.estado.frecuenciaHz, 14205000);
+    assert.equal(e.estado.modo, 'USB');
+    assert.equal(e.estado.anchoHz, 2400);
+    assert.equal(e.estado.vfo, 'VFOA');
+    assert.equal(e.estado.ptt, false);
+    assert.equal(e.estado.senalDb, null); // este equipo no da S-meter
+    assert.equal(e.estado.modelo, 'Dummy');
+    assert.deepEqual(await e.frecuencia(7049000), { ok: true });
+    assert.deepEqual(await e.modo('lsb'), { ok: true });
+    assert.equal((await e.modo('XYZ')).ok, false);
+    assert.equal((await e.frecuencia(5)).ok, false);
+    await e.sondear(2000);
+    assert.equal(e.estado.frecuenciaHz, 7049000);
+    assert.equal(e.estado.modo, 'LSB');
+    // PTT con corte de seguridad
+    assert.deepEqual(await e.ptt(true, 3000), { ok: true });
+    await e.sondear(3500);
+    assert.equal(e.estado.ptt, true);
+    await e.sondear(5000); // pasado el máximo: suelta el PTT
+    assert.equal(equipo.ptt, 0);
+
+    r.ajustar('rotctld', '127.0.0.1', (rot.address() as net.AddressInfo).port);
+    await r.sondear(1000);
+    assert.equal(r.estado.az, 312);
+    assert.equal(r.estado.el, 0);
+    assert.equal((await r.ir(500)).ok, false);
+    assert.deepEqual(await r.ir(298), { ok: true });
+    assert.equal(r.estado.objetivoAz, 298);
+    await r.sondear(2000);
+    assert.equal(r.estado.az, 298);
+    assert.equal(r.estado.moviendo, true);
+    await r.sondear(3000);
+    assert.equal(r.estado.moviendo, false);
+    assert.equal(r.estado.objetivoAz, null); // ha llegado
+    assert.deepEqual(await r.detener(), { ok: true });
+    assert.equal((await r.aparcar()).ok, false); // este rotor no tiene reposo
+
+    // Sin demonio: enlace caído y error, sin valores viejos como si fueran actuales
+    const nadie = new ClienteHamlib('127.0.0.1', 1, 500);
+    await assert.rejects(nadie.orden('f'));
+  } finally {
+    e.parar(); r.parar(); rig.close(); rot.close();
+  }
+});

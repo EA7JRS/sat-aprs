@@ -59,13 +59,15 @@ Consola táctica unificada para la gestión de emergencias:
 
 ## 🛠️ Especificaciones Técnicas y Parámetros del Aire
 
-| Parámetro | AFSK 300 bps (HF) | AFSK 1200 bps (VHF) | GMSK 9600 bps (UHF) |
-| :--- | :--- | :--- | :--- |
-| **Estándar Frecuencia** | `10.1473 MHz USB` | `144.800 MHz FM-N` | `432.500 MHz FM-W` |
-| **Estándar Módem** | Bell 103 (SSB) | Bell 202 (FM) | GMSK (Direct Varactor) |
-| **Tonos (Mark/Space)**| 2020 Hz / 2220 Hz | 1200 Hz / 2200 Hz | Banda Base Directa |
-| **Ancho de Banda** | 500 Hz | 12.5 kHz | 25.0 kHz |
-| **Sincronización** | PLL Phase Lock | PLL Phase Lock | Bit Sync Recovery |
+| Parámetro | AFSK 300 bps (HF) | AFSK 1200 bps (VHF) | GMSK 9600 bps (UHF) | LoRa ~300 bps (UHF) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Estándar Frecuencia** | `10.1473 MHz USB` | `144.800 MHz FM-N` | `432.500 MHz FM-W` | `433.775 MHz` |
+| **Estándar Módem** | Bell 103 (SSB) | Bell 202 (FM) | GMSK (Direct Varactor) | LoRa CSS (SX127x / SX126x) |
+| **Tonos (Mark/Space)**| 2020 Hz / 2220 Hz | 1200 Hz / 2200 Hz | Banda Base Directa | Sin tonos: SF12, CR 4/5 |
+| **Ancho de Banda** | 500 Hz | 12.5 kHz | 25.0 kHz | 125 kHz |
+| **Sincronización** | PLL Phase Lock | PLL Phase Lock | Bit Sync Recovery | Preámbulo de 8 símbolos, sync word `0x12` |
+
+> **LoRa**: parámetros habituales de APRS sobre LoRa en Europa, los mismos del ecosistema [APRS LoRa+](https://github.com/EA7JRS/APRS-LoRa-Plus). La estación no lleva radio LoRa propia: el enlace se hace a través de un tracker o gateway APRS LoRa+.
 
 ---
 

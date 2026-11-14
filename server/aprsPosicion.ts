@@ -21,6 +21,9 @@ export interface PosicionAprs {
   comentario: string;
   /** true si el objeto o ítem se da de baja: hay que quitarlo del mapa. */
   baja: boolean;
+  /** Rumbo (grados verdaderos) y velocidad, si la trama los lleva y se mueve. */
+  rumbo?: number;
+  velocidadKmh?: number;
 }
 
 const enRango = (lat: number, lon: number) =>
@@ -40,7 +43,14 @@ function limpiarComentario(texto: string): string {
     .slice(0, 80);
 }
 
-interface Cruda { lat: number; lon: number; simbolo: string; resto: string }
+interface Cruda { lat: number; lon: number; simbolo: string; resto: string; rumbo?: number; velocidadKmh?: number }
+
+const NUDO_KMH = 1.852;
+/** Rumbo y velocidad válidos (en nudos) o nada: parado o sin dato no cuenta como movimiento. */
+function movimiento(rumbo: number, nudos: number): { rumbo?: number; velocidadKmh?: number } {
+  if (!Number.isFinite(rumbo) || !Number.isFinite(nudos) || nudos <= 0 || nudos > 2000 || rumbo < 0 || rumbo > 360) return {};
+  return { rumbo: rumbo % 360, velocidadKmh: Math.round(nudos * NUDO_KMH * 10) / 10 };
+}
 
 /** «DDMM.hhN/DDDMM.hhW-...» (19 caracteres); los espacios de ambigüedad cuentan como cero. */
 function sinComprimir(t: string): Cruda | null {
@@ -52,7 +62,10 @@ function sinComprimir(t: string): Cruda | null {
   let lon = parseInt(b.slice(0, 3), 10) + parseFloat(b.slice(3)) / 60;
   if (m[2].toUpperCase() === 'S') lat = -lat;
   if (m[5].toUpperCase() === 'W') lon = -lon;
-  return enRango(lat, lon) ? { lat, lon, simbolo: m[3] + m[6], resto: t.slice(19) } : null;
+  if (!enRango(lat, lon)) return null;
+  // Extensión de datos «rumbo/velocidad» (grados/nudos) justo tras el símbolo; en una estación meteorológica («_») es viento
+  const ext = m[6] === '_' ? null : /^(\d{3})\/(\d{3})/.exec(t.slice(19));
+  return { lat, lon, simbolo: m[3] + m[6], resto: t.slice(19), ...(ext ? movimiento(Number(ext[1]), Number(ext[2])) : {}) };
 }
 
 const base91 = (s: string) => [...s].reduce((n, c) => n * 91 + (c.charCodeAt(0) - 33), 0);
@@ -62,7 +75,12 @@ function comprimida(t: string): Cruda | null {
   if (t.length < 13 || !/^[/\\A-Za-j]/.test(t) || !/^[!-{]{8}$/.test(t.slice(1, 9))) return null;
   const lat = 90 - base91(t.slice(1, 5)) / 380926;
   const lon = -180 + base91(t.slice(5, 9)) / 190463;
-  return enRango(lat, lon) ? { lat, lon, simbolo: t[0] + t[9], resto: t.slice(13) } : null;
+  if (!enRango(lat, lon)) return null;
+  // Bytes «cs»: con c entre «!» y «z» son rumbo (×4°) y velocidad (1,08^s − 1 nudos)
+  const c = t.charCodeAt(10) - 33;
+  const v = t.charCodeAt(11) - 33;
+  const mov = t[10] !== ' ' && c >= 0 && c <= 89 && v >= 0 ? movimiento(c * 4, Math.pow(1.08, v) - 1) : {};
+  return { lat, lon, simbolo: t[0] + t[9], resto: t.slice(13), ...mov };
 }
 
 const posicion = (t: string): Cruda | null => (/^[0-9 ]/.test(t) ? sinComprimir(t) : comprimida(t));
@@ -97,7 +115,15 @@ function micE(destino: string, info: string): Cruda | null {
   if (!enRango(lat, lon)) return null;
   // Tras el símbolo puede ir el tipo de equipo (>, ], `, ') y la altitud «xxx}»
   const resto = info.slice(9).replace(/^[>\]`']/, '').replace(/^[!-{]{3}\}/, '');
-  return { lat, lon, simbolo: info[8] + info[7], resto };
+  // Velocidad (nudos) y rumbo en los tres bytes siguientes a la longitud
+  const sp = info.charCodeAt(4) - 28;
+  const dc = info.charCodeAt(5) - 28;
+  const se = info.charCodeAt(6) - 28;
+  let nudos = sp * 10 + Math.floor(dc / 10);
+  let rumbo = (dc % 10) * 100 + se;
+  if (nudos >= 800) nudos -= 800;
+  if (rumbo >= 400) rumbo -= 400;
+  return { lat, lon, simbolo: info[8] + info[7], resto, ...movimiento(rumbo, nudos) };
 }
 
 /**
@@ -109,7 +135,10 @@ export function leerPosicionAprs(origen: string, destino: string, info: string, 
   const emisor = origen.trim().toUpperCase();
   const tipo = info[0];
   const hecha = (c: Cruda | null, nombre = emisor, clase: PosicionAprs['clase'] = 'estacion', baja = false): PosicionAprs | null =>
-    c ? { nombre, origen: emisor, clase, lat: c.lat, lon: c.lon, simbolo: c.simbolo, comentario: limpiarComentario(c.resto), baja } : null;
+    c ? {
+      nombre, origen: emisor, clase, lat: c.lat, lon: c.lon, simbolo: c.simbolo, comentario: limpiarComentario(c.resto), baja,
+      ...(c.rumbo !== undefined && c.velocidadKmh !== undefined ? { rumbo: c.rumbo, velocidadKmh: c.velocidadKmh } : {}),
+    } : null;
 
   switch (tipo) {
     case '!':

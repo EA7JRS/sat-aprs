@@ -15,6 +15,7 @@ import { ClusterDx } from './server/radio/clusterDx';
 import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
+import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
 import { gcInitialBearing } from './server/formulas/geo';
 import { TOCALL, IS_PATH } from './server/aprs';
 import net from 'net';
@@ -345,6 +346,8 @@ let config: TelemetryConfig = {
   rotorHost: '127.0.0.1',
   rotorPort: 4533,
   rotorPin: '',
+  // true = el rotor va en un vehículo o barco: se descuenta el rumbo de la proa
+  rotorMovil: false,
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -451,6 +454,9 @@ let customInjectedAemetAlerts: AemetWeatherAlert[] = [];
 const loggedAemetAlertIds = new Set<string>();
 
 // Simulated Hardware & Real state
+// Último rumbo sobre el fondo que ha dado el GPS (grados verdaderos)
+let rumboGps: number | null = null;
+
 let gpsdState: GPSDStatus = {
   lat: 40.416775,
   lon: -3.703790,
@@ -590,6 +596,8 @@ function connectGpsdTcp() {
             const alt = typeof obj.alt === 'number' ? obj.alt : (typeof obj.altHAE === 'number' ? obj.altHAE : gpsdState.alt);
             const speedKmh = typeof obj.speed === 'number' ? parseFloat((obj.speed * 3.6).toFixed(1)) : gpsdState.speedKmh; // speed in m/s to km/h
             const mode = typeof obj.mode === 'number' ? obj.mode : gpsdState.mode;
+            // Rumbo sobre el fondo, para el rotor de una estación en movimiento
+            if (typeof obj.track === 'number') rumboGps = obj.track;
             
             handleGpsdStateUpdate({
               lat,
@@ -726,6 +734,58 @@ setInterval(() => {
   equipoRadio.sondear().catch(() => {});
   rotorAntena.sondear().catch(() => {});
 }, 1500);
+
+// Seguimiento del rotor: desde la posición actual de la estación (fija o GPS)
+const seguimientoRotor = new Seguimiento(2);
+const proaEstacion = new Proa(3);
+
+const estacionConGps = () => !gpsdState.isFallback && gpsdState.mode >= 2;
+
+function contextoRotor(): Contexto {
+  const ahora = Date.now();
+  // Con posición fija no hay rumbo; con GPS, el rumbo sobre el fondo cuando hay marcha
+  if (estacionConGps()) proaEstacion.anotar(rumboGps, gpsdState.speedKmh, ahora);
+  else proaEstacion.olvidar();
+  const propio = String(config.callsign || '').trim().toUpperCase();
+  const deAprs = (e: { nombre: string; lat: number; lon: number; ultima: number; rumbo?: number; velocidadKmh?: number }): EstacionVista =>
+    ({ nombre: e.nombre, lat: e.lat, lon: e.lon, ultima: e.ultima, rumbo: e.rumbo, velocidadKmh: e.velocidadKmh });
+  return {
+    estacion: { lat: gpsdState.lat, lon: gpsdState.lon },
+    altitudM: Number.isFinite(gpsdState.alt) ? gpsdState.alt : 0,
+    movil: config.rotorMovil === true,
+    proa: proaEstacion.rumbo,
+    conElevacion: rotorAntena.estado.tieneElevacion !== false && rotorAntena.estado.el !== null,
+    buscar: (id, tipo) => {
+      const buscado = id.trim().toUpperCase();
+      if (tipo === 'aprs') {
+        const e = estacionesOidas.lista(ahora).find((x) => x.nombre.toUpperCase() === buscado);
+        return e ? deAprs(e) : null;
+      }
+      if (tipo === 'barco') {
+        const b = barcos.lista(ahora).find((x) => String(x.mmsi) === buscado || (x.nombre ?? '').trim().toUpperCase() === buscado);
+        if (!b || b.lat === undefined || b.lon === undefined) return null;
+        return { nombre: b.nombre?.trim() || String(b.mmsi), lat: b.lat, lon: b.lon, ultima: b.ultima, rumbo: b.cog, velocidadKmh: b.sog === undefined ? undefined : b.sog * 1.852 };
+      }
+      const a = aeronaves.lista(ahora).find((x) => x.hex.toUpperCase() === buscado || (x.vuelo ?? '').trim().toUpperCase() === buscado);
+      if (!a || a.lat === undefined || a.lon === undefined) return null;
+      return {
+        nombre: a.vuelo?.trim() || a.hex.toUpperCase(), lat: a.lat, lon: a.lon, ultima: a.ultima, rumbo: a.rumbo,
+        velocidadKmh: a.velocidad === undefined ? undefined : a.velocidad * 1.852, altitudM: a.altitud === undefined ? undefined : a.altitud * 0.3048,
+      };
+    },
+    ultimaOida: () => {
+      const e = estacionesOidas.lista(ahora).find((x) => x.clase === 'estacion' && x.ultimaRf !== undefined && ahora - x.ultimaRf < 30 * 60_000 && x.nombre.toUpperCase() !== propio);
+      return e ? deAprs(e) : null;
+    },
+  };
+}
+
+setInterval(() => {
+  if (!seguimientoRotor.objetivo) return;
+  if (!rotorAntena.estado.enlace) return;
+  const orden = seguimientoRotor.paso(contextoRotor());
+  if (orden) rotorAntena.ir(orden.az, orden.el).catch(() => {});
+}, 2000);
 
 const clienteAprsIs = new ClienteAprsIs({
   alRecibir: (linea) => {
@@ -4501,7 +4561,19 @@ app.get('/api/radio/equipo', (_req, res) => {
       activo: config.catEnabled === true, destino: equipoRadio.destino || `${config.catHost}:${config.catPort}`,
       ...e, senal: e.senalDb === null ? null : sMeter(e.senalDb), modos: MODOS,
     },
-    rotor: { modo: config.rotorMode || 'off', destino: rotorAntena.destino || `${config.rotorHost}:${config.rotorPort}`, pinGuardado: !!config.rotorPin, ...r },
+    rotor: {
+      modo: config.rotorMode || 'off', destino: rotorAntena.destino || `${config.rotorHost}:${config.rotorPort}`, pinGuardado: !!config.rotorPin, ...r,
+      // Con el rotor en un móvil, lo que se enseña y se pide es el acimut verdadero
+      movil: config.rotorMovil === true,
+      azVerdadero: r.az === null ? null : (config.rotorMovil === true ? (proaEstacion.rumbo === null ? null : acimutVerdadero(r.az, proaEstacion.rumbo)) : r.az),
+      objetivoVerdadero: r.objetivoAz === null ? null : (config.rotorMovil === true ? (proaEstacion.rumbo === null ? null : acimutVerdadero(r.objetivoAz, proaEstacion.rumbo)) : r.objetivoAz),
+    },
+    estacion: {
+      gps: estacionConGps(), lat: gpsdState.lat, lon: gpsdState.lon,
+      velocidadKmh: estacionConGps() ? gpsdState.speedKmh : 0,
+      proa: proaEstacion.rumbo, proaCuando: proaEstacion.cuando || null,
+    },
+    seguimiento: seguimientoRotor.objetivo ? { objetivo: seguimientoRotor.objetivo, ...(seguimientoRotor.ultimo ?? { ok: false, nombre: '', espera: 'calculando' }) } : null,
   });
 });
 
@@ -4524,8 +4596,33 @@ app.post('/api/radio/rotor', async (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede mover el rotor.' });
   const b = req.body || {};
   let r: { ok: boolean; error?: string };
-  if (b.accion === 'ir') r = await rotorAntena.ir(Number(b.az), b.el === undefined || b.el === null || b.el === '' ? undefined : Number(b.el));
-  else if (b.accion === 'parar') r = await rotorAntena.detener();
+  if (b.accion === 'seguir') {
+    const o = b.objetivo || {};
+    const id = String(o.indicativo ?? '').trim().toUpperCase().slice(0, 20);
+    let objetivo: Objetivo | null = null;
+    if (o.tipo === 'sol' || o.tipo === 'luna' || o.tipo === 'ultima') objetivo = { tipo: o.tipo };
+    else if ((o.tipo === 'aprs' || o.tipo === 'barco' || o.tipo === 'avion') && id) objetivo = { tipo: o.tipo, indicativo: id };
+    else if (o.tipo === 'punto' && Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lon)) && Math.abs(Number(o.lat)) <= 90 && Math.abs(Number(o.lon)) <= 180) {
+      objetivo = { tipo: 'punto', lat: Number(o.lat), lon: Number(o.lon), nombre: String(o.nombre || 'Punto fijo').slice(0, 30) };
+    }
+    if (!objetivo) return res.status(400).json({ ok: false, error: 'Falta el objetivo que hay que seguir.' });
+    seguimientoRotor.seguir(objetivo);
+    const orden = rotorAntena.estado.enlace ? seguimientoRotor.paso(contextoRotor()) : null;
+    if (orden) await rotorAntena.ir(orden.az, orden.el);
+    return res.json({ ok: true });
+  }
+  if (b.accion === 'dejar') {
+    seguimientoRotor.dejar();
+    return res.json({ ok: true });
+  }
+  // Mover a mano, parar o aparcar deja de seguir, como en la caja del rotor
+  seguimientoRotor.dejar();
+  if (b.accion === 'ir') {
+    const ctx = contextoRotor();
+    if (ctx.movil && ctx.proa === null) return res.status(400).json({ ok: false, error: 'El rotor va en un móvil y todavía no hay rumbo de la proa (hace falta GPS en marcha).' });
+    // El acimut pedido es verdadero: al rotor se le manda descontada la proa
+    r = await rotorAntena.ir(acimutDeRotor(Number(b.az), ctx.movil ? ctx.proa : null), b.el === undefined || b.el === null || b.el === '' ? undefined : Number(b.el));
+  } else if (b.accion === 'parar') r = await rotorAntena.detener();
   else if (b.accion === 'aparcar') r = await rotorAntena.aparcar();
   else r = { ok: false, error: 'Orden no reconocida.' };
   res.status(r.ok ? 200 : 400).json(r);
@@ -4824,6 +4921,7 @@ app.post('/api/config', (req, res) => {
     if (updated.rotorMode !== undefined && ['off', 'rotctld', 'caja'].includes(String(updated.rotorMode))) config.rotorMode = updated.rotorMode;
     if (updated.rotorHost !== undefined) config.rotorHost = String(updated.rotorHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
     if (updated.rotorPort !== undefined) config.rotorPort = puertoValido(updated.rotorPort);
+    if (updated.rotorMovil !== undefined) config.rotorMovil = !!updated.rotorMovil;
     if (updated.rotorPin !== undefined && !isMaskedSecret(updated.rotorPin)) config.rotorPin = String(updated.rotorPin).replace(/[^0-9A-Za-z]/g, '').slice(0, 16);
     if (updated.dapnetUser !== undefined) config.dapnetUser = String(updated.dapnetUser).trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
     if (updated.dapnetPassword !== undefined && !isMaskedSecret(updated.dapnetPassword)) config.dapnetPassword = String(updated.dapnetPassword).slice(0, 100);

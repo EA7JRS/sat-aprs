@@ -18,6 +18,13 @@ export interface DatosEquipo {
   rotor: {
     modo: 'off' | 'rotctld' | 'caja'; destino: string; pinGuardado: boolean; enlace: boolean; error: string; az: number | null; el: number | null;
     objetivoAz: number | null; objetivoEl: number | null; moviendo: boolean | null; fallo: string; tieneElevacion: boolean | null; nombre: string;
+    /** El rotor va en un vehículo o barco: se trabaja en acimut verdadero. */
+    movil: boolean; azVerdadero: number | null; objetivoVerdadero: number | null;
+  };
+  estacion: { gps: boolean; lat: number; lon: number; velocidadKmh: number; proa: number | null; proaCuando: number | null };
+  seguimiento: null | {
+    objetivo: { tipo: 'aprs' | 'barco' | 'avion' | 'ultima' | 'punto' | 'sol' | 'luna'; indicativo?: string; nombre?: string };
+    ok: boolean; espera?: string; nombre: string; azVerdadero?: number; elevacion?: number; azRotor?: number; distanciaKm?: number; estimada?: boolean;
   };
 }
 
@@ -184,7 +191,7 @@ export function PanelEquipo({ datos, admin, config, onGuardar, onCambio }: { dat
 
 // Esfera del rotor: graduada cada 5°, numerada cada 30°, con la aguja del
 // acimut (punta y contrapeso) y un índice en el borde para el objetivo.
-function Brujula({ az, objetivo }: { az: number | null; objetivo: number | null }) {
+function Brujula({ az, objetivo, proa = null }: { az: number | null; objetivo: number | null; proa?: number | null }) {
   const C = 110;
   const punto = (a: number, r: number): [number, number] => [C + r * Math.sin((a * Math.PI) / 180), C - r * Math.cos((a * Math.PI) / 180)];
   const marcas = Array.from({ length: 72 }, (_, i) => i * 5);
@@ -228,6 +235,13 @@ function Brujula({ az, objetivo }: { az: number | null; objetivo: number | null 
           </text>
         );
       })}
+      {proa !== null && (
+        <g transform={`rotate(${proa} ${C} ${C})`}>
+          {/* proa del vehículo o barco */}
+          <path d={`M ${C} ${C - 60} L ${C - 6} ${C - 48} L ${C + 6} ${C - 48} Z`} fill="none" stroke="#a7f3d0" strokeWidth="1.5" strokeLinejoin="round" />
+          <line x1={C} y1={C - 48} x2={C} y2={C - 16} stroke="#a7f3d0" strokeWidth="1" opacity="0.5" />
+        </g>
+      )}
       {objetivo !== null && (
         <g transform={`rotate(${objetivo} ${C} ${C})`}>
           <line x1={C} y1={C - 14} x2={C} y2={C - 88} stroke="#fbbf24" strokeWidth="1.5" strokeDasharray="3 5" strokeLinecap="round" />
@@ -259,7 +273,15 @@ export function PanelRotor({ datos, admin, config, onGuardar, onCambio }: { dato
   const [az, setAz] = useState('');
   const [el, setEl] = useState('');
   const [aviso, setAviso] = useState('');
+  const [tipo, setTipo] = useState<'aprs' | 'ultima' | 'barco' | 'avion' | 'sol' | 'luna'>('aprs');
+  const [quien, setQuien] = useState('');
   const activo = !!r && r.modo !== 'off';
+  const est = datos?.estacion;
+  const seg = datos?.seguimiento ?? null;
+  // Con el rotor en un móvil, la esfera y las cifras van en acimut verdadero
+  const azMostrado = r ? (r.movil ? r.azVerdadero : r.az) : null;
+  const objetivoMostrado = r ? (r.movil ? r.objetivoVerdadero : r.objetivoAz) : null;
+  const necesitaQuien = tipo === 'aprs' || tipo === 'barco' || tipo === 'avion';
 
   useEffect(() => { setPuerto((p) => (modo === 'caja' && p === '4533' ? '4534' : modo === 'rotctld' && p === '4534' ? '4533' : p)); }, [modo]);
 
@@ -271,7 +293,7 @@ export function PanelRotor({ datos, admin, config, onGuardar, onCambio }: { dato
     setAviso(ok ? '' : 'No se pudo guardar.');
     if (ok) { setAjustes(false); setPin(''); onCambio(); }
   };
-  const paso = (grados: number) => { if (r?.az != null) mandar({ accion: 'ir', az: (Math.round(r.objetivoAz ?? r.az) + grados + 360) % 360 }); };
+  const paso = (grados: number) => { if (azMostrado != null) mandar({ accion: 'ir', az: (Math.round(objetivoMostrado ?? azMostrado) + grados + 360) % 360 }); };
   const estado = !r?.enlace ? { t: 'Sin enlace', c: 'text-red-400' }
     : r.fallo && r.fallo !== 'OK' ? { t: r.fallo, c: 'text-red-400' }
     : r.moviendo ? { t: 'Girando', c: 'text-amber-300' } : { t: 'Parado', c: 'text-emerald-400' };
@@ -319,18 +341,19 @@ export function PanelRotor({ datos, admin, config, onGuardar, onCambio }: { dato
       {activo && r!.enlace && (
         <>
           <div className="flex flex-wrap gap-4 items-center">
-            <Brujula az={r!.az} objetivo={r!.objetivoAz} />
+            <Brujula az={azMostrado} objetivo={objetivoMostrado} proa={r!.movil ? est?.proa ?? null : null} />
             <div className="flex-1 basis-36 grid grid-cols-2 gap-3">
-              <div><div className="text-xs text-slate-400">Acimut</div><div className="font-mono text-3xl text-sky-400" id="rotor-az">{r!.az === null ? '—' : `${Math.round(r!.az)}°`}</div></div>
+              <div><div className="text-xs text-slate-400">{r!.movil ? 'Acimut verdadero' : 'Acimut'}</div><div className="font-mono text-3xl text-sky-400" id="rotor-az">{azMostrado === null ? '—' : `${Math.round(azMostrado)}°`}</div></div>
               <div><div className="text-xs text-slate-400">Elevación</div><div className="font-mono text-3xl text-sky-400">{r!.el === null ? '—' : `${Math.round(r!.el)}°`}</div></div>
-              <div><div className="text-xs text-slate-400">Objetivo</div><div className="font-mono text-lg text-amber-300" id="rotor-objetivo">{r!.objetivoAz === null ? '—' : `${Math.round(r!.objetivoAz)}°${r!.objetivoEl !== null ? ` / ${Math.round(r!.objetivoEl)}°` : ''}`}</div></div>
+              <div><div className="text-xs text-slate-400">Objetivo</div><div className="font-mono text-lg text-amber-300" id="rotor-objetivo">{objetivoMostrado === null ? '—' : `${Math.round(objetivoMostrado)}°${r!.objetivoEl !== null ? ` / ${Math.round(r!.objetivoEl)}°` : ''}`}</div></div>
+              {r!.movil && <div><div className="text-xs text-slate-400">Respecto a la proa</div><div className="font-mono text-lg text-slate-200" id="rotor-relativo">{r!.az === null ? '—' : `${Math.round(r!.az)}°`}</div></div>}
             </div>
           </div>
           {admin && (
             <>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={boton} onClick={() => paso(-5)} disabled={r!.az === null}>◀ −5°</button>
-                <button type="button" className={boton} onClick={() => paso(5)} disabled={r!.az === null}>+5° ▶</button>
+                <button type="button" className={boton} onClick={() => paso(-5)} disabled={azMostrado === null}>◀ −5°</button>
+                <button type="button" className={boton} onClick={() => paso(5)} disabled={azMostrado === null}>+5° ▶</button>
                 <button type="button" className={boton} onClick={() => mandar({ accion: 'aparcar' })}>Aparcar</button>
                 <button type="button" className={botonPrincipal} id="rotor-parar" onClick={() => mandar({ accion: 'parar' })}>Parar</button>
               </div>
@@ -348,6 +371,69 @@ export function PanelRotor({ datos, admin, config, onGuardar, onCambio }: { dato
             </>
           )}
         </>
+      )}
+      {activo && est && (
+        <div className="border-t border-slate-800 pt-3 flex flex-col gap-3" id="rotor-seguimiento">
+          <div className="text-sm text-slate-300" id="rotor-estacion">
+            <span className="text-slate-400">Estación: </span>
+            {est.gps
+              ? <>por GPS, {est.velocidadKmh >= 3 ? `en movimiento a ${Math.round(est.velocidadKmh)} km/h` : 'parada'}{est.proa !== null ? ` · rumbo ${String(Math.round(est.proa)).padStart(3, '0')}°` : ''}</>
+              : <>posición fija</>}
+            <span className="text-slate-400"> · los ángulos se calculan desde </span>
+            <span className="font-mono">{Math.abs(est.lat).toFixed(4)}°{est.lat >= 0 ? 'N' : 'S'} {Math.abs(est.lon).toFixed(4)}°{est.lon >= 0 ? 'E' : 'O'}</span>
+          </div>
+          {admin && (
+            <label className="flex items-start gap-2 text-sm text-slate-300 cursor-pointer">
+              <input type="checkbox" className="w-5 h-5 mt-0.5 shrink-0" id="rotor-movil" checked={r!.movil} onChange={async (ev) => { const ok = await onGuardar({ rotorMovil: ev.target.checked }); setAviso(ok ? '' : 'No se pudo guardar.'); onCambio(); }} />
+              <span>El rotor va en un vehículo o barco: descontar el rumbo de la proa y volver a apuntar cuando cambie.</span>
+            </label>
+          )}
+          {r!.movil && est.proa === null && (
+            <p className="text-sm text-amber-300" id="rotor-sin-proa">Todavía no hay rumbo de la proa: hace falta el GPS y algo de marcha (3 km/h). Hasta entonces el rotor no se mueve.</p>
+          )}
+          {r!.movil && est.proa !== null && est.velocidadKmh < 3 && (
+            <p className="text-[13px] text-slate-400">Parada: se usa el último rumbo que dio el GPS en marcha. Si el vehículo gira sin avanzar, no se nota.</p>
+          )}
+
+          {seg && (
+            <div className={`rounded-lg border px-3 py-2 ${seg.ok ? 'border-emerald-700 bg-slate-950' : 'border-amber-700 bg-slate-950'}`} id="rotor-siguiendo">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-slate-100"><span className="text-slate-400">Siguiendo a </span><span className="font-mono">{seg.nombre || seg.objetivo.indicativo || ''}</span></span>
+                {admin && <button type="button" className={enlaceTexto} onClick={() => mandar({ accion: 'dejar' })}>Dejar de seguir</button>}
+              </div>
+              {seg.ok ? (
+                <div className="text-sm text-slate-300 font-mono">
+                  {String(Math.round(seg.azVerdadero ?? 0)).padStart(3, '0')}°{seg.elevacion !== undefined ? ` · elev. ${Math.round(seg.elevacion)}°` : ''}{seg.distanciaKm !== undefined ? ` · ${seg.distanciaKm.toLocaleString('es-ES')} km` : ''}
+                  {seg.estimada && <span className="font-sans text-slate-400"> · posición estimada por su rumbo y velocidad</span>}
+                </div>
+              ) : (
+                <div className="text-sm text-amber-300">En espera: {seg.espera}.</div>
+              )}
+            </div>
+          )}
+
+          {admin && r!.enlace && (
+            <form className="flex flex-wrap gap-2 items-end" onSubmit={(ev) => { ev.preventDefault(); mandar({ accion: 'seguir', objetivo: { tipo, indicativo: quien } }); }}>
+              <label className="basis-48 grow text-xs text-slate-400 flex flex-col gap-1">Seguir
+                <select className={campo} id="rotor-seguir-tipo" value={tipo} onChange={(ev) => setTipo(ev.target.value as typeof tipo)}>
+                  <option value="aprs">Estación APRS</option>
+                  <option value="ultima">Última estación oída por radio</option>
+                  <option value="barco">Barco (AIS)</option>
+                  <option value="avion">Aeronave (ADS-B)</option>
+                  <option value="sol">Sol</option>
+                  <option value="luna">Luna</option>
+                </select>
+              </label>
+              {necesitaQuien && (
+                <label className="basis-40 grow text-xs text-slate-400 flex flex-col gap-1">{tipo === 'aprs' ? 'Indicativo' : tipo === 'barco' ? 'MMSI o nombre' : 'Vuelo o código ICAO'}
+                  <input className={`${campo} font-mono`} id="rotor-seguir-quien" value={quien} onChange={(ev) => setQuien(ev.target.value.toUpperCase())} autoCapitalize="characters" spellCheck={false} />
+                </label>
+              )}
+              <button type="submit" className={boton} id="rotor-seguir" disabled={necesitaQuien && !quien.trim()}>Seguir</button>
+            </form>
+          )}
+          <p className="text-[13px] text-slate-400">Los objetivos en movimiento se apuntan a su posición estimada ahora (hasta 5 minutos desde su última posición). Mover a mano, parar o aparcar deja de seguir.</p>
+        </div>
       )}
       {aviso && <p className="text-sm text-amber-300" role="alert">{aviso}</p>}
     </Tarjeta>

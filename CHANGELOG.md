@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.24.0] - 2026-11-14
+### Rotor: seguimiento con la estación fija o en movimiento
+- **Seguimiento de objetivos** (`server/radio/seguimiento.ts`), como en la caja APRS LoRa+ Rotor, el tracker y la app: una estación APRS, la última oída por radio, un barco (AIS), una aeronave (ADS-B, con elevación), el Sol o la Luna (con refracción). El rotor solo se mueve cuando el cambio pasa de 2°.
+- **Objetivos en movimiento**: se apunta a la posición **estimada ahora**, con el último rumbo y velocidad del objetivo (5 minutos como máximo); el nombre lleva `~` mientras es estimada. Las posiciones APRS guardan ya rumbo y velocidad (sin comprimir, comprimidas y Mic-E).
+- **Estación fija o por GPS**: los ángulos se calculan siempre desde la posición actual de la estación, la fija del perfil o la del GPS, y la pantalla dice cuál se usa.
+- **Rotor en un vehículo o barco** (opción): el acimut que se pide y el que se enseña son verdaderos; al rotor se le manda descontando el rumbo de la proa y se vuelve a apuntar cuando el rumbo cambia. El rumbo es el del GPS en marcha (3 km/h o más); parado se conserva el último, y sin rumbo el rotor no se mueve y se indica.
+- Mover a mano, parar o aparcar deja de seguir.
+
+---
+
 ## [v1.23.0] - 2026-11-14
 ### Radio · Principal: equipo por CAT y rotor
 - **Equipo de radio por CAT** (`server/radio/hamlib.ts`): cliente de `rigctld`, así que vale para cualquier equipo que Hamlib maneje. Muestra frecuencia, VFO, modo, filtro, RX/TX y S-meter; permite cambiar de banda, modo y VFO, sintonizar una frecuencia y accionar el PTT (con confirmación, y se suelta solo a los 3 minutos).

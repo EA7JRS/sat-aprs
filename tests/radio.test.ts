@@ -253,3 +253,104 @@ test('Hamlib: equipo y rotor contra demonios simulados', async () => {
     e.parar(); r.parar(); rig.close(); rot.close();
   }
 });
+
+// ── Seguimiento del rotor, con estación fija o en movimiento ────────────────
+import { Proa, Seguimiento, acimutDeRotor, acimutVerdadero, calcular, difAngulo, posicionEstimada } from '../server/radio/seguimiento';
+import { leerPosicionAprs } from '../server/aprsPosicion';
+
+test('APRS: rumbo y velocidad de las estaciones en movimiento', () => {
+  const m = leerPosicionAprs('EA7KZ-9', 'APRS', '!3723.00N/00559.00W>090/036En ruta')!;
+  assert.equal(m.rumbo, 90);
+  assert.equal(m.velocidadKmh, 66.7);
+  assert.equal(m.comentario, 'En ruta');
+  // Parada, sin extensión o estación meteorológica (ahí es viento): sin movimiento
+  assert.equal(leerPosicionAprs('EA7KZ-9', 'APRS', '!3723.00N/00559.00W>000/000Parado')!.rumbo, undefined);
+  assert.equal(leerPosicionAprs('EA7KZ-9', 'APRS', '!3723.00N/00559.00W-Casa')!.velocidadKmh, undefined);
+  assert.equal(leerPosicionAprs('EA7WX', 'APRS', '!3723.00N/00559.00W_220/004g005t077')!.rumbo, undefined);
+  // Comprimida: «7P» = rumbo 88°, 36,2 nudos (ejemplo de la especificación)
+  const c = leerPosicionAprs('EA7KZ-9', 'APRS', '!/5L!!<*e7>7P[')!;
+  assert.equal(c.rumbo, 88);
+  assert.ok(Math.abs(c.velocidadKmh! - 67.1) < 0.3);
+});
+
+test('seguimiento: posición estimada de una estación en movimiento', () => {
+  const e = { nombre: 'EA7KZ-9', lat: 37, lon: -6, ultima: 0, rumbo: 90, velocidadKmh: 72 };
+  // 100 s a 72 km/h = 2 km hacia el este
+  const r = posicionEstimada(e, 100_000);
+  assert.equal(r.estimada, true);
+  assert.ok(Math.abs(r.pos.lat - 37) < 0.001);
+  assert.ok(Math.abs((r.pos.lon + 6) * 111.32 * Math.cos((37 * Math.PI) / 180) - 2) < 0.02);
+  // Nunca más de 300 s de extrapolación
+  const lejos = posicionEstimada(e, 3600_000);
+  assert.ok(Math.abs((lejos.pos.lon + 6) * 111.32 * Math.cos((37 * Math.PI) / 180) - 6) < 0.05);
+  // Parada o sin datos: su última posición, sin marcar como estimada
+  assert.deepEqual(posicionEstimada({ nombre: 'X', lat: 37, lon: -6, ultima: 0 }, 100_000), { pos: { lat: 37, lon: -6 }, estimada: false });
+  assert.equal(posicionEstimada({ ...e, velocidadKmh: 0.5 }, 100_000).estimada, false);
+});
+
+test('seguimiento: estación fija y estación móvil con rumbo de proa', () => {
+  assert.equal(acimutDeRotor(90, null), 90);
+  assert.equal(acimutDeRotor(90, 120), 330); // proa al 120: el este queda 30° a babor
+  assert.equal(acimutVerdadero(330, 120), 90);
+  assert.equal(difAngulo(5, 355), 10);
+  assert.equal(difAngulo(355, 5), -10);
+
+  const proa = new Proa();
+  assert.equal(proa.anotar(200, 1), null); // parado: el rumbo del GPS no vale
+  assert.equal(proa.anotar(118, 40), 118);
+  assert.equal(proa.anotar(300, 0.5), 118); // se para: conserva el último
+
+  const objetivoEste = { nombre: 'EA7KZ-9', lat: 37, lon: -5, ultima: 0 };
+  const base = { estacion: { lat: 37, lon: -6 }, buscar: (i: string) => (i === 'EA7KZ-9' ? objetivoEste : null), ultimaOida: () => objetivoEste, conElevacion: false };
+  const fija = calcular({ tipo: 'aprs', indicativo: 'EA7KZ-9' }, { ...base, movil: false, proa: null }, 1000);
+  assert.ok(fija.ok && Math.abs(fija.azVerdadero! - 89.7) < 0.3 && fija.azRotor === fija.azVerdadero);
+  assert.ok(Math.abs(fija.distanciaKm! - 88.8) < 0.5);
+  const movil = calcular({ tipo: 'aprs', indicativo: 'EA7KZ-9' }, { ...base, movil: true, proa: 120 }, 1000);
+  assert.ok(Math.abs(movil.azRotor! - 329.7) < 0.3);
+  assert.equal(movil.azVerdadero, fija.azVerdadero);
+  // Móvil sin rumbo: no se mueve, y se dice por qué
+  const sinProa = calcular({ tipo: 'aprs', indicativo: 'EA7KZ-9' }, { ...base, movil: true, proa: null }, 1000);
+  assert.equal(sinProa.ok, false);
+  assert.match(sinProa.espera!, /rumbo/);
+  // Estación que no se ha oído
+  assert.equal(calcular({ tipo: 'aprs', indicativo: 'EA7XYZ' }, { ...base, movil: false, proa: null }, 1000).ok, false);
+  // Estimada: lleva «~»
+  const enMarcha = { ...objetivoEste, rumbo: 0, velocidadKmh: 100 };
+  const est = calcular({ tipo: 'ultima' }, { ...base, ultimaOida: () => enMarcha, movil: false, proa: null }, 200_000);
+  assert.equal(est.nombre, 'EA7KZ-9~');
+  assert.ok(est.azVerdadero! < 89);
+
+  // El rotor solo se mueve cuando el cambio pasa del paso
+  const s = new Seguimiento(2);
+  s.seguir({ tipo: 'aprs', indicativo: 'EA7KZ-9' });
+  const ctx = { ...base, movil: true, proa: 120 as number | null };
+  assert.ok(Math.abs(s.paso(ctx, 1000)!.az - 329.7) < 0.3);
+  assert.equal(s.paso(ctx, 2000), null);
+  ctx.proa = 121; // un grado: no merece mover
+  assert.equal(s.paso(ctx, 3000), null);
+  ctx.proa = 150; // el barco vira: se vuelve a apuntar
+  assert.ok(Math.abs(s.paso(ctx, 4000)!.az - 299.7) < 0.3);
+  s.dejar();
+  assert.equal(s.paso(ctx, 5000), null);
+});
+
+test('seguimiento: sol y luna', () => {
+  const ctx = { estacion: { lat: 37.39, lon: -5.99 }, movil: false, proa: null, buscar: () => null, ultimaOida: () => null, conElevacion: true };
+  // Mediodía solar aproximado en Sevilla el 21 de junio: sol alto y al sur
+  const dia = calcular({ tipo: 'sol' }, ctx, Date.UTC(2026, 5, 21, 12, 26));
+  assert.ok(dia.ok);
+  assert.ok(Math.abs(dia.azVerdadero! - 180) < 6, `acimut ${dia.azVerdadero}`);
+  assert.ok(Math.abs(dia.elevacion! - 76) < 1.5, `elevación ${dia.elevacion}`);
+  // De noche: espera, no mueve
+  const noche = calcular({ tipo: 'sol' }, ctx, Date.UTC(2026, 5, 21, 0, 30));
+  assert.equal(noche.ok, false);
+  assert.match(noche.espera!, /horizonte/);
+  // Sin elevación en el rotor: solo acimut
+  assert.equal(calcular({ tipo: 'sol' }, { ...ctx, conElevacion: false }, Date.UTC(2026, 5, 21, 12, 26)).elevacion, undefined);
+  const luna = calcular({ tipo: 'luna' }, ctx, Date.UTC(2026, 5, 21, 12, 26));
+  assert.equal(typeof luna.azVerdadero, 'number');
+  // Aeronave a 10 km y 10 000 m sobre la estación: unos 45° de elevación
+  const avion = { nombre: 'IBE3110', lat: 37.39 + 10 / 111.19, lon: -5.99, ultima: 0, altitudM: 10_000 };
+  const a = calcular({ tipo: 'avion', indicativo: 'IBE3110' }, { ...ctx, altitudM: 0, buscar: (i, t) => (t === 'avion' && i === 'IBE3110' ? avion : null) }, 1000);
+  assert.ok(a.ok && Math.abs(a.elevacion! - 45) < 0.5 && Math.abs(difAngulo(a.azVerdadero!, 0)) < 0.5);
+});

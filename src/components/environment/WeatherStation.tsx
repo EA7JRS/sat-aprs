@@ -394,30 +394,7 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
                 </div>
               </div>
 
-              {/* Formatted APRS Beacon & Bulletin */}
-              <div className="border-t border-slate-900 pt-2 flex flex-col gap-2">
-                <span className="text-[8.5px] text-slate-500 block font-bold uppercase">Difusión APRS y Boletines Generados para Radioaficionados:</span>
-                <div className="space-y-1.5 font-mono text-[9px]">
-                  <div className="bg-slate-950 p-2 rounded border border-slate-900 flex flex-col gap-0.5">
-                    <div className="flex justify-between items-center text-slate-500 text-[8px] font-bold uppercase mb-0.5">
-                      <span>Baliza de Posición APRS (Símbolo '&#123;' - Calidad del Aire)</span>
-                      <span className="text-slate-500 font-mono">APRS-IS / RF TX</span>
-                    </div>
-                    <span className="text-sky-400 select-all font-bold tracking-tight whitespace-pre-wrap break-all">
-                      {iqair.rawAprsAqi || `EA4SAT>APRS,TCPIP*,qAC,GATEWAY:;AIR-QUAL *220000z4025.00N\\00342.00W{- ICA: ${iqair.aqi} (PM2.5: ${iqair.pm2_5 || 0}ug)`}
-                    </span>
-                  </div>
-                  <div className="bg-slate-950 p-2 rounded border border-slate-900 flex flex-col gap-0.5">
-                    <div className="flex justify-between items-center text-slate-500 text-[8px] font-bold uppercase mb-0.5">
-                      <span>Boletín de Difusión Pública (Identificador: BLN2AQI)</span>
-                      <span className="text-slate-500 font-mono">Boletín VHF</span>
-                    </div>
-                    <span className="text-amber-400 select-all font-bold tracking-tight whitespace-pre-wrap break-all">
-                      {`EA4SAT>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :MEDICION CALIDAD AIRE - ICA: ${iqair.aqi} (PM2.5: ${(iqair.pm2_5 || 8).toFixed(1)}ug)`}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              {/* La calidad del aire se anuncia por la cadena de avisos (Avisos), solo cuando es mala */}
             </div>
 
           </div>

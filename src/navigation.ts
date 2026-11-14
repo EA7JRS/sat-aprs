@@ -10,7 +10,7 @@ export type Pantalla =
   | 'monitor' | 'perfil' | 'weewx-pillar'
   | 'mapa' | 'dgt' | 'portus'
   | 'direwolf-pillar' | 'aprx-pillar' | 'aprs-adaptor' | 'pat-pillar'
-  | 'sistema' | 'engineering';
+  | 'sistema' | 'engineering' | 'pruebas';
 
 export type IdSeccion = 'inicio' | 'avisos' | 'estacion' | 'mapa' | 'radio' | 'sistema';
 
@@ -62,6 +62,7 @@ export const SECCIONES: Seccion[] = [
     id: 'sistema', nombre: 'Sistema', pantallas: [
       { id: 'sistema', nombre: 'Equipo' },
       { id: 'engineering', nombre: 'Configuración' },
+      { id: 'pruebas', nombre: 'Pruebas y simulación' },
     ],
   },
 ];

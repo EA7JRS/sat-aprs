@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.17.0] - 2026-11-14
+### Limpieza de pantallas antiguas y de datos duplicados
+- **Estación y meteo** queda en lo que es: la meteorología de la estación. Se quitan el rótulo fijo «APRS-IS enlace activo» (el estado real está en la barra superior), el registro de tráfico (está en Radio) y las tres listas de alertas (están en Avisos).
+- **Meteorología simulada, señalada**: cuando no hay clave de OpenWeatherMap ni de AEMET, la pantalla lo dice con un aviso. La portada solo enseña meteorología real (estación propia o Internet) y, si no la hay, lo indica en lugar de mostrar cifras del simulador.
+- **Emisiones duplicadas o sin fuente real, retiradas**: la baliza y el boletín periódicos de calidad del aire (la sustituye el aviso de la cadena, solo cuando el aire es malo) y la baliza automática de radiación (no tiene todavía una fuente real). Dejan de llenar el registro de «no emitido». El boletín de propagación HF se mantiene.
+- **Sin datos de relleno**: si la NOAA no responde ya no se muestran dos alertas de clima espacial de ejemplo, y una estación sin GPS deja de simular cambios de velocidad en el registro.
+- Las herramientas para inyectar sucesos de prueba pasan a **Sistema → Pruebas y simulación**, y los avisos sonoros y notificaciones del navegador a **Sistema → Equipo**.
+
+---
+
 ## [v1.16.0] - 2026-11-14
 ### HF y propagación, mejorado y en directo
 - **Se conserva todo** lo que había en la pantalla de propagación (índices, viento solar, escalas, previsión de la NOAA, boletín APRS y sus ajustes). Pasa a **Radio → HF y propagación** y se le antepone un resumen nuevo.

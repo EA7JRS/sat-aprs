@@ -479,6 +479,8 @@ export interface ServerTelemetryData {
   patStatus: PatWinlinkStatus; // Extended
   nucStats: NucDiagnostics; // Extended
   logs: AprsPacketLog[];
+  /** La meteorología mostrada sale del simulador (no hay fuente real configurada o no responde). */
+  meteoSimulada?: boolean;
   trafficTrends: TrafficDataPoint[];
   iqair?: IQAirStatus;
   rarRan?: RarRanStatus;

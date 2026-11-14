@@ -2053,6 +2053,8 @@ function broadcastForecastBulletin(forecast: ForecastDay[]) {
 // Observaciones reales para el parte meteorológico APRS (server/estacion/meteo.ts)
 let observacionInternet: Observacion | null = null;
 let observacionPropia: Observacion | null = null;
+// true mientras `weatherState` salga del simulador (sin clave de OWM ni de AEMET, o con la fuente caída)
+let meteoSimulada = true;
 
 async function refreshWeather() {
   try {
@@ -2132,6 +2134,7 @@ async function refreshWeather() {
           rawAprsWx: '',
           forecast: forecastList
         };
+        meteoSimulada = false;
         // Observación real de Internet para el parte APRS: solo lo que la fuente da, sin rellenos
         observacionInternet = {
           cuando: Number.isFinite(data.dt) ? data.dt * 1000 : Date.now(),
@@ -2197,6 +2200,7 @@ async function refreshWeather() {
                   forecast: forecastList
                 };
                 
+                meteoSimulada = false;
                 const numAemet = (v: any): number | undefined => (v === undefined || v === null || !Number.isFinite(Number(v)) ? undefined : Number(v));
                 const horaAemet = Date.parse(`${latest.fint || ''}Z`.replace(/ZZ$/, 'Z').replace(/([+-]\d{2}:?\d{2})Z$/, '$1'));
                 observacionInternet = {
@@ -2226,6 +2230,7 @@ async function refreshWeather() {
     } else {
       // Realistic climate simulator for Central/Southern Spain
       observacionInternet = null; // lo simulado se muestra, pero no vale para el parte APRS
+      meteoSimulada = true;
       const baseTemp = 18 + Math.sin(Date.now() / 100000) * 8; // day/night cycle
       const baseHumidity = 50 - Math.sin(Date.now() / 100000) * 20;
       const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
@@ -2249,6 +2254,7 @@ async function refreshWeather() {
     weatherState.rawAprsWx = generateWxPayload(weatherState);
   } catch (err: any) {
     // Fail-safe mock values
+    meteoSimulada = true;
     const forecastList = generateMockForecast(gpsdState.lat, gpsdState.lon);
     weatherState.time = new Date().toISOString();
     weatherState.forecast = forecastList;
@@ -2719,7 +2725,7 @@ async function refreshIQAir() {
       addLog('SYS', 'AQ_API', 'LOCAL', 'API', `Calidad del aire obtenida desde Open-Meteo para lat=${lat.toFixed(4)}, lon=${lon.toFixed(4)}. PM2.5: ${pm25Val}ug, CO: ${coVal}ug. ICA calculado: ${computedAqi}`, true, 'Correcto');
       
       // Broadcast APRS Bulletin and Transmit Beacon
-      transmitAirQualityBeacon();
+      // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
       return;
     }
 
@@ -2753,7 +2759,7 @@ async function refreshIQAir() {
           };
           addLog('SYS', 'IQAIR', 'LOCAL', 'API', `Calidad del aire actualizada desde IQAir para ${d.city}, ${d.state}. AQI: ${d.current.pollution.aqius}`, true, 'Correcto');
           
-          transmitAirQualityBeacon();
+          // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
           return;
         } else {
           throw new Error(json.data?.message || 'Fallo respuesta IQAir');
@@ -2796,7 +2802,7 @@ async function refreshIQAir() {
         so2
       };
 
-      transmitAirQualityBeacon();
+      // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
     }
   } catch (err: any) {
     addLog('SYS', 'IQAIR_ERR', 'LOCAL', 'HARDWARE', `Error conectando con API de calidad del aire: ${err.message}. Operando con simulador local.`, false, 'Simulado activo');
@@ -2915,7 +2921,7 @@ async function refreshRarRan() {
       distanciaKm: dist
     };
 
-    transmitRarRanBeacon();
+    // Sin emisión automática: la radiación no tiene todavía una fuente real y este dato es modelado
   } catch (err: any) {
     console.error("Error refreshing RarRan state:", err ? err.message : err);
   }
@@ -3730,10 +3736,10 @@ async function refreshNoaaAlerts() {
       }
     }
     
-    // Fallback simulated active space climate alerts
-    generateSimulatedNoaa();
+    // Sin respuesta de la NOAA no hay alertas que mostrar (antes se enseñaban dos de ejemplo como si fueran reales)
+    noaaAlerts = [];
   } catch (err) {
-    generateSimulatedNoaa();
+    noaaAlerts = [];
   }
 }
 
@@ -4000,11 +4006,8 @@ refreshTrafficIncidents();
 setInterval(() => {
   gpsdState.time = new Date().toISOString();
   
-  // Occasional speed drift if simulated mobile and real GPSD service is inactive
-  if (nucStats.services.gpsd !== 'active' && gpsdState.isFallback && Math.random() > 0.95) {
-    gpsdState.speedKmh = gpsdState.speedKmh === 0 ? Math.round(30 + Math.random() * 50) : 0;
-    addLog('SYS', 'GPSD', 'LOCAL', 'CHIPS', `Cambio de velocidad móvil: ${gpsdState.speedKmh} km/h`, true, 'Cinemática');
-  }
+  // Sin fijo GPS la estación está parada en su posición fija
+  if (gpsdState.isFallback) gpsdState.speedKmh = 0;
   
   // Minor NTPSEC microsecond jitter
 
@@ -4729,6 +4732,7 @@ app.get('/api/telemetry', async (req, res) => {
     erddapBuoys,
     portusStations,
     aemetAlerts,
+    meteoSimulada,
     propagation: propagationData || undefined,
     navareas: navareaWarnings
   });

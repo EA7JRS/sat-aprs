@@ -16,6 +16,8 @@ const RUMBOS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const rumbo = (grados: number) => RUMBOS[Math.round((((grados % 360) + 360) % 360) / 45) % 8];
 
 interface Baliza { activa: boolean; intervaloMin: number; packet: string | null; errores: string[] }
+interface ObsMeteo { fuente: string; cuando: number; reciente: boolean; tempC: number | null; humedadPct: number | null; presionHpa: number | null; vientoKmh: number | null; dirGrados: number | null }
+interface Meteo { activa: boolean; intervaloMin: number; propia: ObsMeteo | null; internet: ObsMeteo | null }
 
 function Enlace({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
@@ -28,13 +30,24 @@ function Enlace({ onClick, children }: { onClick: () => void; children: React.Re
 export default function Inicio({ data, onIr }: { data: ServerTelemetryData; onIr: (p: Pantalla) => void }) {
   const { avisos, fuentes, error } = useAvisos();
   const [baliza, setBaliza] = useState<Baliza | null>(null);
+  const [meteo, setMeteo] = useState<Meteo | null>(null);
 
   useEffect(() => {
     customFetch('/api/estacion/baliza').then((r) => r.json()).then(setBaliza).catch(() => setBaliza(null));
   }, [data.config.callsign, data.config.aprsBeaconEnabled, data.config.aprsBeaconInterval]);
 
+  // Meteorología real (estación propia o Internet); lo simulado no se enseña aquí
+  useEffect(() => {
+    const leer = () => customFetch('/api/estacion/meteo').then((r) => r.json()).then(setMeteo).catch(() => setMeteo(null));
+    leer();
+    const t = setInterval(leer, 60000);
+    return () => clearInterval(t);
+  }, []);
+  const obs = meteo?.propia?.reciente ? meteo.propia : meteo?.internet?.reciente ? meteo.internet : null;
+  const valor = (v: number | null, unidad: string, decimales = 0) => (v === null ? '—' : `${v.toFixed(decimales)} ${unidad}`);
+
   const activos = avisos.filter((a) => a.cumple);
-  const { gpsd, weather, config } = data;
+  const { gpsd, config } = data;
   const gpsReal = !gpsd.isFallback && gpsd.mode >= 2;
   const emisiones = data.logs.filter((l) => l.type === 'TX').slice(0, 6);
 
@@ -81,11 +94,24 @@ export default function Inicio({ data, onIr }: { data: ServerTelemetryData; onIr
             </Dato>
             <Dato rotulo="Radio de avisos">{config.filterRadiusKm} km (sismos) · {config.meteoRadioKm ?? 25} km (meteo)</Dato>
           </div>
-          <div className="border-t border-slate-800 pt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <Dato rotulo="Temp." grande>{weather.tempC.toFixed(1)} °C</Dato>
-            <Dato rotulo="Humedad" grande>{Math.round(weather.humidityPct)} %</Dato>
-            <Dato rotulo="Presión" grande>{Math.round(weather.pressureHpa)} hPa</Dato>
-            <Dato rotulo="Viento" grande>{rumbo(weather.windDirDeg)} {Math.round(weather.windSpeedKts * 1.852)} km/h</Dato>
+          <div className="border-t border-slate-800 pt-3 flex flex-col gap-2">
+            {obs ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <Dato rotulo="Temp." grande>{valor(obs.tempC, '°C', 1)}</Dato>
+                  <Dato rotulo="Humedad" grande>{valor(obs.humedadPct, '%')}</Dato>
+                  <Dato rotulo="Presión" grande>{valor(obs.presionHpa, 'hPa')}</Dato>
+                  <Dato rotulo="Viento" grande>{obs.vientoKmh === null ? '—' : `${obs.dirGrados !== null ? `${rumbo(obs.dirGrados)} ` : ''}${Math.round(obs.vientoKmh)} km/h`}</Dato>
+                </div>
+                <div className="text-xs text-slate-400">
+                  {obs.fuente} · {haceCuanto(obs.cuando)} · parte por APRS {meteo?.activa ? `cada ${meteo.intervaloMin} min` : 'apagado'}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-400" id="inicio-sin-meteo">
+                Sin datos meteorológicos reales: ni la estación propia ni una fuente de Internet han dado una medida reciente.
+              </p>
+            )}
           </div>
         </Tarjeta>
 

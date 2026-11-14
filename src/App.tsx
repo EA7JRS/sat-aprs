@@ -1151,273 +1151,58 @@ export default function App() {
         ) : activeTab === 'perfil' ? (
           <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} initialTab="profile" />
         ) : activeTab === 'monitor' ? (
-          /* CONSOLA OPERATIVA MONITORS GRID - REDISEÑO HAMCLOCK / WORLD RADIO LEAGUE */
-          <motion.div 
+          /* ESTACIÓN Y METEO: la meteorología de la estación. El tráfico está en Radio y los avisos en Avisos. */
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-5"
+            className="flex flex-col gap-4"
           >
-            {/* TIER 1: BANNER DE PERFIL DEL OPERADOR Y ESTACIÓN (Estilo World Radio League) */}
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-stretch justify-between gap-4 backdrop-blur-sm relative overflow-hidden">
-              {/* Background ambient accents */}
-              <div className="absolute top-0 left-0 w-32 h-full bg-gradient-to-r from-emerald-500/5 to-transparent pointer-events-none" />
-              <div className="absolute top-0 right-0 w-32 h-full bg-gradient-to-l from-cyan-500/5 to-transparent pointer-events-none" />
-
-              {/* Left Section: Station Callsign Profile Badge */}
-              <div className="flex items-center gap-4 relative">
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0 animate-pulse">
-                  <Radio size={28} />
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-3xl font-extrabold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 uppercase drop-shadow-[0_0_10px_rgba(52,211,153,0.2)]">
-                      {data.config.callsign}
-                    </span>
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-black tracking-widest uppercase">
-                      SYS-OP
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
-                    <span className="flex items-center gap-1 font-mono text-emerald-400">
-                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                      APRS-IS ENLACE ACTIVO
-                    </span>
-                    <span className="text-slate-600">•</span>
-                    <span className="font-mono text-slate-300 flex items-center gap-1">
-                      <MapPin size={12} className="text-cyan-400" />
-                      QTH: <span className="text-cyan-300 font-bold">{getMaidenheadLocator(data.gpsd.lat, data.gpsd.lon)}</span>
-                    </span>
-                    <span className="text-slate-600">•</span>
-                    <span className="text-slate-300 font-mono">
-                      LAT: <span className="font-bold">{data.gpsd.lat.toFixed(4)}°N</span> | LON: <span className="font-bold">{data.gpsd.lon.toFixed(4)}°E</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Center Section: Active Frequencies & Radio Link Status */}
-              <div className="flex flex-col justify-center border-t border-b border-slate-800/60 py-3 md:py-0 md:border-t-0 md:border-b-0 md:border-l md:border-r md:px-6 border-slate-800 shrink-0">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 font-mono text-xs">
-                  <div>
-                    <span className="text-slate-500 block uppercase text-[9px] tracking-wider">Frecuencia VHF</span>
-                    <span className="text-slate-200 font-bold text-emerald-400">144.800 MHz FM</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block uppercase text-[9px] tracking-wider">TNC Hardware</span>
-                    <span className="text-slate-200 font-bold">Direwolf AFSK</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block uppercase text-[9px] tracking-wider">Sincronía NTP</span>
-                    <span className="text-slate-200 font-bold flex items-center gap-1 text-cyan-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                      +{data.ntp.offsetMs.toFixed(2)}ms
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block uppercase text-[9px] tracking-wider">Velocidad TNC</span>
-                    <span className="text-slate-200 font-bold">1200 Baudios</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Section: Time Synchronicity & Quick System Information */}
-              <div className="flex items-center gap-4 justify-between md:justify-end shrink-0">
-                <div className="text-right flex flex-col justify-center">
-                  <div className="flex items-center gap-2 justify-end">
-                    <Clock size={14} className="text-cyan-400" />
-                    <span className="font-mono text-lg font-bold text-slate-100 tracking-wider">
-                      {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} UTC
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest block">
-                    NTP STRATUM {data.ntp.stratum} • LATENCIA {rtt !== null ? `${rtt}ms` : 'N/A'}
-                  </span>
-                  <div className="flex items-center gap-1.5 justify-end mt-1.5">
-                    <span className="text-[10px] bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
-                      CPU Temp: <span className="text-amber-400 font-bold">{data.nucStats.cpuTempC}°C</span>
-                    </span>
-                    <span className="text-[10px] bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
-                      RAM: <span className="text-cyan-400 font-bold">{data.nucStats.ramUsagePct}%</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* TIER 2: METEOROLOGÍA LCD LOCAL */}
-            <div className="flex flex-col gap-5">
-              <WeatherStation weather={data.weather} iqair={data.iqair} />
-            </div>
-
-            {/* TIER 3: WORLD RADIO LEAGUE LIVE STATION LOGBOOK & ALERTS SPLIT */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-              
-              {/* LOGBOOK EN DIRECTO (Span 7) - Visualizador de tráfico de radioaficionados */}
-              <div className="lg:col-span-7 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col gap-3">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <BookOpen size={16} className="text-emerald-400" />
-                    <h3 className="font-mono text-xs font-black uppercase tracking-widest text-slate-200">
-                      S.A.T. Station Logbook (Tráfico APRS / AIS)
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-[10px] text-slate-500">
-                    <span>Total Cola: <span className="text-slate-300 font-bold">{aprsPackets.length}</span></span>
-                    <span>•</span>
-                    <span>Logs de Enlace: <span className="text-emerald-400 font-bold">{data.logs ? data.logs.filter(l => l.type !== 'SYS').length : 0}</span></span>
-                  </div>
-                </div>
-
-                {/* List Stream de Logbook */}
-                <div className="flex flex-col gap-2 max-h-[350px] overflow-y-auto pr-1" id="wrl-logbook-feed">
-                  {data.logs && data.logs.filter(l => l.type !== 'SYS').length > 0 ? (
-                    data.logs.filter(l => l.type !== 'SYS').slice(0, 15).map((log, index) => {
-                      let typeColor = "text-slate-400 bg-slate-950/50 border-slate-800";
-                      let typeLabel = "SYS";
-                      if (log.type === "TX") {
-                        typeColor = "text-emerald-400 bg-emerald-950/20 border-emerald-500/20";
-                        typeLabel = "TX RF";
-                      } else if (log.type === "RX") {
-                        typeColor = "text-cyan-400 bg-cyan-950/20 border-cyan-500/20";
-                        typeLabel = "RX IS";
-                      } else if (log.type === "AIS") {
-                        typeColor = "text-indigo-400 bg-indigo-950/20 border-indigo-500/20";
-                        typeLabel = "AIS MS";
-                      } else if (log.type === "WINLINK") {
-                        typeColor = "text-violet-400 bg-violet-950/20 border-violet-500/20";
-                        typeLabel = "WLINK";
-                      }
-
-                      return (
-                        <div 
-                          key={log.id || `log-${index}`}
-                          className="flex items-start justify-between gap-3 p-2.5 bg-slate-950/50 border border-slate-850/50 rounded-xl hover:border-slate-800 transition-all font-mono text-xs leading-relaxed"
-                        >
-                          <div className="flex items-start gap-2.5 min-w-0">
-                            {/* Type Pill */}
-                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 ${typeColor}`}>
-                              {typeLabel}
-                            </span>
-                            
-                            {/* Packet content */}
-                            <div className="flex flex-col min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-extrabold text-emerald-400 text-slate-200">
-                                  {log.source || data.config.callsign}
-                                </span>
-                                {log.destination && (
-                                  <>
-                                    <span className="text-slate-600 text-[10px]">&gt;</span>
-                                    <span className="text-slate-400 text-[10px]">{log.destination}</span>
-                                  </>
-                                )}
-                                {log.path && (
-                                  <span className="text-slate-500 text-[9px] hidden sm:inline">[{log.path}]</span>
-                                )}
-                              </div>
-                              <p className="text-slate-300 break-all text-[11px] mt-0.5 whitespace-pre-wrap">
-                                {log.payload}
-                              </p>
-                              {log.remarks && (
-                                <span className="text-slate-500 text-[9px] italic mt-0.5">
-                                  ℹ️ {log.remarks}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Time offset & Success marker */}
-                          <div className="text-right shrink-0 flex flex-col items-end gap-1 font-mono text-[9px]">
-                            <span className="text-slate-500">
-                              {log.timestamp ? log.timestamp.split("T")[1]?.slice(0, 8) || log.timestamp : "N/A"}
-                            </span>
-                            {log.success ? (
-                              <span className="text-emerald-400 font-bold">OK</span>
-                            ) : (
-                              <span className="text-red-400 font-bold">ERR</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="py-8 text-center text-slate-500 font-mono text-xs border border-dashed border-slate-850 rounded-xl">
-                      Esperando paquetes APRS / AIS de telemetría local...
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ENGINES DE ALERTAS Y NOTIFICADORES (Span 5) */}
-              <div className="lg:col-span-5 flex flex-col gap-5">
-                
-                {/* Panel de Alertas Activas */}
-                <NotificationPanel 
-                  earthquakes={data.earthquakes} 
-                  noaaAlerts={data.noaaAlerts} 
-                  navareas={navareas} 
-                  minMagnitudVisualThreshold={data.config.minMagnitudAlertaVisual ?? 3.0}
-                  onAddSimulatedNavarea={handleAddSimulatedNavarea}
-                  weather={data.weather}
-                  tsunamiAlerts={data.tsunamiAlerts || []}
-                  cecopSituacion={cecopSituacion}
-                  aemetAlerts={data.aemetAlerts || []}
-                  aemetAlertsSubscriptionEnabled={data.config.aemetAlertsSubscriptionEnabled ?? true}
-                  gpsd={data.gpsd}
-                />
-
-                {/* Motor continuo de escaneo de amenazas */}
-                <ThreatPollingEngine 
-                  gpsd={data.gpsd}
-                  earthquakes={data.earthquakes} 
-                  noaaAlerts={data.noaaAlerts} 
-                  tsunamiAlerts={data.tsunamiAlerts || []} 
-                  csnStations={data.csnStations || []} 
-                  dgtIncidents={data.dgtIncidents || []} 
-                  erddapBuoys={data.erddapBuoys || []} 
-                  navareas={navareas} 
-                  weather={data.weather} 
-                  aemetAlerts={data.aemetAlerts || []}
-                  config={data.config}
-                  onInjectRaw={handleInjectRaw} 
-                  onRelocate={handleRelocate}
-                  isEcoMode={isEcoMode}
-                />
-              </div>
-
-            </div>
-
-            {/* TIER 4: MONITOR DE ALERTAS DE EMERGENCIA S.A.T */}
-            <div className="bg-slate-900/30 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4">
-              
-              <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2">
-                <Sliders size={14} className="text-slate-400" />
-                <h4 className="font-mono text-xs font-black uppercase tracking-widest text-slate-400">
-                  Monitor de Alertas y Eventos Sísmicos/Meteorológicos S.A.T.
-                </h4>
-              </div>
-
-              {/* Alert Monitor List */}
-              <motion.div
-                key={`alert-monitor-wrapper-${alertAnimKey}`}
-                initial={{ y: 15, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: isEcoMode ? 0 : 0.4 }}
-                className="w-full"
-              >
-                <AlertMonitor 
-                  earthquakes={data.earthquakes} 
-                  noaaAlerts={data.noaaAlerts} 
-                  tsunamiAlerts={data.tsunamiAlerts || []} 
-                  minMagnitudeVisualAlert={data.config.minMagnitudAlertaVisual ?? 3.0}
-                  onRelocate={handleRelocate}
-                  aprsPackets={aprsPackets}
-                  setAprsPackets={setAprsPackets}
-                  config={data.config}
-                />
-              </motion.div>
-            </div>
-
+            <h1 className="text-2xl font-semibold text-slate-100">Estación y meteo</h1>
+            {data.meteoSimulada && (
+              <p id="aviso-meteo-simulada" className="border border-amber-700 bg-amber-950 text-amber-300 rounded-xl px-4 py-3 text-sm">
+                Estos datos meteorológicos son <b>simulados</b>: no hay clave de OpenWeatherMap ni de AEMET, o la fuente no responde.
+                No se emiten por APRS. Las fuentes reales se ajustan en Estación → Perfil y en Sistema → Configuración.
+              </p>
+            )}
+            <WeatherStation weather={data.weather} iqair={data.iqair} />
+          </motion.div>
+        ) : activeTab === 'pruebas' ? (
+          /* PRUEBAS Y SIMULACIÓN: herramientas para inyectar sucesos de prueba; nada de esto sale al aire */
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col gap-4"
+          >
+            <h1 className="text-2xl font-semibold text-slate-100">Pruebas y simulación</h1>
+            <p className="text-sm text-slate-400">
+              Herramientas para ensayar con sucesos de prueba. Lo que se inyecta aquí se ve en pantalla pero nunca se transmite; los avisos reales están en Avisos.
+            </p>
+            <ThreatPollingEngine 
+              gpsd={data.gpsd}
+              earthquakes={data.earthquakes} 
+              noaaAlerts={data.noaaAlerts} 
+              tsunamiAlerts={data.tsunamiAlerts || []} 
+              csnStations={data.csnStations || []} 
+              dgtIncidents={data.dgtIncidents || []} 
+              erddapBuoys={data.erddapBuoys || []} 
+              navareas={navareas} 
+              weather={data.weather} 
+              aemetAlerts={data.aemetAlerts || []}
+              config={data.config}
+              onInjectRaw={handleInjectRaw} 
+              onRelocate={handleRelocate}
+              isEcoMode={isEcoMode}
+            />
+            <AlertMonitor 
+              earthquakes={data.earthquakes} 
+              noaaAlerts={data.noaaAlerts} 
+              tsunamiAlerts={data.tsunamiAlerts || []} 
+              minMagnitudeVisualAlert={data.config.minMagnitudAlertaVisual ?? 3.0}
+              onRelocate={handleRelocate}
+              aprsPackets={aprsPackets}
+              setAprsPackets={setAprsPackets}
+              config={data.config}
+            />
           </motion.div>
         ) : activeTab === 'cecop-dashboard' ? (
           /* PILAR II: COORDINACIÓN Y VERIFICACIÓN CECOP (PEM) */
@@ -1723,6 +1508,20 @@ export default function App() {
             />
             </div>
             <UserProfileManager />
+            {/* Avisos sonoros y notificaciones del navegador */}
+            <NotificationPanel 
+              earthquakes={data.earthquakes} 
+              noaaAlerts={data.noaaAlerts} 
+              navareas={navareas} 
+              minMagnitudVisualThreshold={data.config.minMagnitudAlertaVisual ?? 3.0}
+              onAddSimulatedNavarea={handleAddSimulatedNavarea}
+              weather={data.weather}
+              tsunamiAlerts={data.tsunamiAlerts || []}
+              cecopSituacion={cecopSituacion}
+              aemetAlerts={data.aemetAlerts || []}
+              aemetAlertsSubscriptionEnabled={data.config.aemetAlertsSubscriptionEnabled ?? true}
+              gpsd={data.gpsd}
+            />
 
             {/* Low-Level ntpsec / gpsd Channels */}
             <TelemetryStatus 

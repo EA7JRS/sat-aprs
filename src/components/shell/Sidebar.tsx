@@ -51,7 +51,7 @@ export default function Sidebar({ actual, onIr, avisosActivos, version }: Props)
               <Icono size={17} className={activa ? 'text-sky-400' : 'text-slate-400'} />
               <span>{s.nombre}</span>
               {s.id === 'avisos' && avisosActivos > 0 && (
-                <span className="lg:ml-auto bg-amber-400 text-slate-950 text-xs font-bold rounded-full px-2 py-px" aria-label={`${avisosActivos} avisos activos`}>
+                <span className="lg:ml-auto sat-nivel bg-[#fbbf24] text-black text-xs font-bold rounded-full px-2 py-px" aria-label={`${avisosActivos} avisos activos`}>
                   {avisosActivos}
                 </span>
               )}

@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.13.0] - 2026-11-14
+### Color de la consola
+- **Selector de color** en la barra de estado: **Automático** (por defecto), **Sistema**, **Claro**, **Oscuro** y **Táctico**. La elección se guarda en cada navegador.
+  - *Automático*: claro de día y oscuro de noche, según el sol en la posición de la estación (o por horario fijo, si así se ajusta en Sistema).
+  - *Sistema*: el claro u oscuro que tenga el sistema operativo o el navegador.
+  - *Táctico*: una sola gama rojo-ámbar de baja luminosidad, para no perder la visión nocturna; atenúa también el fondo del mapa.
+- Los temas redefinen la paleta completa (`src/index.css`) en lugar de retocar componentes uno a uno, así que cambian toda la consola a la vez. Sustituyen a los antiguos «modo claro» y «modo noche»; el modo claro anterior dejaba paneles oscuros con texto oscuro.
+- El nivel de los avisos (amarillo, naranja, rojo) conserva sus colores en todos los temas. El modo de emergencia sigue siendo un aviso visual aparte.
+
+---
+
 ## [v1.12.0] - 2026-11-14
 ### AIS y ADS-B reales en el mapa
 - **AIS** (`server/ais.ts`): lectura de sentencias NMEA `!AIVDM` (posiciones de clase A, clase B y largo alcance, y datos estáticos para el nombre, el indicativo, el tipo y el destino), con reensamblado de fragmentos y suma de comprobación. Entrada por **UDP** (puerto 10110; AIS-catcher con `-u`, rtl_ais, un receptor) y, opcionalmente, por **TCP** contra un servidor de sentencias.

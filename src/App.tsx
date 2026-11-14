@@ -9,6 +9,7 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import { useAvisos } from './utils/useAvisos';
+import { useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
@@ -481,9 +482,6 @@ export default function App() {
   // Sync state modifications across multiple tabs or browser windows
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'nightMode' && e.newValue !== null) {
-        setNightMode(e.newValue === 'true');
-      }
       if (e.key === 'eco_mode' && e.newValue !== null) {
         setIsEcoMode(e.newValue === 'true');
       }
@@ -494,29 +492,10 @@ export default function App() {
     };
   }, []);
 
-  // Night Mode States & Autopreserving selection
-  const [nightMode, setNightMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('nightMode');
-    if (saved !== null) return saved === 'true';
-    return false;
-  });
-
-  // Day Mode State & Autopreserving selection
-  const [dayMode, setDayMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('dayMode');
-    return saved === 'true'; // Default is dark
-  });
-
   // Emergency Mode State & Autopreserving selection
   const [emergencyMode, setEmergencyMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('emergencyMode');
     return saved === 'true';
-  });
-
-  const [nightModeAuto, setNightModeAuto] = useState<boolean>(() => {
-    const saved = localStorage.getItem('nightModeAuto');
-    if (saved !== null) return saved === 'true';
-    return true; // Auto enabled by default
   });
 
   const [nightModeUseSolar, setNightModeUseSolar] = useState<boolean>(() => {
@@ -534,6 +513,19 @@ export default function App() {
     const saved = localStorage.getItem('nightModeEndHour');
     return saved !== null ? parseInt(saved, 10) : 8; // 08:00 (8 AM)
   });
+
+  // Color de la consola: claro, oscuro, táctico, el del sistema o automático (src/utils/tema.ts)
+  const tema = useTema({
+    lat: data?.gpsd?.lat ?? 40.416775,
+    lon: data?.gpsd?.lon ?? -3.70379,
+    solar: nightModeUseSolar,
+    horaInicio: startHour,
+    horaFin: endHour,
+  });
+  // El modo de emergencia es un aviso visual aparte y se impone al color elegido
+  const dayMode = !emergencyMode && tema.efectivo === 'claro';
+  const nightMode = !emergencyMode && tema.efectivo === 'tactico';
+  const nightModeAuto = tema.elegido === 'auto';
 
   // Automatic Version Updates S.A.T.
   const APP_VERSION = '2.4.0';
@@ -688,98 +680,28 @@ export default function App() {
     return () => clearInterval(interval);
   }, [showUpdatePrompt, forceUpdate]);
 
-  // Keep checking local time for automatic night mode triggers
-  useEffect(() => {
-    if (!nightModeAuto) return;
-
-    const checkTime = () => {
-      const now = new Date();
-      let isNight = false;
-
-      if (nightModeUseSolar) {
-        // Compute dynamically using station fixed or GPS coords
-        const lat = data?.gpsd?.lat ?? 40.416775;
-        const lon = data?.gpsd?.lon ?? -3.703790;
-        const solar = getSunriseSunset(lat, lon, now);
-        const currentHourDec = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
-        isNight = isNightTime(currentHourDec, solar.sunrise, solar.sunset);
-      } else {
-        const currentHour = now.getHours();
-        if (startHour > endHour) {
-          isNight = currentHour >= startHour || currentHour < endHour;
-        } else {
-          isNight = currentHour >= startHour && currentHour < endHour;
-        }
-      }
-      setNightMode(isNight);
-      if (isNight) {
-        setDayMode(false);
-        localStorage.setItem('dayMode', 'false');
-        setEmergencyMode(false);
-        localStorage.setItem('emergencyMode', 'false');
-      }
-    };
-
-    checkTime();
-    const interval = setInterval(checkTime, 10000); // Check every 10s
-    return () => clearInterval(interval);
-  }, [nightModeAuto, nightModeUseSolar, startHour, endHour, data?.gpsd?.lat, data?.gpsd?.lon]);
-
   const handleToggleDayMode = () => {
-    setDayMode(prev => {
-      const newVal = !prev;
-      localStorage.setItem('dayMode', String(newVal));
-      if (newVal) {
-        setNightMode(false);
-        localStorage.setItem('nightMode', 'false');
-        setEmergencyMode(false);
-        localStorage.setItem('emergencyMode', 'false');
-      }
-      return newVal;
-    });
+    setEmergencyMode(false);
+    localStorage.setItem('emergencyMode', 'false');
+    tema.setElegido(dayMode ? 'oscuro' : 'claro');
   };
 
   const handleToggleNightMode = () => {
-    setNightMode(prev => {
-      const newVal = !prev;
-      localStorage.setItem('nightMode', String(newVal));
-      if (newVal) {
-        setDayMode(false);
-        localStorage.setItem('dayMode', 'false');
-        setEmergencyMode(false);
-        localStorage.setItem('emergencyMode', 'false');
-      }
-      return newVal;
-    });
-    // Suspend auto mode to let the manual click override persist
-    if (nightModeAuto) {
-      setNightModeAuto(false);
-      localStorage.setItem('nightModeAuto', 'false');
-    }
+    setEmergencyMode(false);
+    localStorage.setItem('emergencyMode', 'false');
+    tema.setElegido(nightMode ? 'oscuro' : 'tactico');
   };
 
   const handleToggleEmergencyMode = () => {
     setEmergencyMode(prev => {
       const newVal = !prev;
       localStorage.setItem('emergencyMode', String(newVal));
-      if (newVal) {
-        setDayMode(false);
-        localStorage.setItem('dayMode', 'false');
-        setNightMode(false);
-        localStorage.setItem('nightMode', 'false');
-      }
       return newVal;
     });
-    // Suspend auto mode to let the manual click override persist
-    if (nightModeAuto) {
-      setNightModeAuto(false);
-      localStorage.setItem('nightModeAuto', 'false');
-    }
   };
 
   const handleToggleNightModeAuto = (v: boolean) => {
-    setNightModeAuto(v);
-    localStorage.setItem('nightModeAuto', String(v));
+    tema.setElegido(v ? 'auto' : tema.efectivo);
   };
 
   const handleToggleNightModeUseSolar = (v: boolean) => {
@@ -1102,56 +1024,6 @@ export default function App() {
                       filter 0.8s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
       `}} />
-      {nightMode && (
-        <style dangerouslySetInnerHTML={{ __html: `
-          /* Monochromatic Low-Glare Red-Amber Tactical Night Mode overrides */
-          body, #root, .min-h-screen {
-            background-color: #050201 !important;
-          }
-          
-          /* Red-Amber low glare filter for maps and charts */
-          iframe, .recharts-responsive-container, #radar-map-canvas, svg, canvas, img {
-            filter: sepia(1) saturate(1.8) hue-rotate(-50deg) brightness(0.65) contrast(1.15) !important;
-          }
-          
-          /* Dimm out high-contrast neon badges and texts to deep amber/orange/red */
-          .text-emerald-400, .text-emerald-300, .text-cyan-400, .text-blue-400, .text-indigo-400, .text-yellow-400,
-          .text-emerald-500, .text-amber-500, .text-sky-450, .text-teal-400, .text-orange-400, .text-red-400 {
-            color: #f97316 !important; /* Orange 500 */
-          }
-          .text-green-400 {
-            color: #f97316 !important;
-          }
-          .border-emerald-500, .border-emerald-500\/30, .border-emerald-500\/40, .border-emerald-500\/50, 
-          .border-cyan-500, .border-blue-500, .border-indigo-500, .border-slate-800, .border-slate-850 {
-            border-color: rgba(234, 88, 12, 0.25) !important;
-          }
-          .bg-emerald-400, .bg-emerald-500, .bg-emerald-950, .bg-emerald-950\/20, .bg-blue-950\/40, .bg-indigo-950\/40 {
-            background-color: rgba(124, 45, 18, 0.25) !important;
-            border-color: rgba(234, 88, 12, 0.3) !important;
-          }
-          
-          /* Dim all buttons, cards and elements to avoid retinal strain */
-          .bg-slate-900, .bg-slate-950, .bg-slate-950\/80, .bg-slate-900\/50, .bg-slate-950\/40, .bg-[#070b12], .bg-slate-900\/45 {
-            background-color: #0b0504 !important; /* Extremely dark red-tinted black */
-            border-color: #260a00 !important; /* Dim red-brown borders */
-          }
-          
-          /* General text desaturation and dimming */
-          .text-slate-100, .text-slate-200, .text-slate-300, .text-white {
-            color: #c9a59c !important; /* Warm copper/red-tinted cream */
-          }
-          .text-slate-400, .text-slate-500 {
-            color: #7d5449 !important; /* Dim copper-gray */
-          }
-          
-          /* Special active indicators: keep them orange */
-          .bg-emerald-400.text-slate-950 {
-            background-color: #f97316 !important;
-            color: #000000 !important;
-          }
-        `}} />
-      )}
       {emergencyMode && (
         <style dangerouslySetInnerHTML={{ __html: `
           /* High-Visibility Tactical Emergency Mode (Crimson) Overrides */
@@ -1201,254 +1073,6 @@ export default function App() {
           }
         `}} />
       )}
-      {dayMode && (
-        <style dangerouslySetInnerHTML={{ __html: `
-          /* Modern High-Contrast Elegant Day Mode (Light Theme) Overrides */
-          body, #root, .min-h-screen {
-            background-color: #f1f5f9 !important;
-            color: #0f172a !important;
-          }
-          
-          /* Main container background overrides */
-          .min-h-screen.bg-\[\#070b12\], .bg-\[\#070b12\], .bg-slate-950, .bg-[#070b12] {
-            background-color: #f1f5f9 !important;
-          }
-
-          /* General slate & dark background classes converted to crisp cards */
-          .bg-slate-900, 
-          .bg-slate-950, 
-          .bg-slate-900\/50, 
-          .bg-slate-950\/40, 
-          .bg-slate-900\/45, 
-          .bg-slate-900\/60, 
-          .bg-\[\#0b0f19\], 
-          .bg-slate-850, 
-          .bg-slate-950\/80, 
-          .bg-\[\#0a0f1d\], 
-          .bg-\[\#050914\], 
-          .bg-slate-900\/80, 
-          .bg-slate-950\/90,
-          .bg-slate-950\/85,
-          .bg-slate-900/40,
-          .bg-slate-900/50,
-          .bg-slate-850/40,
-          .bg-[#0a0f1d]/50,
-          .bg-slate-950/20,
-          .bg-slate-900\/20,
-          .bg-slate-900\/30,
-          .bg-slate-900\/80,
-          .bg-[#121824],
-          .bg-slate-900/30,
-          .bg-[#0d121f] {
-            background-color: #ffffff !important;
-            color: #0f172a !important;
-            border-color: #e2e8f0 !important;
-          }
-
-          /* Specific sidebars and cards hover states */
-          .hover\:bg-slate-900:hover, 
-          .hover\:bg-slate-850:hover, 
-          .hover\:bg-slate-800:hover,
-          .hover\:bg-slate-950\/60:hover,
-          .hover\:bg-slate-900\/50:hover {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
-          }
-
-          /* Input / Select / Textarea styling */
-          select, input, textarea, .bg-slate-900 select, .bg-slate-950 input {
-            background-color: #ffffff !important;
-            color: #0f172a !important;
-            border-color: #cbd5e1 !important;
-          }
-          select:focus, input:focus, textarea:focus {
-            border-color: #6366f1 !important;
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
-          }
-
-          /* General text colors mapped to high contrast slate */
-          .text-slate-100, 
-          .text-slate-200, 
-          .text-slate-300, 
-          .text-slate-50,
-          .text-white,
-          .text-zinc-100,
-          .text-gray-100,
-          .text-gray-200,
-          .text-emerald-50,
-          .text-indigo-50 {
-            color: #0f172a !important; /* deep slate-900 */
-          }
-          
-          .text-slate-400, 
-          .text-slate-500,
-          .text-gray-400,
-          .text-gray-500,
-          .text-zinc-400 {
-            color: #334155 !important; /* slate-700 */
-          }
-
-          /* Muted, labels, or secondary indicators */
-          .text-slate-500, 
-          .text-slate-600,
-          .text-gray-500,
-          .text-[9px].text-slate-500,
-          .text-[10px].text-slate-500 {
-            color: #475569 !important; /* slate-600 */
-          }
-
-          /* Borders override */
-          .border-slate-800, 
-          .border-slate-850, 
-          .border-slate-900, 
-          .border-slate-705,
-          .border-slate-750,
-          .border-slate-700, 
-          .border-slate-700\/50, 
-          .border-slate-800\/80,
-          .border-slate-800\/50,
-          .border-slate-850\/40,
-          .border-zinc-800,
-          .border-slate-800/30,
-          .border-slate-800/40,
-          .border-slate-800/20 {
-            border-color: #e2e8f0 !important; /* slate-200 */
-          }
-
-          /* Color coded badge highlights for Light Mode contrast */
-          .text-indigo-400, .text-indigo-300 {
-            color: #4f46e5 !important; /* Indigo 600 */
-          }
-          .text-blue-400, .text-sky-400, .text-sky-450 {
-            color: #1d4ed8 !important; /* Blue 700 */
-          }
-          .text-cyan-400, .text-cyan-300, .text-teal-400 {
-            color: #0369a1 !important; /* Sky 700 */
-          }
-          .text-emerald-400, .text-emerald-300, .text-green-400, .text-green-500 {
-            color: #15803d !important; /* Green 700 */
-          }
-          .text-yellow-450, .text-yellow-400, .text-amber-400, .text-amber-500 {
-            color: #b45309 !important; /* Amber 700 */
-          }
-          .text-red-400, .text-rose-400, .text-red-500 {
-            color: #be123c !important; /* Rose 700 */
-          }
-
-          /* Background soft overlay pills mapping */
-          .bg-emerald-950\/20, 
-          .bg-emerald-950\/40, 
-          .bg-emerald-950\/30, 
-          .bg-emerald-950\/50, 
-          .bg-green-950\/30,
-          .bg-green-950\/40,
-          .bg-emerald-900\/20,
-          .bg-emerald-950\/10 {
-            background-color: #f0fdf4 !important; /* green-50 */
-            border-color: #bbf7d0 !important; /* green-200 */
-            color: #15803d !important;
-          }
-
-          .bg-indigo-950\/40, 
-          .bg-indigo-950\/20, 
-          .bg-indigo-950\/30, 
-          .bg-indigo-950\/50,
-          .bg-indigo-900\/20,
-          .bg-indigo-950\/10 {
-            background-color: #e0e7ff !important; /* indigo-50 */
-            border-color: #c7d2fe !important; /* indigo-200 */
-            color: #4f46e5 !important;
-          }
-
-          .bg-red-950\/50, 
-          .bg-red-950\/40, 
-          .bg-red-950\/30, 
-          .bg-red-950\/20, 
-          .bg-rose-950\/20, 
-          .bg-rose-950\/40,
-          .bg-red-950\/10,
-          .bg-rose-950\/10,
-          .bg-red-900\/20 {
-            background-color: #fef2f2 !important; /* red-50 */
-            border-color: #fecaca !important; /* red-200 */
-            color: #be123c !important;
-          }
-
-          .bg-cyan-950\/40, 
-          .bg-blue-950\/40, 
-          .bg-blue-950\/30,
-          .bg-blue-950\/10,
-          .bg-cyan-900\/10,
-          .bg-cyan-900\/20 {
-            background-color: #f0f9ff !important; /* sky-50 */
-            border-color: #bae6fd !important;
-            color: #0369a1 !important;
-          }
-
-          .bg-amber-950\/40, 
-          .bg-yellow-950\/20, 
-          .bg-yellow-950\/40,
-          .bg-yellow-900\/20,
-          .bg-amber-900\/20 {
-            background-color: #fefcbf !important; /* yellow-50 */
-            border-color: #fef08a !important;
-            color: #b45309 !important;
-          }
-
-          /* Ensure proper styling for charts and SVG graphs */
-          .recharts-cartesian-grid-horizontal line, 
-          .recharts-cartesian-grid-vertical line {
-            stroke: #cbd5e1 !important;
-            stroke-dasharray: 3 3;
-          }
-          .recharts-text, .recharts-label {
-            fill: #1e293b !important;
-            font-weight: 500;
-          }
-          .recharts-default-tooltip {
-            background-color: #ffffff !important;
-            border-color: #cbd5e1 !important;
-            color: #0f172a !important;
-          }
-          .recharts-legend-item-text {
-            color: #1e293b !important;
-          }
-
-          /* Consoles & Terminals styling */
-          .font-mono.bg-black, 
-          .font-mono.bg-slate-950, 
-          .font-mono.bg-slate-900, 
-          .font-mono.bg-\#0b0f19,
-          .font-mono.bg-slate-950\/80,
-          .font-mono.bg-slate-950\/90,
-          #direwolf-terminal,
-          #weewx-terminal,
-          #aprx-terminal {
-            background-color: #fafafa !important;
-            color: #0f172a !important;
-            border-color: #cbd5e1 !important;
-          }
-
-          /* Weather LCD glow effect swap to dark border glow */
-          .shadow-\[0_0_15px_rgba\(16\,185\,129\,0\.15\)\] {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-          }
-
-          /* Alert blinkers & headers */
-          .border-red-500\/30, .border-red-500\/20 {
-            border-color: #fecaca !important;
-          }
-          .bg-red-950/20 {
-            background-color: #fef2f2 !important;
-          }
-
-          /* Map Pin popup and header alerts */
-          .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-            background: #ffffff !important;
-            color: #0f172a !important;
-          }
-        `}} />
-      )}
       {(
         <>
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
@@ -1459,7 +1083,7 @@ export default function App() {
         version={pkg.version}
       />
       <div className="flex-1 min-w-0 flex flex-col">
-      <StatusBar config={data.config} gpsd={data.gpsd} ntp={data.ntp} txEnabled={adminSession.txEnabled} />
+      <StatusBar config={data.config} gpsd={data.gpsd} ntp={data.ntp} txEnabled={adminSession.txEnabled} tema={tema.elegido} onTema={(t) => { setEmergencyMode(false); localStorage.setItem('emergencyMode', 'false'); tema.setElegido(t); }} />
 
       {/* CENTRAL EMERGENCY & BROADCAST STATUS HUB */}
       {(rangeHazards > 0 || isEmergencyBroadcastActive) && (

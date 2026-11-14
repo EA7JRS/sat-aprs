@@ -3,17 +3,18 @@
 import React from 'react';
 import type { Gravedad } from '../../utils/useAvisos';
 
+// Colores fijos: el nivel de un aviso se ve igual en todos los temas de la consola
 const COLOR: Record<Gravedad, string> = {
-  rojo: 'bg-red-400 text-slate-950',
-  naranja: 'bg-orange-400 text-slate-950',
-  amarillo: 'bg-yellow-300 text-slate-950',
-  info: 'bg-slate-400 text-slate-950',
+  rojo: 'bg-[#f87171] text-black',
+  naranja: 'bg-[#fb923c] text-black',
+  amarillo: 'bg-[#fde047] text-black',
+  info: 'bg-[#94a3b8] text-black',
 };
 
 /** Nivel del aviso: color y, siempre, la palabra (no se distingue solo por el color). */
 export function Nivel({ gravedad }: { gravedad: Gravedad }) {
   return (
-    <span className={`inline-block w-[88px] shrink-0 text-center rounded-md py-1 text-[13px] font-bold tracking-wide ${COLOR[gravedad]}`}>
+    <span className={`sat-nivel inline-block w-[88px] shrink-0 text-center rounded-md py-1 text-[13px] font-bold tracking-wide ${COLOR[gravedad]}`}>
       {gravedad.toUpperCase()}
     </span>
   );

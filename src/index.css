@@ -12,3 +12,110 @@
   animation-duration: 0s !important;
   animation-delay: 0s !important;
 }
+
+/* ==========================================================================
+   Color de la consola (src/utils/tema.ts): claro y táctico.
+   Los temas no retocan componentes uno a uno: redefinen las variables de la
+   paleta, de modo que toda la consola cambia a la vez. El oscuro es la paleta
+   tal cual. (Bloque generado: escala de grises invertida y, por cada color,
+   fondos claros, bordes medios y textos oscuros.)
+   ========================================================================== */
+.theme-day {
+  color-scheme: light;
+  --color-slate-950: #f1f5f9;
+  --color-slate-900: #ffffff;
+  --color-slate-850: #e9eef4;
+  --color-slate-800: #d5dde7;
+  --color-slate-750: #c3cedb;
+  --color-slate-700: #a9b7c8;
+  --color-slate-600: #6b7c90;
+  --color-slate-500: #586a80;
+  --color-slate-400: #475569;
+  --color-slate-300: #334155;
+  --color-slate-200: #1e293b;
+  --color-slate-100: #0f172a;
+  --color-slate-50: #020617;
+  --color-sky-950: #e0f2fe; --color-sky-900: #e0f2fe; --color-sky-800: #7dd3fc; --color-sky-700: #7dd3fc;
+  --color-sky-400: #0369a1; --color-sky-300: #0369a1; --color-sky-200: #0369a1;
+  --color-emerald-950: #d1fae5; --color-emerald-900: #d1fae5; --color-emerald-800: #6ee7b7; --color-emerald-700: #6ee7b7;
+  --color-emerald-400: #047857; --color-emerald-300: #047857; --color-emerald-200: #047857;
+  --color-amber-950: #fef3c7; --color-amber-900: #fef3c7; --color-amber-800: #fcd34d; --color-amber-700: #fcd34d;
+  --color-amber-400: #b45309; --color-amber-300: #b45309; --color-amber-200: #b45309;
+  --color-red-950: #fee2e2; --color-red-900: #fee2e2; --color-red-800: #fca5a5; --color-red-700: #fca5a5;
+  --color-red-400: #b91c1c; --color-red-300: #b91c1c; --color-red-200: #b91c1c;
+  --color-yellow-950: #fef9c3; --color-yellow-900: #fef9c3; --color-yellow-800: #fde047; --color-yellow-700: #fde047;
+  --color-yellow-400: #a16207; --color-yellow-300: #a16207; --color-yellow-200: #a16207;
+  --color-orange-950: #ffedd5; --color-orange-900: #ffedd5; --color-orange-800: #fdba74; --color-orange-700: #fdba74;
+  --color-orange-400: #c2410c; --color-orange-300: #c2410c; --color-orange-200: #c2410c;
+  --color-green-950: #dcfce7; --color-green-900: #dcfce7; --color-green-800: #86efac; --color-green-700: #86efac;
+  --color-green-400: #15803d; --color-green-300: #15803d; --color-green-200: #15803d;
+  --color-blue-950: #dbeafe; --color-blue-900: #dbeafe; --color-blue-800: #93c5fd; --color-blue-700: #93c5fd;
+  --color-blue-400: #1d4ed8; --color-blue-300: #1d4ed8; --color-blue-200: #1d4ed8;
+  --color-indigo-950: #e0e7ff; --color-indigo-900: #e0e7ff; --color-indigo-800: #a5b4fc; --color-indigo-700: #a5b4fc;
+  --color-indigo-400: #4338ca; --color-indigo-300: #4338ca; --color-indigo-200: #4338ca;
+  --color-purple-950: #f3e8ff; --color-purple-900: #f3e8ff; --color-purple-800: #d8b4fe; --color-purple-700: #d8b4fe;
+  --color-purple-400: #7e22ce; --color-purple-300: #7e22ce; --color-purple-200: #7e22ce;
+  --color-cyan-950: #cffafe; --color-cyan-900: #cffafe; --color-cyan-800: #67e8f9; --color-cyan-700: #67e8f9;
+  --color-cyan-400: #0e7490; --color-cyan-300: #0e7490; --color-cyan-200: #0e7490;
+  --color-teal-950: #ccfbf1; --color-teal-900: #ccfbf1; --color-teal-800: #5eead4; --color-teal-700: #5eead4;
+  --color-teal-400: #0f766e; --color-teal-300: #0f766e; --color-teal-200: #0f766e;
+  --color-rose-950: #ffe4e6; --color-rose-900: #ffe4e6; --color-rose-800: #fda4af; --color-rose-700: #fda4af;
+  --color-rose-400: #be123c; --color-rose-300: #be123c; --color-rose-200: #be123c;
+  --color-violet-950: #ede9fe; --color-violet-900: #ede9fe; --color-violet-800: #c4b5fd; --color-violet-700: #c4b5fd;
+  --color-violet-400: #6d28d9; --color-violet-300: #6d28d9; --color-violet-200: #6d28d9;
+}
+/* Texto blanco suelto (sin fondo propio de color) pasa a oscuro */
+.theme-day .text-white:not([class*="bg-"]) { color: #0f172a; }
+.theme-day .bg-black, .theme-day .bg-\[\#070b12\] { background-color: #f1f5f9; }
+
+/* Táctico: una sola gama rojo-ámbar de baja luminosidad, para no perder la visión nocturna */
+.theme-night {
+  color-scheme: dark;
+  --color-slate-950: #050201;
+  --color-slate-900: #110705;
+  --color-slate-850: #1a0b07;
+  --color-slate-800: #36170f;
+  --color-slate-750: #45200f;
+  --color-slate-700: #582a1c;
+  --color-slate-600: #7a3a28;
+  --color-slate-500: #8f4d38;
+  --color-slate-400: #b06a52;
+  --color-slate-300: #cc8c74;
+  --color-slate-200: #dba48e;
+  --color-slate-100: #e8b7a1;
+  --color-slate-50: #f2cdbb;
+  --color-sky-950: #1c0a06; --color-sky-900: #260e08; --color-sky-800: #582a1c; --color-sky-700: #6e3422;
+  --color-sky-600: #9c4a2a; --color-sky-500: #9c4a2a; --color-sky-400: #d98a5f; --color-sky-300: #d98a5f; --color-sky-200: #d98a5f;
+  --color-emerald-950: #1c0a06; --color-emerald-900: #260e08; --color-emerald-800: #582a1c; --color-emerald-700: #6e3422;
+  --color-emerald-600: #9c4a2a; --color-emerald-500: #9c4a2a; --color-emerald-400: #d98a5f; --color-emerald-300: #d98a5f; --color-emerald-200: #d98a5f;
+  --color-amber-950: #1c0a06; --color-amber-900: #260e08; --color-amber-800: #582a1c; --color-amber-700: #6e3422;
+  --color-amber-600: #a8600f; --color-amber-500: #a8600f; --color-amber-400: #f0a030; --color-amber-300: #f0a030; --color-amber-200: #f0a030;
+  --color-red-950: #1c0a06; --color-red-900: #260e08; --color-red-800: #582a1c; --color-red-700: #6e3422;
+  --color-red-600: #a8261e; --color-red-500: #a8261e; --color-red-400: #ff5a4a; --color-red-300: #ff5a4a; --color-red-200: #ff5a4a;
+  --color-yellow-950: #1c0a06; --color-yellow-900: #260e08; --color-yellow-800: #582a1c; --color-yellow-700: #6e3422;
+  --color-yellow-600: #a8600f; --color-yellow-500: #a8600f; --color-yellow-400: #f0a030; --color-yellow-300: #f0a030; --color-yellow-200: #f0a030;
+  --color-orange-950: #1c0a06; --color-orange-900: #260e08; --color-orange-800: #582a1c; --color-orange-700: #6e3422;
+  --color-orange-600: #a8600f; --color-orange-500: #a8600f; --color-orange-400: #f0a030; --color-orange-300: #f0a030; --color-orange-200: #f0a030;
+  --color-green-950: #1c0a06; --color-green-900: #260e08; --color-green-800: #582a1c; --color-green-700: #6e3422;
+  --color-green-600: #9c4a2a; --color-green-500: #9c4a2a; --color-green-400: #d98a5f; --color-green-300: #d98a5f; --color-green-200: #d98a5f;
+  --color-blue-950: #1c0a06; --color-blue-900: #260e08; --color-blue-800: #582a1c; --color-blue-700: #6e3422;
+  --color-blue-600: #9c4a2a; --color-blue-500: #9c4a2a; --color-blue-400: #d98a5f; --color-blue-300: #d98a5f; --color-blue-200: #d98a5f;
+  --color-indigo-950: #1c0a06; --color-indigo-900: #260e08; --color-indigo-800: #582a1c; --color-indigo-700: #6e3422;
+  --color-indigo-600: #9c4a2a; --color-indigo-500: #9c4a2a; --color-indigo-400: #d98a5f; --color-indigo-300: #d98a5f; --color-indigo-200: #d98a5f;
+  --color-purple-950: #1c0a06; --color-purple-900: #260e08; --color-purple-800: #582a1c; --color-purple-700: #6e3422;
+  --color-purple-600: #9c4a2a; --color-purple-500: #9c4a2a; --color-purple-400: #d98a5f; --color-purple-300: #d98a5f; --color-purple-200: #d98a5f;
+  --color-cyan-950: #1c0a06; --color-cyan-900: #260e08; --color-cyan-800: #582a1c; --color-cyan-700: #6e3422;
+  --color-cyan-600: #9c4a2a; --color-cyan-500: #9c4a2a; --color-cyan-400: #d98a5f; --color-cyan-300: #d98a5f; --color-cyan-200: #d98a5f;
+  --color-teal-950: #1c0a06; --color-teal-900: #260e08; --color-teal-800: #582a1c; --color-teal-700: #6e3422;
+  --color-teal-600: #9c4a2a; --color-teal-500: #9c4a2a; --color-teal-400: #d98a5f; --color-teal-300: #d98a5f; --color-teal-200: #d98a5f;
+  --color-rose-950: #1c0a06; --color-rose-900: #260e08; --color-rose-800: #582a1c; --color-rose-700: #6e3422;
+  --color-rose-600: #a8261e; --color-rose-500: #a8261e; --color-rose-400: #ff5a4a; --color-rose-300: #ff5a4a; --color-rose-200: #ff5a4a;
+  --color-violet-950: #1c0a06; --color-violet-900: #260e08; --color-violet-800: #582a1c; --color-violet-700: #6e3422;
+  --color-violet-600: #9c4a2a; --color-violet-500: #9c4a2a; --color-violet-400: #d98a5f; --color-violet-300: #d98a5f; --color-violet-200: #d98a5f;
+}
+.theme-night .text-white { color: #f2cdbb; }
+.theme-night .bg-black, .theme-night .bg-\[\#070b12\] { background-color: #050201; }
+/* Etiquetas de nivel y fondo del mapa, atenuados */
+.theme-night .sat-nivel { filter: brightness(0.72) saturate(0.9); }
+.theme-night .leaflet-tile-pane { filter: grayscale(1) sepia(1) hue-rotate(-35deg) saturate(2.2) brightness(0.45); }
+.theme-day select, .theme-night select { color-scheme: inherit; }

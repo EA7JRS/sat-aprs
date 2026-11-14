@@ -7,6 +7,7 @@ import AdminAccess from '../system/AdminAccess';
 import { GPSDStatus, NTPSECStatus, TelemetryConfig } from '../../types';
 import { isValidCallsign } from '../../../server/aprs';
 import { customFetch } from '../../utils/customFetch';
+import { TEMAS, TemaElegido } from '../../utils/tema';
 
 interface Enlaces {
   aprsIs: { estado: 'parado' | 'conectando' | 'conectado' | 'solo-recepcion' | 'desconectado'; detalle: string; recibidas: number };
@@ -19,6 +20,9 @@ interface Props {
   gpsd: GPSDStatus;
   ntp: NTPSECStatus;
   txEnabled: boolean;
+  /** Color de la consola elegido y cómo cambiarlo. */
+  tema: TemaElegido;
+  onTema: (t: TemaElegido) => void;
 }
 
 function Chip({ estado, children, titulo }: { estado: 'bien' | 'aviso' | 'neutro'; children: React.ReactNode; titulo?: string }) {
@@ -35,7 +39,7 @@ function Chip({ estado, children, titulo }: { estado: 'bien' | 'aviso' | 'neutro
   );
 }
 
-export default function StatusBar({ config, gpsd, ntp, txEnabled }: Props) {
+export default function StatusBar({ config, gpsd, ntp, txEnabled, tema, onTema }: Props) {
   const [ahora, setAhora] = useState(() => new Date());
   useEffect(() => {
     const t = setInterval(() => setAhora(new Date()), 1000);
@@ -90,6 +94,18 @@ export default function StatusBar({ config, gpsd, ntp, txEnabled }: Props) {
       </Chip>
       <div className="ml-auto flex items-center gap-3">
         <span className="font-mono text-lg text-slate-400" id="reloj-utc">{ahora.toISOString().slice(11, 19)} UTC</span>
+        <label className="flex items-center gap-1.5 text-[13px] text-slate-400">
+          <span className="hidden sm:inline">Color</span>
+          <select
+            id="selector-tema"
+            aria-label="Color de la consola"
+            value={tema}
+            onChange={(e) => onTema(e.target.value as TemaElegido)}
+            className="min-h-[36px] bg-slate-900 border border-slate-700 rounded-lg px-2 text-slate-100 text-[13px] cursor-pointer"
+          >
+            {TEMAS.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+        </label>
         <AdminAccess />
       </div>
     </header>

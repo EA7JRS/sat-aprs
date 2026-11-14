@@ -26,13 +26,13 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.12.0)
+## 📌 Qué hace hoy (v1.13.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
 1. **Avisos de emergencia.** Recoge avisos de fuentes oficiales y, si ocurren dentro del radio configurado alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
 2. **Estación APRS y meteorológica.** Con el **perfil de la estación** (indicativo y SSID, passcode, posición o GPS, símbolo, PHG, comentario) emite su baliza de posición.
-3. **Consola web.** Organizada en seis secciones (Inicio, Avisos, Estación, Mapa, Radio y Sistema). Configura la estación y los servicios de radio del equipo (Direwolf, aprx, Pat, WeeWX) y muestra el estado del GPS y de la hora (gpsd y ntpsec).
+3. **Consola web.** Organizada en seis secciones (Inicio, Avisos, Estación, Mapa, Radio y Sistema), con color automático, del sistema, claro, oscuro o táctico. Configura la estación y los servicios de radio del equipo (Direwolf, aprx, Pat, WeeWX) y muestra el estado del GPS y de la hora (gpsd y ntpsec).
 
 | Función | Estado |
 | :--- | :--- |

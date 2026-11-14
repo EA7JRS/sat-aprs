@@ -99,3 +99,30 @@ test('calidad del aire: índice europeo y aviso solo si es mala', () => {
   assert.equal(boletinAprs('EA7ZZZ-13', e), 'EA7ZZZ-13>APZSAT::BLN2AIRE :AIRE Indice 86 PM2.5 42ug Calidad del aire muy mala (CAMS)');
   assert.equal(evaluar(e, politica({ radioKm: null, gravedadMinima: 'naranja' }), SEVILLA, T).emitir, true);
 });
+
+test('medidores de aire cercanos: uno por lugar, ordenados por distancia', async () => {
+  const { clasePm25, leerMedidoresAire, urlMedidoresAire } = await import('../server/fuentes/estacionesAire');
+  const json = [
+    { timestamp: '2026-11-14 12:30:00', location: { id: 10, latitude: '37.400', longitude: '-5.990', indoor: 0 }, sensor: { sensor_type: { name: 'SDS011' } },
+      sensordatavalues: [{ value_type: 'P1', value: '21.50' }, { value_type: 'P2', value: '9.80' }] },
+    { timestamp: '2026-11-14 12:35:00', location: { id: 10, latitude: '37.400', longitude: '-5.990', indoor: 0 }, sensor: { sensor_type: { name: 'SDS011' } },
+      sensordatavalues: [{ value_type: 'P1', value: '25.00' }, { value_type: 'P2', value: '12.00' }] },
+    { timestamp: '2026-11-14 12:34:00', location: { id: 11, latitude: '37.390', longitude: '-5.985', indoor: 0 }, sensor: { sensor_type: { name: 'SPS30' } },
+      sensordatavalues: [{ value_type: 'P2', value: '30.1' }] },
+    { timestamp: '2026-11-14 12:34:00', location: { id: 12, latitude: '37.391', longitude: '-5.986', indoor: 1 }, sensor: { sensor_type: { name: 'SDS011' } },
+      sensordatavalues: [{ value_type: 'P2', value: '3' }] },
+    { timestamp: '2026-11-14 12:34:00', location: { id: 13, latitude: '37.392', longitude: '-5.987' }, sensor: { sensor_type: { name: 'BME280' } },
+      sensordatavalues: [{ value_type: 'temperature', value: '18.2' }] },
+    { timestamp: '2026-11-14 12:34:00', location: { id: 14, latitude: '37.393', longitude: '-5.988' }, sensor: { sensor_type: { name: 'SDS011' } },
+      sensordatavalues: [{ value_type: 'P1', value: '999.90' }, { value_type: 'P2', value: '999.90' }] },
+    { basura: true },
+  ];
+  const l = leerMedidoresAire(json, SEVILLA);
+  assert.deepEqual(l.map((m) => m.id), ['11', '10']);                      // interior, sin partículas y averiado, fuera
+  assert.deepEqual([l[1].pm10, l[1].pm25, l[1].sensor], [25, 12, 'SDS011']); // la lectura más reciente del lugar
+  assert.equal(l[1].cuando, Date.parse('2026-11-14T12:35:00Z'));
+  assert.ok(l[0].distanciaKm < 0.5 && l[1].distanciaKm > 1 && l[1].distanciaKm < 2);
+  assert.deepEqual(leerMedidoresAire({ error: 1 }, SEVILLA), []);
+  assert.deepEqual([5, 15, 22, 40, 60, 120].map(clasePm25), ['buena', 'razonable', 'moderada', 'mala', 'muy mala', 'extremadamente mala']);
+  assert.equal(urlMedidoresAire(37.3891, -5.9845, 10), 'https://data.sensor.community/airrohr/v1/filter/area=37.3891,-5.9845,10');
+});

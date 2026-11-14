@@ -47,7 +47,7 @@ import {
   ERDDAPBuoy,
   IQAirStatus
 } from '../../types';
-import { NavareaWarning } from '../environment/NavareaMonitor';
+import { NavareaWarning } from '../../types';
 import { AprsPacket } from '../radio/AprsAdaptor';
 
 interface CecopDashboardProps {

@@ -124,12 +124,12 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
 | Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
 | Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |
-| Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía |
+| Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía (los valores de radiación modelados se retiraron en la v1.20.0) |
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
 | Estación meteorológica: parte APRS con datos propios (WeeWX, wxnow.txt) o de Internet | Hecho (`server/estacion/meteo.ts`) |
-| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales en el mapa; NAVTEX e Inmarsat, y los paneles antiguos de AIS, siguen simulados |
+| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: sin fuente; sus datos de ejemplo se retiraron en la v1.20.0. Inmarsat-C: se conserva la entrada por UDP, sin pantalla |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
 | Configuración de Direwolf/aprx desde la consola | Existe; pendiente de revisar |
 | Persistencia en SQLite | Pendiente (hoy, archivos JSON) |

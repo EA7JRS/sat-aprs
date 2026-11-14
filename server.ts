@@ -32,6 +32,7 @@ import { distanciaAZonaKm } from './server/core/zona';
 import { NivelEscala, descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
 import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
+import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
 import { EstacionesOidas } from './server/estaciones';
 import { ClienteAprsIs } from './server/aprsIs';
 import { Barcos, LectorAis, claseBarco } from './server/ais';
@@ -709,6 +710,28 @@ function ajustarEntradasMapa() {
   else enlaceAdsb.parar();
 }
 
+/** Barcos reales recibidos por AIS, en la forma que usan los paneles (antes eran barcos de ejemplo). */
+function barcosParaPaneles(): AISVessel[] {
+  const radio = config.filterRadiusKm || 200;
+  return barcos.lista().slice(0, 300).map((b) => {
+    const distanciaKm = calculateDistance(gpsdState.lat, gpsdState.lon, b.lat!, b.lon!);
+    return {
+      mmsi: b.mmsi,
+      shipName: b.nombre || `MMSI ${b.mmsi}`,
+      type: claseBarco(b.tipoBarco) || 'Sin clasificar',
+      latitude: b.lat!,
+      longitude: b.lon!,
+      speedKnots: b.sog ?? 0,
+      headingDeg: b.proa ?? b.cog ?? 0,
+      destination: b.destino || '',
+      status: '',
+      lastReport: new Date(b.ultima).toISOString(),
+      distanciaKm,
+      enRango: distanciaKm <= radio,
+    };
+  });
+}
+
 let kissClient: net.Socket | null = null;
 let kissReconnectTimer: NodeJS.Timeout | null = null;
 let kissReconnectDelay = 2000;
@@ -1015,18 +1038,6 @@ let iqairState: IQAirStatus = {
   lastUpdated: new Date().toISOString()
 };
 
-let rarRanState: RarRanStatus = {
-  stationId: 'REA_MADRID',
-  name: 'Madrid (S.C.)',
-  latitude: 40.4167,
-  longitude: -3.7037,
-  valueUsVh: 0.12,
-  status: 'NORMAL',
-  distanciaKm: 0.1
-};
-
-let simulatedRarRanValue: number | null = null;
-
 let tsunamiAlerts: TsunamiAlert[] = [];
 let dgtIncidentsList: DgtIncident[] = [];
 // true solo si la lista procede de la descarga real de la DGT (no del respaldo de demostración)
@@ -1045,59 +1056,8 @@ const TIPOS_ALERTA: Record<string, string> = {
 
 const CODIGOS_CRITICOS = new Set(["04", "13", "14", "24", "31", "34", "44"]);
 
-let inmarsatMessages: InmarsatMessage[] = [
-  {
-    id: 'inm-1',
-    time: new Date(Date.now() - 15 * 60000).toISOString(),
-    c2Code: "14",
-    typeText: "🚨 RETRANSMISIÓN DE SOCORRO (DISTRESS RELAY)",
-    priority: "CRÍTICO",
-    sender: "LES-AOR-W (Inmarsat)",
-    area: "METAREA II",
-    payload: "DISTRESS RELAY: COOP-VESSEL 'SUD-OUEST' REPORTS SINKING VESSEL 'ELVIRA II' AT POSITION 35.15N, 009.22W. ACCIDENT INVOLVED FLOODING OF ENGINE ROOM. 12 LIVES ON BOARD. SEA STATE 5, WIND NW 25KTS. ALL SHIPS IN THE VICINITY ARE REQUESTED TO MAINTAIN A LOOKOUT.",
-    rawHex: "49 6e 6d 61 72 73 61 74 20 44 49 53 54 52 45 53 53 20 52 45 4c 41 59 20 45 4c 56 49 52 41",
-    isCritical: true
-  },
-  {
-    id: 'inm-2',
-    time: new Date(Date.now() - 45 * 60000).toISOString(),
-    c2Code: "34",
-    typeText: "🚁 COORDINACIÓN SAR (BÚSQUEDA Y RESCATE)",
-    priority: "CRÍTICO",
-    sender: "AOR-E MARITIME SAR",
-    area: "NAVAREA III",
-    payload: "MRCC MADRID COORDINATING SAR MISSION FOR MISSING 10M BLUE HULL SAILING YACHT 'AQUARIUS'. LAST REPORTED 36.12N, 004.22W. HELICOPTER 'HELESPA-03' ON ROUTE. INVICINITY VESSELS REQUESTED TO KEEP SHARP SEARCH WATCH AND ADVISE.",
-    rawHex: "53 41 52 20 43 4f 4f 52 44 49 4e 41 54 49 4f 4e 20 4d 52 43 43 20 4d 41 44 52 49 44",
-    isCritical: true
-  },
-  {
-    id: 'inm-3',
-    time: new Date(Date.now() - 110 * 60000).toISOString(),
-    c2Code: "24",
-    typeText: "⛈️ ALERTA METEOROLÓGICA (METEOROLOGICAL WARNING)",
-    priority: "ALERTA",
-    sender: "EMERGENCIA MARÍTIMA",
-    area: "COSTA DE ALBORÁN",
-    payload: "MET METEOROLOGICAL GALE WARNING: STORM SYSTEMS PASSING WESTERN MEDITERRANEAN WITH NW GALE FORCE 8 TO 9. SEAS ROUGH TO VERY ROUGH (4.0-5.5 METERS). SMALL CRAFTS STRONGLY ADVISED TO SEEK HARBOR.",
-    rawHex: "4d 45 54 45 4f 52 4f 4c 4f 47 49 43 41 4c 20 57 41 52 4e 49 4e 47 20 47 41 4c 45 20 38",
-    isCritical: true
-  },
-  {
-    id: 'inm-4',
-    time: new Date(Date.now() - 180 * 60000).toISOString(),
-    c2Code: "04",
-    typeText: "⚠️ AVISO A LOS NAVEGANTES (NAVIGATIONAL WARNING)",
-    priority: "ALERTA",
-    sender: "LES-IOR LES-AOR",
-    area: "NAVAREA III",
-    payload: "NAVAREA III WARNING 148/2026. DRIFTING METAL SHIPPING CONTAINER REPORTED IN VICINITY OF GIBRALTAR STRAIT EASTERN ENTRANCE, POSITION APPROX 36.05N, 005.10W. NAVIGATION HAZARD.",
-    rawHex: "4e 41 56 49 47 41 54 49 4f 4e 41 4c 20 57 41 52 4e 49 4e 47 20 48 41 5a 41 52 44 20",
-    isCritical: true
-  }
-];
-
-// Simulated coastal AIS vessels tracked by Comar SLR200G dual receiver
-let vessels: AISVessel[] = [];
+// Mensajes Inmarsat-C recibidos por UDP de un descodificador real (ya no hay mensajes de ejemplo)
+let inmarsatMessages: InmarsatMessage[] = [];
 
 // Simulated Winlink Pat Mailbox + Native AX.25 Link
 let patState: PatWinlinkStatus = {
@@ -1248,151 +1208,8 @@ setInterval(runSchedulerTick, 10000);
 
 let earthquakes: EarthquakeEvent[] = [];
 
-let navareaWarnings: NavareaWarning[] = [
-  {
-    id: 'E-0312/26',
-    navareaType: 'Armada Española',
-    category: 'Gunnery / Ejercicios',
-    title: 'Ejercicios de Tiro con Fuego Real - Zona Delta (Golfo de Cádiz)',
-    lat: 36.3500,
-    lon: -6.4500,
-    areaDescription: 'Golfo de Cádiz, polígono de tiro militar de la Armada Española de El Retín. Prohibida navegación y fondeo.',
-    originator: 'IHM (Instituto Hidrográfico de la Marina)',
-    broadcastTime: new Date(Date.now() - 24 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    cancelTime: new Date(Date.now() + 48 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'ALERTA CRÍTICA',
-    rawText: 'NAVAREA WARNING ARMADA 0312/26\nGOLFO DE CADIZ. BAJO EL RETIN.\n1. EJERCICIOS DE TIRO CON FUEGO REAL DE ARMAS DE GRAN CALIBRE EN AREA DELIMITADA POR:\n36-35N 006-45W\n36-10N 006-15W\n2. NAVEGACION, PESCA Y FONDEO ESTRICTAMENTE PROHIBIDOS DENTRO DEL SECTOR DE IMPACTOS.\nCANCELAR ESTE MENSAJE EL 211900 UTC JUN 26.',
-    subArea: 'III-B',
-  },
-  {
-    id: 'IHM-0341/26',
-    navareaType: 'Armada Española',
-    category: 'Military Operations',
-    title: 'Maniobras Flotilla de Submarinos de la Armada - Cartagena',
-    lat: 37.5210,
-    lon: -0.9850,
-    areaDescription: 'Costa de Murcia / Alrededores de Cartagena. Ejercicios subacuáticos del Buque S-81 "Isaac Peral".',
-    originator: 'IHM Armada Española (Aplicación Navareas HTML/XML)',
-    broadcastTime: new Date(Date.now() - 12 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'PRECAUCIÓN',
-    rawText: 'AVISO AL NAVEGANTE IHM-ARMADA 0341/26\nCOSTA DE CARTAGENA.\n1. OPERACIONES DE INMERSIÓN Y ADIESTRAMIENTO DE SUBMARINO S-81 "ISAAC PERAL" EN EL ÁREA COMPRENDIDA ENTRE CAP DE L\'AGUILA Y CABO TIÑOSO.\n2. TODO BUQUE EN TRÁNSITO DEBERÁ MANTENER UNA ESCUCHA PERMANENTE EN VHF CANAL 16 Y CANAL 73, QUEDANDO PROHIBIDO PASAR A MENOS DE 2 MILLAS NÁUTICAS DE LOS BUQUES DE APOYO MILITAR "YSIRE" Y "NEPTUNO".',
-    subArea: 'III-B',
-  },
-  {
-    id: 'SASEMAR-0824/26',
-    navareaType: 'NAVTEX',
-    category: 'Search & Rescue',
-    title: 'Aviso Salvamento Marítimo SASEMAR: velero desarbolado a la deriva',
-    lat: 38.8500,
-    lon: 0.2500,
-    areaDescription: 'Este de Cabo la Nao. Velero de recreo francés desarbolado y sin propulsión motora.',
-    originator: 'radioavisos.salvamentomaritimo.es (Centro de Coordinación de Valencia)',
-    broadcastTime: new Date(Date.now() - 2 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'ALERTA CRÍTICA',
-    rawText: 'RADIOAVISO SASEMAR VALENCIA 0824/26\nCABO LA NAO. ISLA IBIZA CHANNEL.\n1. EXTREMAR PRECAUCIÓN. VELERO RECREATIVO "LE PAPILLON" FRANCÉS CON SEIS TRIPULANTES A BORDO DESARBOLADO Y A LA DERIVA POR ROTURA DE TIMÓN EN POSICIÓN ESTIMADA 38-51N 000-15E.\n2. HELICÓPTERO "HELIMER 203" Y EMBARCACIÓN "SALVAMAR SABIK" PROCEDEN A LA CONFLUENCIA DE RESCATE.',
-    subArea: 'III',
-  },
-  {
-    id: 'NAV3-0418/26',
-    navareaType: 'NAVAREA III',
-    category: 'Navigational Hazard',
-    title: 'Contenedores a la Deriva - Canal de Sicilia',
-    lat: 37.1500,
-    lon: 11.4500,
-    areaDescription: 'Estrecho de Sicilia. Siete contenedores semi-sumergidos de 40 pies a la deriva tras colisión de portacontenedores.',
-    originator: 'NAVAREA III coordinator (Spain/IHM)',
-    broadcastTime: new Date(Date.now() - 4 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'ALERTA CRÍTICA',
-    rawText: 'NAVAREA III WARNING 0418/26\nSICILY STRAIT. EAST OF PANTELLERIA ISLAND.\n1. SEVEN DRIFTING SEMI-SUBMERGED 40 FEET ISO CONTAINERS REPORTED IN VICINITY OF 37-15.0N 011-45.0E. DANGEROUS TO NAVIGATION.\n2. ALL SHIPS IN VICINITY REQUESTED TO KEEP SHARP LOOKOUT AND PASS WITH WIDE BERTH.',
-    subArea: 'III-C',
-  },
-  {
-    id: 'NAV3-0402/26',
-    navareaType: 'NAVAREA III',
-    category: 'Cable Laying',
-    title: 'Operación Submarina de Tendido de Cable de Fibra - Mar de Alborán',
-    lat: 36.1200,
-    lon: -4.3500,
-    areaDescription: 'Mar de Alborán, Buque cablero "ILE DE SEIN" operando a baja velocidad y remolcando hidrófonos acústicos.',
-    originator: 'IHM Armada / NAVAREA III',
-    broadcastTime: new Date(Date.now() - 36 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    cancelTime: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'PRECAUCIÓN',
-    rawText: 'NAVAREA 3 WARNING 0402/26\nALBORAN SEA.\n1. CABLE LAYING OPERATIONS BY M/V ILE DE SEIN / FNDW IN PROGRESS ALONG THE TRACK JOINING:\n36-15.5N 004-45.0W\n36-05.2N 004-12.0W\n2. WIDE BERTH OF 1.0 NAUTICAL MILES REQUESTED. SHIP IS RESTRICTED IN HER ABILITY TO MANEUVER.',
-    subArea: 'III-B',
-  },
-  {
-    id: 'NAV3-0427/26',
-    navareaType: 'NAVAREA III',
-    category: 'Rig Move',
-    title: 'Movimiento de Plataforma de Perforación "Key Singapore"',
-    lat: 31.9500,
-    lon: 31.1000,
-    areaDescription: 'Costa de Egipto, Delta de Nilo. Remolque de plataforma offshore autoelevable.',
-    originator: 'Egypt Coastal Radio AST',
-    broadcastTime: new Date(Date.now() - 48 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'INFORMATIVO',
-    rawText: 'NAVAREA III 0427/26\nEGYPT COAST - ROSETTA AREA.\n1. RIG MOVE OF JACK-UP RIG "KEY SINGAPORE" IN PROGRESS FROM 31-52.0N 031-03.0E TO POSITION 31-59.5N 031-15.2E.\n2. CANAL SECURITY EXCLUSION ZONE OF 2.0 MILES ESTABLISHED. TOWAGE COMPOSED OF THREE TUGS BROADCASTING AIS CLASS A.',
-    subArea: 'III-C',
-  },
-  {
-    id: 'NAV3-0422/26',
-    navareaType: 'NAVAREA III',
-    category: 'Military Operations',
-    title: 'Maniobras y Tiro de Misiles Reales - Zona Este del Mediterráneo',
-    lat: 34.4500,
-    lon: 21.3005,
-    areaDescription: 'Mediterráneo Oriental, sur de la Isla de Creta. Operaciones de ataque con misiles aire-tierra.',
-    originator: 'NAVAREA III Coordinating Center',
-    broadcastTime: new Date(Date.now() - 50 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    cancelTime: new Date(Date.now() + 12 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'ALERTA CRÍTICA',
-    rawText: 'NAVAREA THREE 0422/26\nEASTERN MEDITERRANEAN SEA - SOUTH CRETE.\n1. NAVAL MISSILE FIRING EXERCISES BY MILITARY VESSELS IN AREA BOUNDED BY:\n34-45N 021-30E\n34-45N 022-15E\n34-10N 022-15E\n34-10N 021-30E\n2. DANGEROUS AREA UNFIT FOR NAVIGATION OR FLIGHT OVERHEAD.',
-    subArea: 'III-C',
-  },
-  {
-    id: 'E-0319/26',
-    navareaType: 'Armada Española',
-    category: 'Navigational Hazard',
-    title: 'Faro de Isla de Alborán Apagado de Forma Temporal',
-    lat: 35.9380,
-    lon: -3.0330,
-    areaDescription: 'Isla de Alborán. Luz principal del faro número internacional D-1192 fuera de servicio.',
-    originator: 'IHM (Armada Española)',
-    broadcastTime: new Date(Date.now() - 8 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'PRECAUCIÓN',
-    rawText: 'NAVAREA WARNING ARMADA 0319/26\nISLA DE ALBORAN.\nFARO NUMERO INTERNACIONAL D-1192 (FI2 W 10S 25M 10M) APAGADO TEMPORALMENTE POR AVERIA EN EL GRUPO DE BATERIAS DE EMERGENCIA Y SOPORTE SOLAR.\nNAVEGANTES EXTREMEN PRECAUCION.',
-    subArea: 'III-B',
-  },
-  {
-    id: 'NTX-2204',
-    navareaType: 'NAVTEX',
-    category: 'Search & Rescue',
-    title: 'Operación SAR de Migrantes a la Deriva - Sur de Almería',
-    lat: 35.9800,
-    lon: -2.8500,
-    areaDescription: 'Mar de Alborán. Helicóptero de salvamento marítimo y patrullera operando en zona.',
-    originator: 'Salvamento Marítimo Almería (CCS)',
-    broadcastTime: new Date(Date.now() - 3 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'ALERTA CRÍTICA',
-    rawText: 'NAVTEX CH-B MRCC ALMERIA\nCOASTAL WARNING 2204 / JUN 19\nALBORAN SEA SOUTH.\n1. SEARCH AND RESCUE OPERATION IN PROGRESS FOR DRIFTING DEFLATED PNEUMATIC BOAT WITH SEVERAL PEOPLE ON BOARD IN COORDS 35-58.8N 002-51.0W.\n2. COSPAS-SARSAT BEACONS ACTIVE.\n3. ALL SHIPS REQUESTED TO KEEP LOOKOUT, VHF WATCH CH-16 AND REPORT TO MRCC ALMERIA.',
-    subArea: 'III-B',
-  },
-  {
-    id: 'E-0298/26',
-    navareaType: 'Armada Española',
-    category: 'Navigational Hazard',
-    title: 'Boya Meteorológica "Cabo de Peñas" Fuera de Posición (Garreando)',
-    lat: 43.7100,
-    lon: -5.9200,
-    areaDescription: 'Costa de Asturias. Elemento de fondeo roto. Boya a la deriva.',
-    originator: 'IHM Cadiz',
-    broadcastTime: new Date(Date.now() - 72 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-    urgency: 'PRECAUCIÓN',
-    rawText: 'AVISO NAUTICO ARMADA 0298/26\nCANTABRICO. CABO DE PEÑAS.\nBOYA DE MEDIDA OCEANOGRAFICA DATAWELL DIRECCIONAL FUERA DE SU FONDEO NOMINAL. GARREANDO AL COMPAS DEL TEMPORAL DEL NORDOESTE.\nULTIMA POSICION REPORTADA: 43-42.6N 005-55.2W.\nDANGEROUS TO OBSTRUCTION.',
-    subArea: 'III',
-  }
-];
+// Radioavisos náuticos: sin fuente real conectada todavía (ya no hay avisos de ejemplo)
+let navareaWarnings: NavareaWarning[] = [];
 
 let erddapBuoys: ERDDAPBuoy[] = [
   {
@@ -1848,107 +1665,6 @@ function generateEarthquakePacket(eq: EarthquakeEvent): string {
   return objetoAprs(config.callsign, earthquakeToEvento(eq)) || '';
 }
 
-// Generate coastal AIS vessels tracked by the Comar SLR200G dual receiver via local dynamic spawner
-function refreshAisVessels() {
-  const currentLat = gpsdState.lat;
-  const currentLon = gpsdState.lon;
-
-  // 1. Static iconic coastal vessels of Spain
-  const staticVessels = [
-    { mmsi: 224483000, name: 'BALEARIA FORMENTERA', type: 'Ferry Rápido', lat: 38.88, lon: 1.43, speed: 25.5, heading: 112, dest: 'FORMENTERA' },
-    { mmsi: 224391220, name: 'SAR MASTELERO', type: 'Salvamento Marítimo', lat: 35.82, lon: -4.38, speed: 11.2, heading: 270, dest: 'ALBORAN PATROL' },
-    { mmsi: 224593000, name: 'ARMAS VOLCAN TEIDE', type: 'Super-Ferry Pasaje', lat: 36.12, lon: -5.41, speed: 19.0, heading: 180, dest: 'CEUTA PORT' },
-    { mmsi: 224099000, name: 'SANTANDER PILOT V', type: 'Práctico Puerto', lat: 43.47, lon: -3.78, speed: 8.5, heading: 45, dest: 'BAHIA SANTANDER' },
-    { mmsi: 224035000, name: 'ELCANO CASTILLO ALMANSA', type: 'Metanero LNG', lat: 36.51, lon: -6.26, speed: 14.8, heading: 325, dest: 'CADIZ REFINERIA' }
-  ];
-
-  // 2. Generate dynamic vessels relative to gpsdState.lat and gpsdState.lon so they are "in-range"!
-  const prefixNames = ['Punta de Tarifa', 'Cabo Peñas', 'Costa de Almeria', 'Cabo Creus', 'Estrecho de Gibraltar'];
-  const dynamicVessels = [];
-  for (let i = 0; i < 3; i++) {
-    // Dynamic circular tracking sweep
-    const angle = (Date.now() / 150000 + i * (2 * Math.PI / 3)) % (2 * Math.PI);
-    const radiusInDegrees = (0.4 + i * 0.2); // Sized up perfectly to fit in current station's coverage
-    const lat = currentLat + Math.sin(angle) * radiusInDegrees;
-    const lon = currentLon + Math.cos(angle) * radiusInDegrees;
-    
-    dynamicVessels.push({
-      mmsi: 224101020 + i,
-      name: `REMER SH-AUX ${prefixNames[i % prefixNames.length].toUpperCase()}`,
-      type: 'Guardacostas Auxiliar',
-      lat: parseFloat(lat.toFixed(5)),
-      lon: parseFloat(lon.toFixed(5)),
-      speed: parseFloat((12.4 + Math.random() * 8.2).toFixed(1)),
-      heading: Math.round((angle * 180 / Math.PI + 90) % 360),
-      dest: 'COORDINACION CIVIL'
-    });
-  }
-
-  const allList = [...staticVessels, ...dynamicVessels];
-
-  vessels = allList.map(v => {
-    const dist = calculateDistance(currentLat, currentLon, v.lat, v.lon);
-    const enRango = dist <= config.filterRadiusKm;
-
-    // Convert ship to APRS marine report object format (/s symbol is standard ship)
-    const name = `AIS_${v.mmsi}`.padEnd(9, ' ');
-    const timestamp = getAprsTimestamp(new Date());
-    const aprsLat = latToAprs(v.lat);
-    const aprsLon = lonToAprs(v.lon);
-    
-    // Course and Speed formatted as SSS/CCC in APRS specs conversion
-    const speedStr = Math.min(999, Math.round(v.speed)).toString().padStart(3, '0');
-    const headingStr = Math.min(359, Math.round(v.heading)).toString().padStart(3, '0');
-    const aprsPacket = `;${name}*${timestamp}${aprsLat}/${aprsLon}s${headingStr}/${speedStr}/MMSI:${v.mmsi} ${v.name} Dest:${v.dest}`;
-
-    return {
-      mmsi: v.mmsi,
-      shipName: v.name,
-      type: v.type,
-      latitude: v.lat,
-      longitude: v.lon,
-      speedKnots: v.speed,
-      headingDeg: v.heading,
-      destination: v.dest,
-      status: v.speed > 1.0 ? 'En Navegación' : 'Fondeado',
-      lastReport: new Date().toISOString(),
-      distanciaKm: dist,
-      enRango,
-      aprsPacket
-    };
-  });
-
-  // Simulation of NMEA parsed strings hitting local aiscatcher on UDP 10110 is disabled to prevent fake traffic loops when no actual data exists.
-  // const rangeVessels = vessels.filter(v => v.enRango);
-  // if (rangeVessels.length > 0 && Math.random() > 0.5) {
-  //   const luckyShip = rangeVessels[Math.floor(Math.random() * rangeVessels.length)];
-  //   const rawAisNmea = `!AIVDM,1,1,,A,133sVf0P00PD0atG9iSUEvwp00S?,0*5D`;
-  //   
-  //   addLog(
-  //     'AIS', 
-  //     `MMSI:${luckyShip.mmsi}`, 
-  //     'aiscatcher', 
-  //     `UDP:${config.aisCatcherPort}`, 
-  //     rawAisNmea, 
-  //     true, 
-  //     `Decodificado AIS Comar SLR200G: ${luckyShip.shipName} [Rumbo: ${luckyShip.headingDeg}°, Vel: ${luckyShip.speedKnots} kts]`
-  //   );
-  // 
-  //   // Forward AIS report to APRS-IS server if enabled
-  //   if (config.aisShareRawAprs) {
-  //     addLog(
-  //       'TX', 
-  //       luckyShip.shipName.split(' ')[0], 
-  //       'LOCAL_APRSC', 
-  //       `aprx➔${config.serverIp}`, 
-  //       luckyShip.aprsPacket || '', 
-  //       true, 
-  //       `Inyección APRSC AIS-Marine de ${luckyShip.shipName}`
-  //     );
-  //   }
-  // }
-}
-
 // Init simulated state logs
 addLog('SYS', 'SYSTEM', 'LOCAL', 'REMERAPI', 'Inicializando Consola de Telemetría APRS S.A.T.', true, 'Sistema en red');
 addLog('SYS', 'NTPSEC', 'LOCAL', 'HARDWARE', 'Sincronizado con PPS GPS (Estrato 1, offset: 0.004ms)', true, 'Bajo nivel');
@@ -2268,136 +1984,12 @@ function calculateAqiFromPm25(val: number): number {
   return Math.round(201 + ((99 / 99.9) * (val - 150.5)));
 }
 
-// Variables para rastrear el último envío de balizas de calidad del aire y su estado
-let lastIcaBeaconTime = 0;
-let lastIcaStatusLabel = '';
-
 // Variables para rastrear el último envío de balizas de radiactividad y su estado
-let lastRarRanBeaconTime = 0;
-let lastRarRanStatusLabel = '';
 
 // Procedencia de los datos de calidad del aire. Solo son reales (y por tanto
 // emitibles por APRS) las mediciones completas de Open-Meteo: con IQAir los
 // contaminantes se estiman y, sin ninguna API, todo es un simulador local.
 let icaDataSimulated = true;
-
-function icaDataIsSimulated(): boolean {
-  return icaDataSimulated;
-}
-
-function getNearestIcaStation() {
-  const originLat = gpsdState.lat || 40.416775;
-  const originLon = gpsdState.lon || -3.703790;
-  
-  let nearestStation = ICA_STATIONS[0];
-  let minDistance = Infinity;
-  
-  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-  
-  for (const station of ICA_STATIONS) {
-    const dist = getDistance(originLat, originLon, station.lat, station.lon);
-    if (dist < minDistance) {
-      minDistance = dist;
-      nearestStation = station;
-    }
-  }
-  
-  return nearestStation;
-}
-
-function getIcaLabel(aqi: number): string {
-  if (aqi <= 50) return 'Buena';
-  if (aqi <= 100) return 'Regular';
-  if (aqi <= 150) return 'Desfavorable';
-  if (aqi <= 200) return 'Muy Desfavorable';
-  return 'Extremadamente Desfavorable';
-}
-
-function getAirQualityBeaconPacket(): { packet: string; label: string; aqi: number; pm25: number; pm10: number; co: number; o3: number; no2: number; stationName: string } {
-  const lat = gpsdState.lat || 40.416775;
-  const lon = gpsdState.lon || -3.703790;
-  
-  // Usamos los datos consolidados en iqairState (procedentes de IQAir API, Open-Meteo o simulación local para la ubicación real)
-  const aqi = iqairState.aqi || 42;
-  const label = getIcaLabel(aqi);
-  
-  const pm25 = iqairState.pm2_5 !== undefined ? iqairState.pm2_5 : 8.0;
-  const pm10 = iqairState.pm10 !== undefined ? iqairState.pm10 : 12.0;
-  const no2 = iqairState.no2 !== undefined ? iqairState.no2 : 15.0;
-  const o3 = iqairState.o3 !== undefined ? iqairState.o3 : 45.0;
-  const co = iqairState.co !== undefined ? iqairState.co : 0.3; // en mg/m3
-  
-  const prov = getClosestProvince(lat, lon);
-  const stationName = iqairState.city && iqairState.city !== 'Madrid (Live)' && iqairState.city !== 'Estación Local' && iqairState.city !== 'Madrid' && iqairState.city !== 'Madrid (Simulado)'
-    ? iqairState.city
-    : (prov ? prov.name : 'Estación Local');
-
-  const name = "AIR-QUAL "; // exactly 9 chars
-  const timestamp = getAprsTimestamp(new Date());
-  
-  const aprsLat = latToAprs(lat);
-  const aprsLon = lonToAprs(lon);
-  
-  const coVal = co * 1000; // microgramos (ug)
-
-  const pollutants = [
-    { name: 'PM2.5', value: pm25, score: pm25 / 10.0 },
-    { name: 'CO', value: coVal, score: coVal / 5000.0 },
-    { name: 'O3', value: o3, score: o3 / 50.0 },
-    { name: 'NO2', value: no2, score: no2 / 40.0 }
-  ];
-  pollutants.sort((a, b) => b.score - a.score);
-  const dominant = pollutants[0];
-  const formattedValue = dominant.name === 'CO' ? dominant.value.toFixed(0) : dominant.value.toFixed(1);
-
-  // Símbolo específico para Calidad del Aire: usaremos la tabla alternativa '\' con el símbolo '{'
-  // El comentario tiene el formato: AQI-ICA: [valor] ([etiqueta]) ([contaminante_principal]: [valor]ug)
-  const comment = `AQI-ICA: ${aqi} (${label}) (${dominant.name}: ${formattedValue}ug)`;
-  
-  const packet = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}\\${aprsLon}{${comment}`;
-  
-  return { 
-    packet, 
-    label, 
-    aqi, 
-    pm25, 
-    pm10, 
-    co: coVal, 
-    o3, 
-    no2,
-    stationName
-  };
-}
-
-function getIcaIntervalForLevel(label: string, userInterval: number = 30): number {
-  if (userInterval > 0 && userInterval !== 30 && userInterval !== 45 && userInterval !== 20 && userInterval !== 10) {
-    return userInterval;
-  }
-  const l = (label || '').toLowerCase();
-  if (l.includes('extremo') || l.includes('extremadamente')) {
-    return 10; // Extremo (L6): 10m
-  }
-  if (l.includes('muy')) {
-    return 20; // Muy Desfavorable (L5): 20m
-  }
-  if (l.includes('desfavorable')) {
-    return 30; // Desfavorable (L4): 30m
-  }
-  if (l.includes('regular')) {
-    return 45; // Regular (L3): 45m
-  }
-  return userInterval > 0 ? userInterval : 60; // Buena (L1/L2): 60m o predefinido
-}
 
 let lastIcaBulletinTime = 0;
 
@@ -2521,352 +2113,71 @@ function getHealthRecommendation(label: string): string {
   return 'Sin riesgo. Disfrute de actividades al aire libre.';
 }
 
-function formatIcaBulletinTemplate(
-  label: string,
-  aqi: number,
-  pm25: number,
-  pm10: number,
-  co: number,
-  no2: number,
-  o3: number,
-  station: string
-): string {
-  let template = config.icaTemplateBuena;
-  const l = label.toLowerCase();
-  if (l.includes('regular')) {
-    template = config.icaTemplateRegular || template;
-  } else if (l.includes('muy')) {
-    template = config.icaTemplateMuyDesfavorable || template;
-  } else if (l.includes('extremadamente') || l.includes('extremo')) {
-    template = config.icaTemplateExtremadamente || template;
-  } else if (l.includes('desfavorable')) {
-    template = config.icaTemplateDesfavorable || template;
-  } else if (l.includes('buena')) {
-    template = config.icaTemplateBuena || template;
-  }
-
-  if (!template) {
-    template = 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant})';
-  }
-
-  const mainPollutant = getMainPollutantName(pm25, pm10, co, no2, o3);
-  const healthRec = getHealthRecommendation(label);
-
-  return template
-    .replace(/{aqi}/g, String(aqi))
-    .replace(/{label}/g, label)
-    .replace(/{mainPollutant}/g, mainPollutant)
-    .replace(/{main_pollutant}/g, mainPollutant)
-    .replace(/{pollutant}/g, mainPollutant)
-    .replace(/{contaminante}/g, mainPollutant)
-    .replace(/{contaminante principal}/g, mainPollutant)
-    .replace(/{recomendacion}/g, healthRec)
-    .replace(/{health_recommendation}/g, healthRec)
-    .replace(/{salud}/g, healthRec)
-    .replace(/{pm25}/g, pm25.toFixed(1))
-    .replace(/{pm10}/g, pm10.toFixed(1))
-    .replace(/{co}/g, co.toFixed(0))
-    .replace(/{no2}/g, no2.toFixed(1))
-    .replace(/{o3}/g, o3.toFixed(1))
-    .replace(/{station}/g, station);
-}
-
-function broadcastAirQualityBulletin(
-  aqi?: number, 
-  label?: string, 
-  pm25Val?: number, 
-  pm10Val?: number, 
-  coVal?: number, 
-  no2Val?: number, 
-  o3Val?: number,
-  stationName?: string,
-  force: boolean = false
-) {
-  if (!force && config.enableAprsIca === false) {
-    console.log(`[APRS ICA] Transmisión de boletín de calidad de aire desactivada (automática).`);
-    return;
-  }
-  const finalAqi = aqi !== undefined ? aqi : iqairState.aqi;
-  const finalLabel = label !== undefined ? label : getIcaLabel(finalAqi);
-  const name = stationName !== undefined ? stationName : iqairState.city;
-
-  const now = Date.now();
-  const timeSinceLast = now - lastIcaBulletinTime;
-  const intervalMin = getIcaIntervalForLevel(finalLabel, config.pollIntervalIca || 30);
-  const intervalMs = intervalMin * 60 * 1000;
-
-  if (!force && lastIcaBulletinTime > 0 && timeSinceLast < intervalMs) {
-    console.log(`[APRS ICA BLN] Boletín BLN2AQI omitido por cadencia de intervalo (${((intervalMs - timeSinceLast)/60000).toFixed(1)} min restantes).`);
-    return;
-  }
-
-  lastIcaBulletinTime = now;
-
-  const pm25 = pm25Val !== undefined ? pm25Val : (iqairState.pm2_5 || 0);
-  const pm10 = pm10Val !== undefined ? pm10Val : (iqairState.pm10 || 0);
-  const co = coVal !== undefined ? coVal : ((iqairState.co || 0) * 1000);
-  const no2 = no2Val !== undefined ? no2Val : (iqairState.no2 || 0);
-  const o3 = o3Val !== undefined ? o3Val : (iqairState.o3 || 0);
-  
-  const content = formatIcaBulletinTemplate(finalLabel, finalAqi, pm25, pm10, co, no2, o3, name);
-  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN2AQI  :${content}`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Calidad del Aire (ICA) difundido para la estación ${name}.`, { simulated: icaDataIsSimulated() });
-}
-
 // IQAir Air Quality Index Fetcher & Refresher
 async function refreshIQAir() {
+  const lat = gpsdState.lat;
+  const lon = gpsdState.lon;
+  const n = (v: any): number | undefined => (v !== null && v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined);
+
+  // 1. Modelo CAMS de Copernicus para la posición de la estación (Open-Meteo, sin clave)
   try {
-    // 1. First attempt to fetch real data from open-source Open-Meteo Air Quality API (requires no keys!)
-    let omData: any = null;
-    const lat = gpsdState.lat || 40.4167;
-    const lon = gpsdState.lon || -3.7037;
-    try {
-      const omUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,ozone,sulphur_dioxide`;
-      const omRes = await fetch(omUrl, { signal: AbortSignal.timeout(5000) });
-      if (omRes.ok) {
-        omData = await omRes.json();
-      }
-    } catch (omErr: any) {
-      console.error("Open-Meteo Air Quality API failed, attempting fallbacks:", omErr.message);
-    }
-    // Salvo que Open-Meteo responda más abajo, lo que quede en iqairState no es una medición real
-    icaDataSimulated = true;
-
-    if (omData && omData.current) {
-      icaDataSimulated = false;
-      const cur = omData.current;
-      const pm25Val = cur.pm2_5 || 8.0;
-      const pm10Val = cur.pm10 || 12.0;
-      const coVal = cur.carbon_monoxide || 150.0;
-      const no2Val = cur.nitrogen_dioxide || 10.0;
-      const o3Val = cur.ozone || 45.0;
-      const so2Val = cur.sulphur_dioxide || 1.5;
-      const computedAqi = calculateAqiFromPm25(pm25Val);
-      const prov = getClosestProvince(lat, lon);
-
+    const omUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,ozone,sulphur_dioxide&timezone=UTC`;
+    const omRes = await fetch(omUrl, { signal: AbortSignal.timeout(6000) });
+    const cur = omRes.ok ? (await omRes.json())?.current : null;
+    const pm25 = n(cur?.pm2_5);
+    if (pm25 !== undefined) {
       iqairState = {
-        aqi: computedAqi,
+        aqi: calculateAqiFromPm25(pm25),
         mainPollutant: 'pm25',
-        city: prov ? prov.name : 'Estación Local',
-        state: 'Local',
-        country: 'España',
-        tempC: weatherState.tempC,
-        humidityPct: weatherState.humidityPct,
-        pressureHpa: Math.round(weatherState.pressureHpa),
-        windSpeedMs: parseFloat((weatherState.windSpeedKts * 0.5144).toFixed(1)),
-        windDirDeg: weatherState.windDirDeg,
+        city: 'Modelo CAMS',
+        state: 'posición de la estación',
+        country: '',
         lastUpdated: new Date().toISOString(),
-        pm2_5: pm25Val,
-        pm10: pm10Val,
-        co: coVal,
-        no2: no2Val,
-        o3: o3Val,
-        so2: so2Val
+        // Solo lo que da la fuente: un contaminante sin dato queda sin dato
+        pm2_5: pm25,
+        pm10: n(cur.pm10),
+        co: n(cur.carbon_monoxide),
+        no2: n(cur.nitrogen_dioxide),
+        o3: n(cur.ozone),
+        so2: n(cur.sulphur_dioxide),
       };
-      
-      addLog('SYS', 'AQ_API', 'LOCAL', 'API', `Calidad del aire obtenida desde Open-Meteo para lat=${lat.toFixed(4)}, lon=${lon.toFixed(4)}. PM2.5: ${pm25Val}ug, CO: ${coVal}ug. ICA calculado: ${computedAqi}`, true, 'Correcto');
-      
-      // Broadcast APRS Bulletin and Transmit Beacon
-      // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
+      icaDataSimulated = false;
       return;
     }
+  } catch (omErr: any) {
+    console.warn('Calidad del aire (Open-Meteo) no disponible:', omErr.message);
+  }
 
-    // 2. Fallback to IQAir if API key is provided
-    if (config.iqAirApiKey && config.iqAirApiKey.length > 5) {
-      const url = `http://api.airvisual.com/v2/nearest_city?lat=${gpsdState.lat}&lon=${gpsdState.lon}&key=${config.iqAirApiKey}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const json = await response.json();
-        if (json.status === 'success' && json.data) {
-          const d = json.data;
-          const pm25Mock = Math.round(d.current.pollution.aqius * 0.25);
-          iqairState = {
-            aqi: d.current.pollution.aqius,
-            mainPollutant: d.current.pollution.mainus,
-            city: d.city,
-            state: d.state,
-            country: d.country,
-            tempC: d.current.weather.tp,
-            humidityPct: d.current.weather.hu,
-            pressureHpa: d.current.weather.pr,
-            windSpeedMs: d.current.weather.ws,
-            windDirDeg: d.current.weather.wd,
-            lastUpdated: new Date().toISOString(),
-            pm2_5: pm25Mock,
-            pm10: Math.round(pm25Mock * 1.5),
-            co: 180.0,
-            no2: 12.0,
-            o3: 42.0,
-            so2: 1.2
-          };
-          addLog('SYS', 'IQAIR', 'LOCAL', 'API', `Calidad del aire actualizada desde IQAir para ${d.city}, ${d.state}. AQI: ${d.current.pollution.aqius}`, true, 'Correcto');
-          
-          // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
-          return;
-        } else {
-          throw new Error(json.data?.message || 'Fallo respuesta IQAir');
-        }
-      } else {
-        throw new Error(`IQAir HTTP error: ${response.status}`);
+  // 2. IQAir, si hay clave: da el índice de la ciudad más cercana, no las concentraciones
+  if (config.iqAirApiKey && config.iqAirApiKey.length > 5) {
+    try {
+      const response = await fetch(`https://api.airvisual.com/v2/nearest_city?lat=${lat}&lon=${lon}&key=${config.iqAirApiKey}`, { signal: AbortSignal.timeout(8000) });
+      const json = response.ok ? await response.json() : null;
+      const d = json?.status === 'success' ? json.data : null;
+      if (d && n(d.current?.pollution?.aqius) !== undefined) {
+        iqairState = {
+          aqi: d.current.pollution.aqius,
+          mainPollutant: d.current.pollution.mainus,
+          city: d.city,
+          state: d.state,
+          country: d.country,
+          tempC: n(d.current.weather?.tp),
+          humidityPct: n(d.current.weather?.hu),
+          pressureHpa: n(d.current.weather?.pr),
+          windSpeedMs: n(d.current.weather?.ws),
+          windDirDeg: n(d.current.weather?.wd),
+          lastUpdated: new Date().toISOString(),
+        };
+        icaDataSimulated = false;
+        return;
       }
-    } else {
-      // 3. Fallback to Simulated/drift Air Quality
-      const baseAqi = Math.round(35 + Math.sin(Date.now() / 400000) * 15 + (Math.random() * 4 - 2));
-      const pollutants = ['pm25', 'pm10', 'o3', 'no2'];
-      const mainPollutant = pollutants[Math.floor((Date.now() / 100000) % pollutants.length)];
-      
-      const pm2_5 = Math.max(1, parseFloat((baseAqi * 0.22 + Math.random() * 1.5).toFixed(1)));
-      const pm10 = Math.max(2, parseFloat((baseAqi * 0.38 + Math.random() * 3).toFixed(1)));
-      const co = Math.max(10, Math.round(110 + baseAqi * 1.8 + Math.random() * 15));
-      const no2 = Math.max(1, parseFloat((baseAqi * 0.28 + Math.random() * 2).toFixed(1)));
-      const o3 = Math.max(5, parseFloat((baseAqi * 0.45 + Math.random() * 4).toFixed(1)));
-      const so2 = Math.max(0.1, parseFloat((baseAqi * 0.04 + Math.random() * 0.4).toFixed(1)));
-
-      const prov = getClosestProvince(gpsdState.lat || 40.4167, gpsdState.lon || -3.7037);
-
-      iqairState = {
-        aqi: Math.max(5, Math.min(300, baseAqi)),
-        mainPollutant,
-        city: prov ? `${prov.name} (Simulado)` : 'Estación Local',
-        state: 'Local',
-        country: 'España',
-        tempC: weatherState.tempC,
-        humidityPct: weatherState.humidityPct,
-        pressureHpa: Math.round(weatherState.pressureHpa),
-        windSpeedMs: parseFloat((weatherState.windSpeedKts * 0.5144).toFixed(1)),
-        windDirDeg: weatherState.windDirDeg,
-        lastUpdated: new Date().toISOString(),
-        pm2_5,
-        pm10,
-        co,
-        no2,
-        o3,
-        so2
-      };
-
-      // (La calidad del aire se anuncia ya por la cadena de avisos, solo cuando es mala: server/fuentes/calidadAire.ts)
-    }
-  } catch (err: any) {
-    addLog('SYS', 'IQAIR_ERR', 'LOCAL', 'HARDWARE', `Error conectando con API de calidad del aire: ${err.message}. Operando con simulador local.`, false, 'Simulado activo');
-  }
-}
-
-// CSN REA Stations Catalog
-const csnReaStations = [
-  // Centrales Nucleares (Nuclear Power Plants & surrounding high density networks)
-  { id: 'REA_ALMARAZ', name: 'Almaraz (C.N.)', lat: 39.8081, lon: -5.6984, baseVal: 0.15, provincia: 'Cáceres', tipo: 'Central Nuclear' },
-  { id: 'REA_ASCO', name: 'Ascó (C.N.)', lat: 41.2185, lon: 0.5672, baseVal: 0.12, provincia: 'Tarragona', tipo: 'Central Nuclear' },
-  { id: 'REA_COFRENTES', name: 'Cofrentes (C.N.)', lat: 39.2275, lon: -1.0618, baseVal: 0.11, provincia: 'Valencia', tipo: 'Central Nuclear' },
-  { id: 'REA_VANDELLOS', name: 'Vandellós II (C.N.)', lat: 40.9575, lon: 0.8804, baseVal: 0.10, provincia: 'Tarragona', tipo: 'Central Nuclear' },
-  { id: 'REA_TRILLO', name: 'Trillo (C.N.)', lat: 40.8031, lon: -2.6289, baseVal: 0.13, provincia: 'Guadalajara', tipo: 'Central Nuclear' },
-  { id: 'REA_GARONA', name: 'Santa María de Garoña (C.N. cese)', lat: 42.7745, lon: -3.2045, baseVal: 0.14, provincia: 'Burgos', tipo: 'Central Nuclear' },
-  { id: 'REA_ZORITA', name: 'José Cabrera - Zorita (desmantelamiento)', lat: 40.3792, lon: -2.9344, baseVal: 0.12, provincia: 'Guadalajara', tipo: 'Central Nuclear' },
-
-  // Estaciones Regionales / Capitales de Provincia
-  { id: 'REA_MADRID', name: 'Madrid Sede Central (CSN)', lat: 40.4167, lon: -3.7037, baseVal: 0.12, provincia: 'Madrid', tipo: 'Estación Central' },
-  { id: 'REA_BARCELONA', name: 'Barcelona (Univ. Politécnica)', lat: 41.3851, lon: 2.1734, baseVal: 0.09, provincia: 'Barcelona', tipo: 'Estación Regional' },
-  { id: 'REA_VALENCIA', name: 'Valencia (Univ. Politécnica)', lat: 39.4699, lon: -0.3763, baseVal: 0.08, provincia: 'Valencia', tipo: 'Estación Regional' },
-  { id: 'REA_SEVILLA', name: 'Sevilla (Univ. Sevilla)', lat: 37.3891, lon: -5.9845, baseVal: 0.09, provincia: 'Sevilla', tipo: 'Estación Regional' },
-  { id: 'REA_BILBAO', name: 'Bilbao (Univ. del País Vasco)', lat: 43.2630, lon: -2.9350, baseVal: 0.11, provincia: 'Vizcaya', tipo: 'Estación Regional' },
-  { id: 'REA_SANTIAGO', name: 'Santiago de Compostela (Univ. Coruña)', lat: 42.8782, lon: -8.5448, baseVal: 0.14, provincia: 'La Coruña', tipo: 'Estación Regional' },
-  { id: 'REA_MURCIA', name: 'Murcia (Univ. Murcia)', lat: 37.9922, lon: -1.1307, baseVal: 0.10, provincia: 'Murcia', tipo: 'Estación Regional' },
-  { id: 'REA_ZARAGOZA', name: 'Zaragoza (Univ. Zaragoza)', lat: 41.6488, lon: -0.8891, baseVal: 0.11, provincia: 'Zaragoza', tipo: 'Estación Regional' },
-  { id: 'REA_CACERES', name: 'Cáceres (Univ. Extremadura)', lat: 39.4753, lon: -6.3722, baseVal: 0.13, provincia: 'Cáceres', tipo: 'Estación Regional' },
-  { id: 'REA_BADAJOZ', name: 'Badajoz', lat: 38.8794, lon: -6.9706, baseVal: 0.13, provincia: 'Badajoz', tipo: 'Estación Regional' },
-  { id: 'REA_ALMERIA', name: 'Almería', lat: 36.8400, lon: -2.4600, baseVal: 0.09, provincia: 'Almería', tipo: 'Estación Regional' },
-  { id: 'REA_CADIZ', name: 'Cádiz', lat: 36.5200, lon: -6.2800, baseVal: 0.08, provincia: 'Cádiz', tipo: 'Estación Regional' },
-  { id: 'REA_CORDOBA', name: 'Córdoba', lat: 37.8800, lon: -4.7700, baseVal: 0.11, provincia: 'Córdoba', tipo: 'Estación Regional' },
-  { id: 'REA_GRANADA', name: 'Granada', lat: 37.1700, lon: -3.5900, baseVal: 0.12, provincia: 'Granada', tipo: 'Estación Regional' },
-  { id: 'REA_HUELVA', name: 'Huelva', lat: 37.2600, lon: -6.9400, baseVal: 0.10, provincia: 'Huelva', tipo: 'Estación Regional' },
-  { id: 'REA_JAEN', name: 'Jaén', lat: 37.7700, lon: -3.7800, baseVal: 0.11, provincia: 'Jaén', tipo: 'Estación Regional' },
-  { id: 'REA_MALAGA', name: 'Málaga', lat: 36.7200, lon: -4.4200, baseVal: 0.09, provincia: 'Málaga', tipo: 'Estación Regional' },
-  { id: 'REA_HUESCA', name: 'Huesca', lat: 42.1300, lon: -0.4000, baseVal: 0.11, provincia: 'Huesca', tipo: 'Estación Regional' },
-  { id: 'REA_TERUEL', name: 'Teruel', lat: 40.3400, lon: -1.1000, baseVal: 0.12, provincia: 'Teruel', tipo: 'Estación Regional' },
-  { id: 'REA_OVIEDO', name: 'Oviedo', lat: 43.3600, lon: -5.8400, baseVal: 0.13, provincia: 'Asturias', tipo: 'Estación Regional' },
-  { id: 'REA_GIJON', name: 'Gijón', lat: 43.5300, lon: -5.6600, baseVal: 0.12, provincia: 'Asturias', tipo: 'Estación Regional' },
-  { id: 'REA_PALMA', name: 'Palma de Mallorca', lat: 39.5600, lon: 2.6500, baseVal: 0.08, provincia: 'Baleares', tipo: 'Estación Regional' },
-  { id: 'REA_LASPALMAS', name: 'Las Palmas de G.C.', lat: 28.1200, lon: -15.4100, baseVal: 0.09, provincia: 'Las Palmas', tipo: 'Estación Regional' },
-  { id: 'REA_TENERIFE', name: 'Santa Cruz de Tenerife', lat: 28.4600, lon: -16.2500, baseVal: 0.09, provincia: 'S.C. Tenerife', tipo: 'Estación Regional' },
-  { id: 'REA_SANTANDER', name: 'Santander', lat: 43.4600, lon: -3.8000, baseVal: 0.11, provincia: 'Cantabria', tipo: 'Estación Regional' },
-  { id: 'REA_AVILA', name: 'Ávila', lat: 40.6500, lon: -4.6900, baseVal: 0.15, provincia: 'Ávila', tipo: 'Estación Regional' },
-  { id: 'REA_LEON', name: 'León', lat: 42.5900, lon: -5.5700, baseVal: 0.14, provincia: 'León', tipo: 'Estación Regional' },
-  { id: 'REA_PALENCIA', name: 'Palencia', lat: 42.0100, lon: -4.5200, baseVal: 0.11, provincia: 'Palencia', tipo: 'Estación Regional' },
-  { id: 'REA_SALAMANCA', name: 'Salamanca', lat: 40.9600, lon: -5.6600, baseVal: 0.16, provincia: 'Salamanca', tipo: 'Estación Regional' },
-  { id: 'REA_SEGOVIA', name: 'Segovia', lat: 40.9400, lon: -4.1100, baseVal: 0.15, provincia: 'Segovia', tipo: 'Estación Regional' },
-  { id: 'REA_SORIA', name: 'Soria', lat: 41.7600, lon: -2.4600, baseVal: 0.11, provincia: 'Soria', tipo: 'Estación Regional' },
-  { id: 'REA_VALLADOLID', name: 'Valladolid', lat: 41.6500, lon: -4.7200, baseVal: 0.12, provincia: 'Valladolid', tipo: 'Estación Regional' },
-  { id: 'REA_ZAMORA', name: 'Zamora', lat: 41.5000, lon: -5.7400, baseVal: 0.13, provincia: 'Zamora', tipo: 'Estación Regional' },
-  { id: 'REA_ALBACETE', name: 'Albacete', lat: 38.9900, lon: -1.8500, baseVal: 0.11, provincia: 'Albacete', tipo: 'Estación Regional' },
-  { id: 'REA_CIUDADREAL', name: 'Ciudad Real', lat: 38.9800, lon: -3.9200, baseVal: 0.12, provincia: 'Ciudad Real', tipo: 'Estación Regional' },
-  { id: 'REA_CUENCA', name: 'Cuenca', lat: 40.0700, lon: -2.1300, baseVal: 0.11, provincia: 'Cuenca', tipo: 'Estación Regional' },
-  { id: 'REA_TOLEDO', name: 'Toledo', lat: 39.8600, lon: -4.0200, baseVal: 0.13, provincia: 'Toledo', tipo: 'Estación Regional' },
-  { id: 'REA_GIRONA', name: 'Girona', lat: 41.9700, lon: 2.8200, baseVal: 0.11, provincia: 'Girona', tipo: 'Estación Regional' },
-  { id: 'REA_LLEIDA', name: 'Lleida', lat: 41.6100, lon: 0.6200, baseVal: 0.10, provincia: 'Lleida', tipo: 'Estación Regional' },
-  { id: 'REA_CORUNA', name: 'A Coruña', lat: 43.3600, lon: -8.4100, baseVal: 0.15, provincia: 'La Coruña', tipo: 'Estación Regional' },
-  { id: 'REA_LUGO', name: 'Lugo', lat: 43.0000, lon: -7.5500, baseVal: 0.14, provincia: 'Lugo', tipo: 'Estación Regional' },
-  { id: 'REA_OURENSE', name: 'Ourense', lat: 42.3300, lon: -7.8600, baseVal: 0.16, provincia: 'Ourense', tipo: 'Estación Regional' },
-  { id: 'REA_LOGRONO', name: 'Logroño', lat: 42.4600, lon: -2.4400, baseVal: 0.11, provincia: 'La Rioja', tipo: 'Estación Regional' },
-  { id: 'REA_PAMPLONA', name: 'Pamplona', lat: 42.8100, lon: -1.6400, baseVal: 0.11, provincia: 'Navarra', tipo: 'Estación Regional' },
-  { id: 'REA_SANSEBASTIAN', name: 'San Sebastián', lat: 43.3200, lon: -1.9800, baseVal: 0.11, provincia: 'Guipúzcoa', tipo: 'Estación Regional' },
-  { id: 'REA_VITORIA', name: 'Vitoria', lat: 42.8400, lon: -2.6700, baseVal: 0.11, provincia: 'Álava', tipo: 'Estación Regional' },
-  { id: 'REA_ALICANTE', name: 'Alicante', lat: 38.3400, lon: -0.4800, baseVal: 0.08, provincia: 'Alicante', tipo: 'Estación Regional' },
-  { id: 'REA_CASTELLON', name: 'Castellón', lat: 39.9800, lon: -0.0500, baseVal: 0.09, provincia: 'Castellón', tipo: 'Estación Regional' },
-  { id: 'REA_CEUTA', name: 'Ceuta', lat: 35.8800, lon: -5.3100, baseVal: 0.08, provincia: 'Ceuta', tipo: 'Estación Regional' },
-  { id: 'REA_MELILLA', name: 'Melilla', lat: 35.2900, lon: -2.9300, baseVal: 0.08, provincia: 'Melilla', tipo: 'Estación Regional' }
-];
-
-function getClosestCsnReaStation(lat: number, lon: number) {
-  let closest = csnReaStations[0];
-  let minDistanceSq = Infinity;
-  for (const st of csnReaStations) {
-    const dLat = st.lat - lat;
-    const dLon = st.lon - lon;
-    const distSq = dLat * dLat + dLon * dLon;
-    if (distSq < minDistanceSq) {
-      minDistanceSq = distSq;
-      closest = st;
+    } catch (err: any) {
+      console.warn('Calidad del aire (IQAir) no disponible:', err.message);
     }
   }
-  return closest;
-}
 
-// Refresh CSN Radiation Surveillance networks
-async function refreshRarRan() {
-  try {
-    const station = getClosestCsnReaStation(gpsdState.lat, gpsdState.lon);
-    const dist = calculateDistance(gpsdState.lat, gpsdState.lon, station.lat, station.lon);
-    
-    let valueUsVh: number;
-    if (simulatedRarRanValue !== null && simulatedRarRanValue !== undefined) {
-      valueUsVh = simulatedRarRanValue;
-    } else {
-      // Ambient cosmic radiation drifts slightly (between 0.08 and 0.22 depending on geology)
-      const drift = (Math.random() - 0.5) * 0.015;
-      valueUsVh = parseFloat((station.baseVal + drift).toFixed(3));
-    }
-    
-    let status: 'NORMAL' | 'ALERT' | 'HEAVY' = 'NORMAL';
-    if (valueUsVh > 0.30) {
-      status = 'ALERT';
-    }
-    if (valueUsVh > 1.00) {
-      status = 'HEAVY';
-    }
-
-    rarRanState = {
-      stationId: station.id,
-      name: station.name,
-      latitude: station.lat,
-      longitude: station.lon,
-      valueUsVh,
-      status,
-      distanciaKm: dist
-    };
-
-    // Sin emisión automática: la radiación no tiene todavía una fuente real y este dato es modelado
-  } catch (err: any) {
-    console.error("Error refreshing RarRan state:", err ? err.message : err);
-  }
+  // 3. Ninguna fuente responde: no hay dato (antes se generaba uno simulado)
+  icaDataSimulated = true;
 }
 
 // Refresh live Global & Regional Tsunamis
@@ -2941,75 +2252,6 @@ function getSeismoBeaconPacket(): string | null {
   if (!target) return null;
 
   return generateEarthquakePacket(target);
-}
-
-function getRarRanBeaconPacket(): string {
-  const name = "RAD-RAR  "; // exactly 9 chars
-  const timestamp = getAprsTimestamp(new Date());
-  const aprsLat = latToAprs(rarRanState.latitude);
-  const aprsLon = lonToAprs(rarRanState.longitude);
-  
-  let statusLabel = "estado normal";
-  if (rarRanState.status === 'HEAVY') {
-    statusLabel = "nivel elevado / peligro";
-  } else if (rarRanState.status === 'ALERT') {
-    statusLabel = "estado de alerta";
-  }
-  
-  const comment = `${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) CSN-${rarRanState.name}`;
-  return `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY:;${name}*${timestamp}${aprsLat}R${aprsLon}H${comment}`;
-}
-
-function transmitRarRanBeacon(force: boolean = false) {
-  if (config.systemPower === false) return;
-  
-  const packet = getRarRanBeaconPacket();
-  const now = Date.now();
-  const timeSinceLast = now - lastRarRanBeaconTime;
-  const stateChanged = lastRarRanStatusLabel && (rarRanState.status !== lastRarRanStatusLabel);
-  // Intervalo de 1 hora
-  const intervalMs = 60 * 60 * 1000;
-  
-  if (force || lastRarRanBeaconTime === 0 || timeSinceLast >= intervalMs || stateChanged) {
-    const isStateChange = lastRarRanStatusLabel && stateChanged;
-    lastRarRanBeaconTime = now;
-    lastRarRanStatusLabel = rarRanState.status;
-    
-    rarRanState.rawAprsRar = packet;
-    
-    const remarks = isStateChange 
-      ? `Cambio de nivel de radiación detectado en estación cercana '${rarRanState.name}' (${rarRanState.status}). Baliza APRS RAD-RAR transmitida inmediatamente.`
-      : `Baliza de Posición APRS para Radiación Ambiental (RAD-RAR) transmitida con éxito (Estación cercana: ${rarRanState.name}).`;
-
-    // Los valores REA de la consola son un modelo local (no hay lectura real del CSN): no se emiten.
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packet, true, remarks, { simulated: true });
-    
-    // Difundir boletín de radiación en la red APRS si es superior a 0.30 uSv/h
-    if (rarRanState.valueUsVh > 0.30) {
-      broadcastRarRanBulletin();
-    }
-  } else {
-    console.log(`[APRS RAD-RAR] Baliza no transmitida. Siguiente intervalo en ${((intervalMs - timeSinceLast) / 60000).toFixed(1)} min (Filtro por cambio de estado activo: ${rarRanState.status})`);
-  }
-}
-
-function broadcastRarRanBulletin() {
-  let statusLabel = "estado normal";
-  if (rarRanState.status === 'HEAVY') {
-    statusLabel = "EMERGENCIA CRITICA - INTERVENCION";
-  } else if (rarRanState.status === 'ALERT') {
-    statusLabel = "nivel de alerta preventiva";
-  }
-  
-  // 1. Send the standard APRS bulletin for radiation (addressee: BLN4RAD  , exactly 9 chars)
-  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN4RAD  :MEDICION RADIACTIVIDAD - REA: ${rarRanState.valueUsVh.toFixed(3)} uSv/h (${statusLabel}) en CSN-${rarRanState.name}`;
-  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, `Boletín APRS de Radiación Ambiental (REA) difundido para la estación CSN-${rarRanState.name}.`, { simulated: true });
-
-  // 2. If radiation is > 1.00 uSv/h, send an alert message to CQ (exactly 9 chars)
-  if (rarRanState.valueUsVh > 1.00) {
-    const alertMessageStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::CQ       :ALERTA CIVIL CRITICA: Radiacion extrema (${rarRanState.valueUsVh.toFixed(3)} uSv/h) en CSN-${rarRanState.name}. active plan de emergencia civil en el radio de influencia.`;
-    addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, alertMessageStr, true, `Mensaje APRS de Alerta de Emergencia Radiológica Civil difundido a la red (CQ).`, { simulated: true });
-  }
 }
 
 // Space Weather & HF Propagation APRS Bulletin Config & State
@@ -3147,6 +2389,13 @@ async function transmitSpaceWeatherAprsBulletin(force: boolean = false) {
   const intervalMs = (spaceWeatherAprsConfig.intervalMinutes || 30) * 60 * 1000;
   const minChangeIntervalMs = (spaceWeatherAprsConfig.minIntervalOnChangeMinutes || 5) * 60 * 1000;
   const timeSinceLast = now - spaceWeatherAprsConfig.lastTransmittedTime;
+
+  // Sin todas las fuentes no hay boletín: llevaría índices supuestos
+  const propActual = await getPropagationData(false);
+  if (!propActual.completa) {
+    if (force) addLog('SYS', 'CLIMA_ESPACIAL', 'LOCAL', 'BOLETIN', `Boletín de propagación no emitido: falta ${propActual.faltan.join(', ')}.`, false, 'Sin datos');
+    return null;
+  }
 
   const data = await formatSpaceWeatherAprsBulletin();
   const rNivel = parseInt((data.rScale || "R0").replace("R", "")) || 0;
@@ -3634,7 +2883,6 @@ refreshWeather();
 refreshIQAir();
 refreshEarthquakes();
 refreshNoaaAlerts();
-refreshAisVessels();
 refreshTrafficIncidents();
 
 // Background Periodic Loops (1500ms loop for real-time fidelity)
@@ -3751,15 +2999,9 @@ setInterval(() => {
     iqairState.lastUpdated = new Date().toISOString();
   }
 
-  // Drift radiation (CSN-REA) continuously to reflect cosmic ray detection noise
-  refreshRarRan();
-
   // Drift ocean buoys continuously
   refreshErddapBuoys();
   refreshPortusStations();
-
-  // Trigger AIS dynamic position updates
-  refreshAisVessels();
 
   // Drift space weather / HF propagation metrics
   driftSpaceWeatherAndHf();
@@ -3968,69 +3210,6 @@ function refreshPortusStations() {
   addLog('SYS', 'PORTUS', 'PROXY', 'SYNC', `Base de datos física de aguas de Puertos del Estado (PORTUS) sincronizada con telemetría en tiempo real.`, true, 'Automático');
 }
 
-function refreshNavareaWarnings() {
-  // 1. Slightly drift coordinates of drifting navigational hazards
-  navareaWarnings = navareaWarnings.map(w => {
-    if (w.category === 'Navigational Hazard' && w.id.includes('NAV3-0418')) {
-      const latDelta = (Math.random() - 0.5) * 0.002;
-      const lonDelta = (Math.random() - 0.5) * 0.002;
-      const newLat = parseFloat((w.lat + latDelta).toFixed(4));
-      const newLon = parseFloat((w.lon + lonDelta).toFixed(4));
-      return {
-        ...w,
-        lat: newLat,
-        lon: newLon,
-        areaDescription: `Estrecho de Sicilia. Siete contenedores semi-sumergidos de 40 pies a la deriva en ${newLat}N ${newLon}E.`,
-        broadcastTime: new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC'
-      };
-    }
-    if (w.category === 'Navigational Hazard' && w.id.includes('E-0298')) {
-      const latDelta = (Math.random() - 0.5) * 0.0015;
-      const lonDelta = (Math.random() - 0.5) * 0.0015;
-      const newLat = parseFloat((w.lat + latDelta).toFixed(4));
-      const newLon = parseFloat((w.lon + lonDelta).toFixed(4));
-      return {
-        ...w,
-        lat: newLat,
-        lon: newLon,
-        areaDescription: `Costa de Asturias. Elemento de fondeo roto. Boya a la deriva garreando en dirección ${newLat}N ${newLon}W.`,
-        broadcastTime: new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC'
-      };
-    }
-    return w;
-  });
-
-  // 2. ~15% chance of adding a new warning if total is less than 15
-  if (Math.random() > 0.85 && navareaWarnings.length < 15) {
-    const randomType = Math.random() > 0.5 ? 'NAVTEX' : 'NAVAREA III';
-    const randomId = `${randomType === 'NAVTEX' ? 'NTX' : 'NAV3'}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newWarning: NavareaWarning = {
-      id: randomId,
-      navareaType: randomType,
-      category: 'Search & Rescue',
-      title: 'Alerta de Avistamiento de Embarcación Menor / Patera',
-      lat: parseFloat((35.8 + Math.random() * 0.6).toFixed(4)),
-      lon: parseFloat((-4.8 + Math.random() * 2.5).toFixed(4)),
-      areaDescription: 'Mar de Alborán. Búsqueda activa por unidades de Salvamento Marítimo.',
-      originator: 'Salvamento Marítimo Almería (CCS)',
-      broadcastTime: new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-      urgency: 'ALERTA CRÍTICA',
-      rawText: `RADIOAVISO DE BÚSQUEDA SASEMAR ${randomId}\nMAR DE ALBORÁN. EMBARCACIÓN A LA DERIVA.\n1. SE SOLICITA A TODOS LOS BUQUES EN TRÁNSITO MANTENER VIGILANCIA RADAR Y VISUAL EXTREMA POR POSIBLE AVISTAMIENTO DE EMBARCACIÓN MENOR DE FIBRA NEGRA SIN LUCES A LA DERIVA.\n2. REPORTAR INMEDIATAMENTE CUALQUIER NOVEDAD A COSAL ALMERÍA EN VHF CH-16.`,
-      subArea: 'III-B'
-    };
-    navareaWarnings.unshift(newWarning);
-    addLog('SYS', 'NAVTEX', 'PROXY', 'RX', `¡Recibido nuevo radioaviso de emergencia marítima en canal de socorro! ID: ${randomId}`, true, 'Socorro');
-  }
-
-  // 3. ~5% chance of canceling/removing the oldest non-essential warning if total is high
-  if (Math.random() > 0.95 && navareaWarnings.length > 8) {
-    const removed = navareaWarnings.pop();
-    if (removed) {
-      addLog('SYS', 'NAVTEX', 'PROXY', 'EXP', `Expiración programada de aviso marítimo oficial: ${removed.id}`, true, 'Información');
-    }
-  }
-}
-
 // Run ERDDAP sync interval every 15 seconds
 setInterval(refreshErddapBuoys, 15000);
 
@@ -4128,7 +3307,6 @@ function startSchedules() {
 
   timerJrc = setInterval(() => {
     addLog('SYS', 'JRC', 'PROXY', 'CRON', `Sincronizando feed de estaciones y datasets EURDEP JRC (Frecuencia: ${config.pollIntervalJrc} min).`, true, 'Automático');
-    refreshRarRan();
   }, jrcInterval);
 
   if (!timerIQAir) timerIQAir = setInterval(refreshIQAir, 150000); // 2.5 min
@@ -4272,22 +3450,24 @@ app.get('/api/telemetry', async (req, res) => {
     weather: weatherState,
     earthquakes,
     noaaAlerts,
-    vessels,
+    vessels: barcosParaPaneles(),
     patStatus: patState,
     nucStats,
     logs,
     trafficTrends,
-    iqair: iqairState,
-    rarRan: rarRanState,
+    // Sin fuente real no se envía nada (antes, valores de un simulador)
+    iqair: icaDataSimulated ? undefined : iqairState,
     tsunamiAlerts,
-    csnStations: csnReaStations,
+    // Sin fuente real de vigilancia radiológica: lista vacía (antes, valores modelados)
+    csnStations: [],
     dgtIncidents: dgtIncidentsList,
     inmarsatMessages,
     erddapBuoys,
     portusStations,
     aemetAlerts,
     meteoSimulada,
-    propagation: propagationData || undefined,
+    propagation: propagationData && propagationData.completa ? propagationData : undefined,
+    propagacionFaltan: propagationData ? propagationData.faltan : ['todas las fuentes'],
     navareas: navareaWarnings
   });
 });
@@ -4319,8 +3499,8 @@ async function fetchNoaaSolarIndices() {
       const parts = line.split(/\s+/);
       if (parts.length >= 5) {
         latestData = {
-          sfi: Math.round(parseFloat(parts[3]) || 150).toString(),
-          ssn: Math.round(parseFloat(parts[4]) || 110).toString(),
+          sfi: Number.isFinite(parseFloat(parts[3])) ? Math.round(parseFloat(parts[3])).toString() : '',
+          ssn: Number.isFinite(parseFloat(parts[4])) ? Math.round(parseFloat(parts[4])).toString() : '',
           time_tag: `${parts[0]}-${parts[1]}-${parts[2]}`
         };
         break;
@@ -4335,7 +3515,8 @@ async function fetchNoaaSolarIndices() {
     clearTimeout(timeoutId);
     console.warn("Error fetching NOAA Solar Indices, using fallback:", err.message);
   }
-  return { sfi: "150", ssn: "110", time_tag: "" };
+  // Sin respuesta: vale el último índice diario leído; si nunca se leyó, no hay dato
+  return cachedNoaaSolarIndices || { sfi: '', ssn: '', time_tag: '' };
 }
 
 async function fetchNoaa3DayForecast() {
@@ -4577,50 +3758,18 @@ async function fetchNoaa3DayForecast() {
       };
     }
     
-    // Create simulated/fallback forecast if no cache is available
-    const today = new Date();
-    const mockGeom: any[] = [];
-    const mockRad: any[] = [];
-    const mockBlackout: any[] = [];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
-    for (let i = 1; i <= 3; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-      const dateStr = `${months[d.getMonth()]} ${d.getDate()}`;
-      
-      mockGeom.push({
-        dateStr,
-        kp: Math.max(1, Math.min(9, Math.round(2 + Math.random() * 3))),
-        desc: 'Actividad de calma a moderada (Simulado)'
-      });
-      mockRad.push({
-        dateStr,
-        level: Math.random() > 0.8 ? 1 : 0,
-        desc: Math.random() > 0.8 ? 'S1 (Minor - Simulado)' : 'None'
-      });
-      mockBlackout.push({
-        dateStr,
-        level: Math.random() > 0.8 ? 1 : 0,
-        desc: Math.random() > 0.8 ? 'R1 (Minor - Simulado)' : 'None'
-      });
-    }
-
-    const mockSfi1 = Math.round(140 + Math.random() * 40).toString();
-    const mockSfi2 = Math.round(parseInt(mockSfi1) + (Math.random() - 0.5) * 6).toString();
-    const mockSfi3 = Math.round(parseInt(mockSfi2) + (Math.random() - 0.5) * 6).toString();
-    
+    // Sin respuesta y sin copia anterior: no hay previsión (antes se inventaba una al azar)
     return {
-      success: true,
+      success: false,
       real: false,
-      issued: `${today.getUTCFullYear()} ${months[today.getUTCMonth()]} ${today.getUTCDate()} ${today.getUTCHours().toString().padStart(2, '0')}00 UTC`,
-      geom: mockGeom,
-      rad: mockRad,
-      blackout: mockBlackout,
-      dia1: mockSfi1,
-      dia2: mockSfi2,
-      dia3: mockSfi3,
-      rawText: "--- FUENTE NOAA ORIGINAL NO DISPONIBLE EN ESTE MOMENTO ---\nError: " + err.message + "\n\nSe está mostrando una simulación adaptativa de clima espacial basada en el estado de la estación.",
+      issued: '',
+      geom: [],
+      rad: [],
+      blackout: [],
+      dia1: '',
+      dia2: '',
+      dia3: '',
+      rawText: 'Fuente de la NOAA no disponible: ' + err.message,
       lastUpdated: new Date().toLocaleTimeString('es-ES'),
       error: err.message
     };
@@ -4702,18 +3851,8 @@ async function fetchGfzNowcast() {
     };
   } catch (err: any) {
     clearTimeout(timeoutId);
-    console.warn("Error fetching GFZ nowcast JSON API, using mock fallback:", err.message);
-    const now = new Date();
-    const mockHp30 = parseFloat((1.5 + Math.random() * 2.5).toFixed(2));
-    const mockHp60 = parseFloat((mockHp30 + (Math.random() - 0.5) * 0.5).toFixed(2));
-    return {
-      fecha_utc: now.toISOString().replace('T', ' ').substring(0, 16) + ' UTC',
-      Hp30: mockHp30,
-      Hp60: mockHp60,
-      ap30: Math.round(mockHp30 * 4),
-      ap60: Math.round(mockHp60 * 4),
-      real: false
-    };
+    console.warn("GFZ (índice Hp30/Hp60) no disponible:", err.message);
+    return null;
   }
 }
 
@@ -4844,21 +3983,14 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
       }
     }
 
-    if (speed === null || isNaN(speed)) {
-      speed = (cachedRtsw && typeof cachedRtsw.speed === 'number' && !isNaN(cachedRtsw.speed)) ? cachedRtsw.speed : parseFloat((350 + Math.random() * 150).toFixed(1));
-    }
-    if (density === null || isNaN(density)) {
-      density = (cachedRtsw && typeof cachedRtsw.density === 'number' && !isNaN(cachedRtsw.density)) ? cachedRtsw.density : parseFloat((3 + Math.random() * 8).toFixed(1));
-    }
-    if (temperature === null || isNaN(temperature)) {
-      temperature = (cachedRtsw && typeof cachedRtsw.temperature === 'number' && !isNaN(cachedRtsw.temperature)) ? cachedRtsw.temperature : parseFloat((80000 + Math.random() * 40000).toFixed(0));
-    }
-    if (bt === null || isNaN(bt)) {
-      bt = (cachedRtsw && typeof cachedRtsw.bt === 'number' && !isNaN(cachedRtsw.bt)) ? cachedRtsw.bt : parseFloat((4 + Math.random() * 6).toFixed(1));
-    }
-    if (bz === null || isNaN(bz)) {
-      bz = (cachedRtsw && typeof cachedRtsw.bz === 'number' && !isNaN(cachedRtsw.bz)) ? cachedRtsw.bz : parseFloat(((Math.random() * 6) - 3).toFixed(1));
-    }
+    // Un campo que no venga se toma de la lectura real anterior; si no la hay, queda sin dato (antes se inventaba)
+    const previo = (campo: 'speed' | 'density' | 'temperature' | 'bt' | 'bz'): number | null =>
+      cachedRtsw && typeof cachedRtsw[campo] === 'number' && !isNaN(cachedRtsw[campo]) ? cachedRtsw[campo] : null;
+    if (speed === null || isNaN(speed)) speed = previo('speed');
+    if (density === null || isNaN(density)) density = previo('density');
+    if (temperature === null || isNaN(temperature)) temperature = previo('temperature');
+    if (bt === null || isNaN(bt)) bt = previo('bt');
+    if (bz === null || isNaN(bz)) bz = previo('bz');
 
     cachedRtsw = {
       speed,
@@ -4874,23 +4006,9 @@ async function fetchNoaaRtswData(isEco: boolean = false) {
   } catch (err: any) {
     clearTimeout(timeoutId);
     console.warn("Error fetching NOAA RTSW JSON API, using mock/previous:", err.message);
-    if (cachedRtsw) {
-      return { ...cachedRtsw, real: false };
-    }
-    const mockWindSpeed = parseFloat((350 + Math.random() * 150).toFixed(1));
-    const mockDensity = parseFloat((3 + Math.random() * 8).toFixed(1));
-    const mockTemp = parseFloat((80000 + Math.random() * 40000).toFixed(0));
-    const mockBt = parseFloat((4 + Math.random() * 6).toFixed(1));
-    const mockBz = parseFloat(((Math.random() * 6) - 3).toFixed(1));
-    return {
-      speed: mockWindSpeed,
-      density: mockDensity,
-      temperature: mockTemp,
-      bt: mockBt,
-      bz: mockBz,
-      time: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      real: false
-    };
+    // Sin respuesta: vale la última lectura real si es de la última media hora; si no, no hay dato
+    if (cachedRtsw && cachedRtsw.real && now - lastRtswFetch < 30 * 60_000) return cachedRtsw;
+    return null;
   }
 }
 
@@ -4922,7 +4040,7 @@ async function fetchNoaaXrays() {
     clearTimeout(timeoutId);
     console.warn("Error fetching NOAA Xrays:", err.message);
   }
-  return cachedXrays || 1.2e-7;
+  return cachedXrays; // 0 = sin dato
 }
 
 let cachedProtons = 0.0;
@@ -4955,7 +4073,7 @@ async function fetchNoaaProtons() {
     clearTimeout(timeoutId);
     console.warn("Error fetching NOAA Protons:", err.message);
   }
-  return cachedProtons || 0.15;
+  return cachedProtons; // 0 = sin dato
 }
 
 function calculateUvIndex(sfi: number, lat: number, lon: number): number {
@@ -5132,46 +4250,79 @@ async function getPropagationData(isEco: boolean = false) {
     fetchNoaaProtons()
   ]);
 
-  const sfiVal = parseFloat(solarResult.sfi || noaaResult.dia1 || "150") || 150;
-  
-  // Obtener posición del GPS para cálculo de UV dinámico
+  // Qué fuentes han respondido. Lo que no se ha podido leer no se sustituye por un valor supuesto.
+  const faltan: string[] = [];
+  const sfiLeido = parseFloat(solarResult.sfi);
+  const haySolar = Number.isFinite(sfiLeido) && !!solarResult.time_tag;
+  const hayPrevision = noaaResult.real !== false && Array.isArray(noaaResult.geom) && noaaResult.geom.length > 0;
+  const hayGfz = !!gfzResult && gfzResult.real !== false && Number.isFinite(gfzResult.Hp30);
+  const hayViento = !!rtswResult && [rtswResult.speed, rtswResult.density, rtswResult.bt, rtswResult.bz].every((v: any) => typeof v === 'number' && !isNaN(v));
+  const hayRayosX = xrayFlux > 0;
+  if (!haySolar) faltan.push('índices solares (NOAA)');
+  if (!hayPrevision) faltan.push('previsión a 3 días (NOAA)');
+  if (!hayGfz) faltan.push('índice Kp (GFZ)');
+  if (!hayViento) faltan.push('viento solar (NOAA)');
+  if (!hayRayosX) faltan.push('rayos X (NOAA)');
+
   const gpsLat = gpsdState.lat || 40.4167;
   const gpsLon = gpsdState.lon || -3.7037;
+
+  if (faltan.length > 0) {
+    // Incompleto: se entrega solo lo leído, marcado. La consola no pinta el panel de detalle con huecos.
+    cachedPropagation = {
+      lastUpdated: new Date().toLocaleTimeString('es-ES'),
+      success: false,
+      completa: false,
+      faltan,
+      gfz: hayGfz ? gfzResult : null,
+      noaa: {
+        dia1: haySolar ? solarResult.sfi : '',
+        ssn: haySolar ? solarResult.ssn : '',
+        solar_updated: haySolar ? solarResult.time_tag : '',
+        geom: hayPrevision ? noaaResult.geom : [],
+        rad: hayPrevision ? noaaResult.rad : [],
+        blackout: hayPrevision ? noaaResult.blackout : [],
+        real: false,
+        xrayFlux,
+        protonFlux,
+        xrayClass: hayRayosX ? getXrayClass(xrayFlux) : '',
+        // Estimaciones que dependen del flujo solar: solo si se ha leído
+        muf: haySolar ? calculateMufAndBands(sfiLeido, gpsLat, gpsLon).muf : undefined,
+        luf: haySolar ? calculateLuf(sfiLeido, xrayFlux, gpsLat, gpsLon) : undefined,
+      },
+      rtsw: hayViento ? rtswResult : null,
+    };
+    lastPropagationFetch = now;
+    return cachedPropagation;
+  }
+
+  const sfiVal = sfiLeido;
   const iuv = calculateUvIndex(sfiVal, gpsLat, gpsLon);
   const solarNoise = estimateSolarNoise(sfiVal);
-
-  // Kp actual o estimado
-  let kpVal = 1;
-  if (gfzResult && gfzResult.Hp30 !== undefined) {
-    kpVal = Math.round(gfzResult.Hp30);
-  } else if (rtswResult && rtswResult.speed !== null) {
-    const spd = rtswResult.speed || 350;
-    const bz = rtswResult.bz || 0;
-    if (spd > 600 || bz < -8) kpVal = 5;
-    else if (spd > 500 || bz < -4) kpVal = 3;
-    else if (spd > 400) kpVal = 2;
-  }
+  const kpVal = Math.round(gfzResult.Hp30);
 
   const { rScale, sScale, gScale } = getNoaaScales(xrayFlux, protonFlux, kpVal);
   const mufBands = calculateMufAndBands(sfiVal, gpsLat, gpsLon);
   const lufVal = calculateLuf(sfiVal, xrayFlux, gpsLat, gpsLon);
-  const delayL1 = rtswResult && rtswResult.speed ? (1500000.0 / rtswResult.speed) / 60.0 : 45.0;
+  const delayL1 = (1500000.0 / rtswResult.speed) / 60.0;
 
   cachedPropagation = {
     lastUpdated: new Date().toLocaleTimeString('es-ES'),
     success: true,
+    completa: true,
+    faltan,
     gfz: gfzResult,
     noaa: {
-      dia1: solarResult.sfi || noaaResult.dia1 || "150",
-      dia2: noaaResult.dia2 || "148",
-      dia3: noaaResult.dia3 || "145",
-      geom: noaaResult.geom || [],
+      dia1: solarResult.sfi,
+      dia2: noaaResult.dia2 || solarResult.sfi,
+      dia3: noaaResult.dia3 || solarResult.sfi,
+      geom: noaaResult.geom,
       rad: noaaResult.rad || [],
       blackout: noaaResult.blackout || [],
-      real: noaaResult.real || false,
-      ssn: solarResult.ssn || "110",
-      solar_updated: solarResult.time_tag || "",
-      kp_tendencia: noaaResult.kp_tendencia || "No disponible",
+      real: true,
+      ssn: solarResult.ssn,
+      solar_updated: solarResult.time_tag,
+      kp_tendencia: noaaResult.kp_tendencia || 'No disponible',
       xrayFlux,
       protonFlux,
       rScale,
@@ -5374,21 +4525,6 @@ app.post('/api/space-weather/aprs-bulletin/transmit', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-let ICA_STATIONS = [
-  { id: 'AQ-01', name: 'Madrid - Plaza de España', lat: 40.4239, lon: -3.7122, province: 'Madrid', pm25: 8, pm10: 14, no2: 24, o3: 42, so2: 3, co: 0.3 },
-  { id: 'AQ-02', name: 'Barcelona - Eixample', lat: 41.3851, lon: 2.1734, province: 'Barcelona', pm25: 18, pm10: 32, no2: 45, o3: 56, so2: 8, co: 0.6 },
-  { id: 'AQ-03', name: 'Valencia - Avda. Francia', lat: 39.4699, lon: -0.3763, province: 'Valencia', pm25: 12, pm10: 22, no2: 28, o3: 65, so2: 4, co: 0.4 },
-  { id: 'AQ-04', name: 'Sevilla - Aljarafe', lat: 37.3891, lon: -6.0022, province: 'Sevilla', pm25: 15, pm10: 28, no2: 19, o3: 72, so2: 2, co: 0.3 },
-  { id: 'AQ-05', name: 'Cáceres - San Blas', lat: 39.4714, lon: -6.3763, province: 'Cáceres', pm25: 5, pm10: 9, no2: 11, o3: null, so2: null, co: 0.1 },
-  { id: 'AQ-06', name: 'Zaragoza - Plaza Aragón', lat: 41.6502, lon: -0.8804, province: 'Zaragoza', pm25: 11, pm10: 20, no2: 26, o3: 49, so2: 3, co: 0.4 },
-  { id: 'AQ-07', name: 'Gijón - Constitución', lat: 43.5350, lon: -5.6611, province: 'Asturias', pm25: 14, pm10: 25, no2: 18, o3: null, so2: 7, co: 0.3 },
-  { id: 'AQ-08', name: 'Santa Cruz de Tenerife', lat: 28.4636, lon: -16.2518, province: 'Tenerife', pm25: 4, pm10: 8, no2: 9, o3: 32, so2: null, co: null },
-  { id: 'AQ-09', name: 'Ourense - Casco', lat: 42.3358, lon: -7.8639, province: 'Ourense', pm25: null, pm10: 11, no2: 14, o3: 40, so2: 2, co: 0.2 },
-  { id: 'AQ-10', name: 'Málaga - El Atabal', lat: 36.7213, lon: -4.4214, province: 'Málaga', pm25: 10, pm10: 18, no2: 20, o3: 58, so2: 4, co: 0.3 },
-  { id: 'AQ-11', name: 'Valladolid - Arturo Eyries', lat: 41.6523, lon: -4.7286, province: 'Valladolid', pm25: 9, pm10: 16, no2: 19, o3: 47, so2: 3, co: 0.3 },
-  { id: 'AQ-12', name: 'Puertollano - San Juan', lat: 38.6875, lon: -4.1114, province: 'Ciudad Real', pm25: 22, pm10: 38, no2: 31, o3: 88, so2: 12, co: 0.7 }
-];
 
 app.post('/api/telemetry/clear-logs', (req, res) => {
   logs = [];
@@ -5630,40 +4766,6 @@ app.get('/api/ndbc/latest-obs', async (req, res) => {
   });
 });
 
-app.post('/api/inmarsat/trigger', (req, res) => {
-  const { c2Code, sender, area, payload } = req.body;
-  const targetCode = c2Code || "14";
-  const decoded: InmarsatMessage = {
-    id: `inm-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    time: new Date().toISOString(),
-    c2Code: targetCode,
-    typeText: TIPOS_ALERTA[targetCode] || `❓ CÓDIGO INVERSO INMARSAT (${targetCode})`,
-    priority: (targetCode === "14" || targetCode === "34" || targetCode === "44") ? 'CRÍTICO' : ((targetCode === "24" || targetCode === "04" || targetCode === "13") ? 'ALERTA' : 'INFORMACIÓN'),
-    sender: sender || "SIM-LES-AOR",
-    area: area || "NAVAREA III",
-    payload: payload || "SIMULATED BROADCAST VIA INMARSAT-C SYSTEM. EMERGENCY CHANNEL STANDBY.",
-    rawHex: "49 6e 6d 61 72 73 61 74 20" + targetCode + "20 53 61 66 65 74 79 4e 65 74",
-    isCritical: CODIGOS_CRITICOS.has(targetCode)
-  };
-  
-  inmarsatMessages.unshift(decoded);
-  if (inmarsatMessages.length > 100) {
-    inmarsatMessages = inmarsatMessages.slice(0, 100);
-  }
-  
-  addLog(
-    'RX',
-    'CLIENT-TRIG',
-    'INMARSAT-NUC',
-    'C2-API',
-    `C2:${decoded.c2Code} (${decoded.typeText}) - Msg: ${decoded.payload}`,
-    true,
-    'Socio-simulación manual de socorro Inmarsat inyectada con éxito.'
-  );
-  
-  res.json({ success: true, message: decoded });
-});
-
 app.post('/api/navareas/simulate', (req, res) => {
   const { warning } = req.body;
   if (warning) {
@@ -5683,161 +4785,6 @@ app.post('/api/navareas/simulate', (req, res) => {
     res.json({ success: true, warning });
   } else {
     res.status(400).json({ success: false, error: 'Warning is required in body' });
-  }
-});
-
-app.get('/api/navareas/feed-source', async (req, res) => {
-  try {
-    const response = await fetch('https://armada.defensa.gob.es/ihm/XML/navareas_crudo.xml', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    if (!response.ok) {
-      return res.status(response.status).json({ success: false, status: response.status, error: `Failed to fetch: ${response.statusText}` });
-    }
-    const text = await response.text();
-    res.set('Content-Type', 'application/xml');
-    res.send(text);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || err });
-  }
-});
-
-app.get('/api/navareas/test-parse', async (req, res) => {
-  try {
-    const response = await fetch('https://armada.defensa.gob.es/ihm/XML/navareas_crudo.xml', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    if (!response.ok) {
-      return res.status(response.status).json({ success: false, error: `Fetch failed: ${response.statusText}` });
-    }
-    const xml = await response.text();
-    
-    // Helper to get tag values
-    const getTagValue = (block: string, tag: string): string => {
-      const match = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
-      return match ? match[1].trim() : '';
-    };
-
-    // Helper to convert DM coordinates to Decimal Degrees
-    const dmToDecimal = (degStr: string, minStr: string, hemi: string): number => {
-      const deg = parseInt(degStr, 10);
-      const min = parseFloat(minStr);
-      let val = deg + min / 60;
-      if (hemi.toUpperCase() === 'S' || hemi.toUpperCase() === 'W') {
-        val = -val;
-      }
-      return parseFloat(val.toFixed(5));
-    };
-
-    // Split into NAVAREASVIGOR blocks
-    const blocks: string[] = [];
-    const blockRegex = /<NAVAREASVIGOR>([\s\S]*?)<\/NAVAREASVIGOR>/g;
-    let match;
-    while ((match = blockRegex.exec(xml)) !== null) {
-      blocks.push(match[1]);
-    }
-
-    const parsedWarnings = blocks.map((block, index) => {
-      const nnuna = getTagValue(block, 'nnuna');
-      const nnunaf = getTagValue(block, 'nnunaf');
-      const nfemi = getTagValue(block, 'nfemi');
-      const nlocae = getTagValue(block, 'nlocae');
-      const nlocai = getTagValue(block, 'nlocai');
-      const ntees = getTagValue(block, 'ntees');
-      const ntein = getTagValue(block, 'ntein');
-      const nasun = getTagValue(block, 'nasun');
-      const nasuni = getTagValue(block, 'nasuni');
-
-      // Build text to search for coordinates
-      const textToSearch = `${ntees} ${ntein}`;
-
-      // Coordinate matching regex for formats like 45-12.2N 029-41.1E or 36-35N 006-45W
-      const coordRegex = /(\d{1,2})[-. ](\d{1,2}(?:\.\d+)?)\s*([NnSs])\s+(\d{1,3})[-. ](\d{1,2}(?:\.\d+)?)\s*([EeWw])/;
-      const coordMatch = textToSearch.match(coordRegex);
-
-      let lat = 36.5;
-      let lon = -4.5;
-      let coordFound = false;
-
-      if (coordMatch) {
-        lat = dmToDecimal(coordMatch[1], coordMatch[2], coordMatch[3]);
-        lon = dmToDecimal(coordMatch[4], coordMatch[5], coordMatch[6]);
-        coordFound = true;
-      } else {
-        // Fallback coordinate mappings based on location name
-        const loc = nlocae.toUpperCase();
-        if (loc.includes('MAR NEGRO') || loc.includes('BLACK SEA')) {
-          lat = 43.5; lon = 34.0;
-        } else if (loc.includes('ALBORAN')) {
-          lat = 36.0; lon = -3.0;
-        } else if (loc.includes('CADIZ') || loc.includes('CÁDIZ')) {
-          lat = 36.2; lon = -6.5;
-        } else if (loc.includes('CARTAGENA') || loc.includes('MURCIA')) {
-          lat = 37.5; lon = -1.0;
-        } else if (loc.includes('GIBRALTAR') || loc.includes('ESTRECHO')) {
-          lat = 35.95; lon = -5.45;
-        } else if (loc.includes('BALEARES') || loc.includes('MALLORCA') || loc.includes('IBIZA') || loc.includes('MENORCA')) {
-          lat = 39.5; lon = 2.5;
-        } else if (loc.includes('GALICIA') || loc.includes('GALEGO') || loc.includes('FINISTERRE')) {
-          lat = 43.0; lon = -9.5;
-        } else if (loc.includes('CANTABRICO') || loc.includes('CANTÁBRICO') || loc.includes('ASTURIAS') || loc.includes('VIZCAYA')) {
-          lat = 43.8; lon = -4.5;
-        } else if (loc.includes('CANARIAS') || loc.includes('CANARY')) {
-          lat = 28.2; lon = -16.0;
-        }
-      }
-
-      // Determine category
-      const subj = nasun.toUpperCase();
-      let category: 'Gunnery / Ejercicios' | 'Navigational Hazard' | 'Cable Laying' | 'Search & Rescue' | 'Rig Move' | 'Military Operations' = 'Navigational Hazard';
-      if (subj.includes('TIRO') || subj.includes('FUEGO REAL') || subj.includes('EJERCICIO')) {
-        category = 'Gunnery / Ejercicios';
-      } else if (subj.includes('PLATAFORMA') || subj.includes('PERFORACION') || subj.includes('RIG') || subj.includes('KEY ') || subj.includes('YAVUZ') || subj.includes('FATIH') || subj.includes('KANUNI')) {
-        category = 'Rig Move';
-      } else if (subj.includes('CABLE') || subj.includes('TENDIDO')) {
-        category = 'Cable Laying';
-      } else if (subj.includes('BUSQUEDA') || subj.includes('BÚSQUEDA') || subj.includes('SAR') || subj.includes('RESCATE') || subj.includes('MIGRANTE') || subj.includes('PATERA') || subj.includes('INMERSIÓN')) {
-        category = 'Search & Rescue';
-      } else if (subj.includes('MILITAR') || subj.includes('OPERACION') || subj.includes('OPERACIÓN') || subj.includes('ARMADA') || subj.includes('SUBMARINO') || subj.includes('SEA GUARDIAN')) {
-        category = 'Military Operations';
-      }
-
-      // Determine Urgency
-      let urgency: 'ALERTA CRÍTICA' | 'PRECAUCIÓN' | 'INFORMATIVO' = 'INFORMATIVO';
-      const rawLower = ntees.toLowerCase() + ' ' + nasun.toLowerCase();
-      if (rawLower.includes('socorro') || rawLower.includes('crítico') || rawLower.includes('critico') || rawLower.includes('minas') || rawLower.includes('mina') || rawLower.includes('deriva') || rawLower.includes('guerra') || rawLower.includes('riesgo') || rawLower.includes('prohibid')) {
-        urgency = 'ALERTA CRÍTICA';
-      } else if (rawLower.includes('precaución') || rawLower.includes('precaucion') || rawLower.includes('peligro') || rawLower.includes('atención') || rawLower.includes('ejercicio') || rawLower.includes('tiro')) {
-        urgency = 'PRECAUCIÓN';
-      }
-
-      const formattedDate = nfemi ? nfemi.replace('T', ' ').substring(0, 16) + ' UTC' : new Date().toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
-
-      return {
-        id: nnunaf ? `NAV3-${nnunaf}` : `NAV3-${nnuna || index}`,
-        navareaType: 'NAVAREA III' as const,
-        category,
-        title: nasun ? nasun.charAt(0).toUpperCase() + nasun.slice(1).toLowerCase() : 'Aviso NAVAREA III',
-        lat,
-        lon,
-        areaDescription: nlocae || 'Mediterráneo / Mar Negro',
-        originator: 'IHM (Armada Española)',
-        broadcastTime: formattedDate,
-        rawText: ntees || ntein || 'No text provided.',
-        urgency,
-        subArea: nlocae.includes('MAR NEGRO') ? 'III-C' : 'III-B',
-        coordFound,
-        matchedRegexGroup: coordMatch ? coordMatch[0] : null
-      };
-    });
-
-    res.json({ success: true, count: parsedWarnings.length, warnings: parsedWarnings });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || err });
   }
 });
 
@@ -6850,33 +5797,6 @@ app.post('/api/jrc/remap-stations/trigger-alert', (req, res) => {
   });
 });
 
-// Simulate radiological values for testing thresholds
-app.post('/api/radiological/rar-ran/simulate', (req, res) => {
-  try {
-    const { valueUsVh } = req.body;
-    
-    if (valueUsVh === null || valueUsVh === undefined || isNaN(parseFloat(valueUsVh)) || parseFloat(valueUsVh) < 0) {
-      simulatedRarRanValue = null;
-      addLog('SYS', 'REA_SIM', 'LOCAL', 'API', 'Simulación de radiación ambiental desactivada. Regresando a valores reales / ruido cósmico.', true, 'Simulación');
-    } else {
-      simulatedRarRanValue = parseFloat(valueUsVh);
-      addLog('SYS', 'REA_SIM', 'LOCAL', 'API', `Simulación de radiación ambiental establecida a ${simulatedRarRanValue.toFixed(3)} uSv/h.`, true, 'Simulación');
-    }
-    
-    // Refresh state immediately to trigger beacon & alert checking
-    refreshRarRan();
-    
-    return res.json({
-      success: true,
-      simulatedValue: simulatedRarRanValue,
-      currentValue: rarRanState.valueUsVh,
-      status: rarRanState.status
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Avisos: lista única de todo lo que pasa por la cadena, con su decisión
 // ---------------------------------------------------------------------------
@@ -6926,6 +5846,35 @@ app.get('/api/avisos', (_req, res) => {
     total: avisos.length,
     fuentes: Object.entries(estadoFuentes).map(([id, f]) => ({ id, ...f })),
     txEnabled: TX_ENABLED,
+  });
+});
+
+// Medidores de calidad del aire más cercanos a la posición actual, en tiempo real
+let medidoresAire: { medidores: MedidorAire[]; radioKm: number; cuando: number; lat: number; lon: number } | null = null;
+let consultaMedidores = 0;
+
+app.get('/api/aire/medidores', async (_req, res) => {
+  const ahora = Date.now();
+  const movida = medidoresAire ? gcDistanceKm({ lat: medidoresAire.lat, lon: medidoresAire.lon }, { lat: gpsdState.lat, lon: gpsdState.lon }) > 2 : true;
+  // Cada 5 minutos, o antes si la estación se ha movido más de 2 km
+  if (ahora - consultaMedidores > 5 * 60_000 || (movida && ahora - consultaMedidores > 30_000)) {
+    consultaMedidores = ahora;
+    const pos = { lat: gpsdState.lat, lon: gpsdState.lon };
+    const r = await descargarMedidoresAire(pos, (origen, texto, ok) => { if (!ok) addLog('SYS', origen, 'LOCAL', 'API', texto, false, 'Sin datos'); });
+    if (r) medidoresAire = { ...r, cuando: ahora, ...pos };
+    anotarFuente('medidores', 'Medidores de aire · Sensor.Community', r !== null, r ? `${r.medidores.length} a menos de ${r.radioKm} km` : 'Sin respuesta');
+  }
+  res.set('Cache-Control', 'no-store');
+  // Una lista de hace más de 20 minutos ya no es «ahora»: no se sirve
+  const vigente = medidoresAire && ahora - medidoresAire.cuando < 20 * 60_000 ? medidoresAire : null;
+  res.json({
+    disponible: !!vigente,
+    consultado: vigente?.cuando ?? null,
+    radioKm: vigente?.radioKm ?? null,
+    medidores: (vigente?.medidores ?? []).slice(0, 12).map((m) => ({
+      id: m.id, lat: m.lat, lon: m.lon, distanciaKm: Math.round(m.distanciaKm * 10) / 10,
+      pm25: m.pm25 ?? null, pm10: m.pm10 ?? null, clase: clasePm25(m.pm25), sensor: m.sensor, cuando: m.cuando,
+    })),
   });
 });
 
@@ -7350,7 +6299,6 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
     refreshWeather();
     refreshIQAir();
     refreshEarthquakes();
-    refreshAisVessels();
 
     res.json({ success: true, config: configForRequest(req) });
   } catch (err: any) {
@@ -7527,15 +6475,6 @@ async function fetchWiresXStatusFromYaesu(): Promise<{ nodes: string[]; rooms: s
 
   return { nodes: wiresxStatusCache.nodes, rooms: wiresxStatusCache.rooms };
 }
-
-app.get('/api/wiresx/status', async (req, res) => {
-  try {
-    const status = await fetchWiresXStatusFromYaesu();
-    res.json({ success: true, ...status, lastUpdated: wiresxStatusCache.lastUpdated });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // GET Debian real configuration files (reads from actual paths /etc/ or fallback local directories)
 app.get('/api/files/configs', (req, res) => {
@@ -8168,27 +7107,6 @@ app.post('/api/aprs/schedules/:id/trigger', (req, res) => {
   console.log(`[SCHEDULER] Manually triggering schedule: ${schedule.name}`);
   triggerSchedule(schedule);
   res.json({ success: true, schedule });
-});
-
-// Systemd service manager for Intel NUC Debian 13
-app.post('/api/nuc/service', (req, res) => {
-  try {
-    const { service, action } = req.body;
-    const sKey = service as keyof typeof nucStats.services;
-    if (sKey && nucStats.services[sKey] !== undefined) {
-      if (action === 'restart' || action === 'start') {
-        nucStats.services[sKey] = 'active';
-        addLog('SYS', service.toUpperCase(), 'SYSTEMD', 'NUC 5i3 Debian 13', `Comando SYSTEMCTL ${action} para servicio ${service}.service`, true, 'Servicio reiniciado');
-      } else {
-        nucStats.services[sKey] = 'inactive';
-        addLog('SYS', service.toUpperCase(), 'SYSTEMD', 'NUC 5i3 Debian 13', `Comando SYSTEMCTL stop para servicio ${service}.service`, true, 'Servicio detenido');
-      }
-      return res.json({ success: true, services: nucStats.services });
-    }
-    return res.status(400).json({ success: false, error: 'Servicio no gestionado en NUC' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
 });
 
 // GET journalctl logs for systemd service

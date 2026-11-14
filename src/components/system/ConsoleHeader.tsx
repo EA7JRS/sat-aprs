@@ -378,8 +378,15 @@ export default function ConsoleHeader({
           </div>
         )}
 
+        {/* Sin datos reales de propagación no se pintan índices supuestos */}
+        {!propagation && (
+          <div className="flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1.5 font-mono text-xs text-slate-400" id="cabecera-sin-propagacion">
+            Propagación: sin datos de alguna fuente (ver Radio → HF y propagación)
+          </div>
+        )}
         {/* Radio Propagation (K-Index) Badge */}
         <div 
+          style={{ display: propagation ? undefined : 'none' }}
           className="relative flex items-center gap-2 bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-1.5 font-mono text-xs cursor-pointer hover:border-slate-700 transition-all select-none"
           onClick={() => setShowSolarStats(!showSolarStats)}
           title="Ver índices de clima espacial y propagación HF"

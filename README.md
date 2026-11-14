@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.19.0)
+## 📌 Qué hace hoy (v1.20.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -45,7 +45,8 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Fórmulas físicas, náuticas, astronómicas, meteorológicas y de radio (`server/formulas/`) | Operativo |
 | HF y propagación en directo: bandas para enlace local (NVIS) y de larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; pendiente de validar en la estación |
 | Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
-| NAVTEX, Inmarsat y los paneles antiguos de AIS | **Demostración**: datos simulados, nunca se emiten |
+| Medidores de calidad del aire más cercanos, en tiempo real (Sensor.Community) | Operativo desde la v1.20.0; pendiente de validar en la estación |
+| NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 | Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
 | Recepción APRS por radio (KISS) y por APRS-IS, y capa APRS del mapa | Operativo desde la v1.11.0 |

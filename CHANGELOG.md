@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.20.0] - 2026-11-14
+### Sin datos de demostración ni valores supuestos
+- **Retirados los datos de demostración** de NAVTEX, Inmarsat, AIS y radiación: los avisos náuticos y mensajes Inmarsat de ejemplo, los barcos inventados alrededor de la estación y los valores de radiación modelados, con sus balizas y sus pantallas (Marítimos y Radiación). La entrada real de Inmarsat-C por UDP se conserva. Los paneles que mostraban barcos reciben ahora los **reales recibidos por AIS**.
+- **Clima espacial sin relleno**: cuando una fuente no responde ya no se inventa el dato (antes, un Kp, un viento solar y una previsión a 3 días al azar, o un flujo solar de 150). El panel de detalle de HF y el boletín de propagación solo aparecen y se emiten con todas las fuentes leídas; si falta alguna, se dice cuál.
+- **Calidad del aire sin relleno**: los contaminantes que la fuente no da quedan sin dato, y sin ninguna fuente no se muestra nada (antes, un simulador).
+- **Medidores de aire más cercanos, en tiempo real** (`server/fuentes/estacionesAire.ts`, `GET /api/aire/medidores`): sustituye a la lista fija de doce estaciones con valores inventados. Lee de la red Sensor.Community los medidores de partículas alrededor de la posición actual de la estación, ordenados por distancia, con PM2,5, PM10 y la antigüedad de cada lectura. Está en **Estación y meteo**.
+- **Retiradas cuatro rutas sin uso**: `/api/navareas/feed-source`, `/api/navareas/test-parse`, `/api/wiresx/status` y `/api/nuc/service`.
+
+---
+
 ## [v1.19.0] - 2026-11-14
 ### Limpieza del servidor
 - **Retirado el subsistema antiguo de incendios**: los focos de ejemplo fijos, los inyectados a mano, la «propagación» pseudoaleatoria que los movía, su baliza APRS, el análisis con IA y sus rutas (`/api/wildfires/*`). Los focos de calor son ya solo los reales de NASA FIRMS, por la cadena de avisos.

@@ -6,7 +6,7 @@
 
 export type Pantalla =
   | 'inicio'
-  | 'avisos' | 'navareas' | 'radiological' | 'propagacion' | 'salud' | 'cecop-dashboard'
+  | 'avisos' | 'propagacion' | 'salud' | 'cecop-dashboard'
   | 'monitor' | 'perfil' | 'weewx-pillar'
   | 'mapa' | 'dgt' | 'portus'
   | 'direwolf-pillar' | 'aprx-pillar' | 'aprs-adaptor' | 'pat-pillar'
@@ -25,8 +25,6 @@ export const SECCIONES: Seccion[] = [
   {
     id: 'avisos', nombre: 'Avisos', pantallas: [
       { id: 'avisos', nombre: 'En vigor' },
-      { id: 'navareas', nombre: 'Marítimos (demo)' },
-      { id: 'radiological', nombre: 'Radiación (demo)' },
       { id: 'salud', nombre: 'Salud' },
       { id: 'cecop-dashboard', nombre: 'Coordinación' },
     ],

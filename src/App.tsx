@@ -9,13 +9,14 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import ResumenHF from './components/radio/ResumenHF';
+import MedidoresAire from './components/environment/MedidoresAire';
 import { AvisoDemostracion } from './components/shell/Etiquetas';
 import { useAvisos } from './utils/useAvisos';
 import { COLORES_TACTICO, useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
-import { ServerTelemetryData, TelemetryConfig } from './types';
+import { NavareaWarning, ServerTelemetryData, TelemetryConfig } from './types';
 
 // Modular Sub-components (Unified Imports)
 import {
@@ -34,11 +35,7 @@ import {
   TransmissionTrafficTrends,
   DgtTrafficDatabase,
   PortusOceanData,
-  NavareaMonitor,
-  INITIAL_NAVAREA_WARNINGS,
-  NavareaWarning,
   NotificationPanel,
-  RadiologicalNetworks,
   SyncScheduler,
   MeteosaludPortal,
   ThreatPollingEngine,
@@ -119,7 +116,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [navareas, setNavareas] = useState<NavareaWarning[]>(INITIAL_NAVAREA_WARNINGS);
+  const [navareas, setNavareas] = useState<NavareaWarning[]>([]);
   const [rtt, setRtt] = useState<number | null>(null);
 
   // APRS dynamic packet state
@@ -1164,6 +1161,7 @@ export default function App() {
               </p>
             )}
             <WeatherStation weather={data.weather} iqair={data.iqair} />
+            <MedidoresAire />
           </motion.div>
         ) : activeTab === 'pruebas' ? (
           /* PRUEBAS Y SIMULACIÓN: herramientas para inyectar sucesos de prueba; nada de esto sale al aire */
@@ -1266,21 +1264,6 @@ export default function App() {
           >
             <PatAx25Console callsign={data.config.callsign} />
           </motion.div>
-        ) : activeTab === 'radiological' ? (
-          /* UNIFIED RADIOLOGICAL MONITOR: CSN & JRC */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AvisoDemostracion>La vigilancia radiológica es de <b>demostración</b>: los valores son modelados, no hay todavía una fuente real. Nada de aquí se emite.</AvisoDemostracion>
-            <RadiologicalNetworks 
-              stations={data.csnStations || []} 
-              gpsd={data.gpsd} 
-              onRelocate={(lat, lon) => handleRelocate(lat, lon, 'Estación CSN REA')} 
-              rarRan={data.rarRan}
-            />
-          </motion.div>
         ) : activeTab === 'dgt' ? (
           /* DGT ETRAFFIC INCIDENTS DATABASE PANEL */
           <motion.div
@@ -1309,22 +1292,6 @@ export default function App() {
               portusStations={data.portusStations || []}
             />
           </motion.div>
-        ) : activeTab === 'navareas' ? (
-          /* NAVAREA / NAVTEX EMERGENCY COMSAR ALERTS PORTAL */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AvisoDemostracion>Los radioavisos marítimos (NAVTEX, Inmarsat SafetyNET, AIS de esta pantalla) son de <b>demostración</b>: todavía no hay un receptor real conectado. Nada de aquí se emite. Los barcos reales por AIS están en Mapa.</AvisoDemostracion>
-            <NavareaMonitor 
-              gpsd={data.gpsd} 
-              onRelocate={(lat, lon, title) => handleRelocate(lat, lon, title)} 
-              onInjectRaw={handleInjectRaw} 
-              warnings={navareas}
-              inmarsatMessages={data.inmarsatMessages || []}
-            />
-          </motion.div>
         ) : activeTab === 'salud' ? (
           /* METEOSALUD PLAN TEMPERATURE WATCH PORTAL */
           <motion.div
@@ -1348,7 +1315,14 @@ export default function App() {
             <ResumenHF />
             <h2 className="text-lg font-semibold text-slate-100 mt-2">Detalle: índices, viento solar y previsión de la NOAA</h2>
             {/* Panel dibujado en claro: «sat-claro» hace que siga al color de la consola (src/index.css) */}
-            <div className="sat-claro flex flex-col gap-4">{data && <PropagacionMonitor data={data.propagation} />}</div>
+            {data.propagation ? (
+              <div className="sat-claro flex flex-col gap-4"><PropagacionMonitor data={data.propagation} /></div>
+            ) : (
+              <p id="hf-detalle-sin-datos" className="border border-amber-700 bg-amber-950 text-amber-300 rounded-xl px-4 py-3 text-sm">
+                El detalle no se muestra porque falta alguna fuente: {(data.propagacionFaltan || ['todas las fuentes']).join(', ')}.
+                Aparecerá en cuanto respondan; no se rellena con cifras supuestas. El resumen de arriba enseña lo que sí se ha podido leer.
+              </p>
+            )}
           </motion.div>
         ) : activeTab === 'weewx-pillar' ? (
           /* PILAR DE CONTROL WEEWX EXCLUSIVO */

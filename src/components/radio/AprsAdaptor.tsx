@@ -36,7 +36,7 @@ import {
   BellOff
 } from 'lucide-react';
 import { EarthquakeEvent, DgtIncident, CsnReaStation, WeatherTelemetry } from '../../types';
-import { NavareaWarning } from '../environment/NavareaMonitor';
+import { NavareaWarning } from '../../types';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, Cell } from 'recharts';
 
 // Explicit APRS Packet definition

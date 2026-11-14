@@ -6,6 +6,13 @@ import React, { useEffect, useState } from 'react';
 import AdminAccess from '../system/AdminAccess';
 import { GPSDStatus, NTPSECStatus, TelemetryConfig } from '../../types';
 import { isValidCallsign } from '../../../server/aprs';
+import { customFetch } from '../../utils/customFetch';
+
+interface Enlaces {
+  aprsIs: { estado: 'parado' | 'conectando' | 'conectado' | 'solo-recepcion' | 'desconectado'; detalle: string; recibidas: number };
+  kiss: { conectado: boolean; puerto: number };
+  estacionesOidas: number;
+}
 
 interface Props {
   config: TelemetryConfig;
@@ -35,6 +42,24 @@ export default function StatusBar({ config, gpsd, ntp, txEnabled }: Props) {
     return () => clearInterval(t);
   }, []);
 
+  // Estado real de los enlaces (sesión con APRS-IS y puerto KISS de Direwolf)
+  const [enlaces, setEnlaces] = useState<Enlaces | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const leer = () => customFetch('/api/enlaces').then((r) => (r.ok ? r.json() : null)).then((j) => { if (vivo) setEnlaces(j); }).catch(() => { if (vivo) setEnlaces(null); });
+    leer();
+    const t = setInterval(leer, 10000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
+
+  const is = enlaces?.aprsIs;
+  const textoIs = !is ? null
+    : is.estado === 'conectado' ? 'APRS-IS conectado'
+    : is.estado === 'solo-recepcion' ? 'APRS-IS solo recepción'
+    : is.estado === 'conectando' ? 'APRS-IS conectando…'
+    : is.estado === 'parado' ? 'APRS-IS sin sesión'
+    : 'APRS-IS desconectado';
+
   const indicativoOk = isValidCallsign(config.callsign);
   const gpsReal = !gpsd.isFallback && gpsd.mode >= 2;
   const horaOk = ntp.status === 'synchronized';
@@ -47,6 +72,16 @@ export default function StatusBar({ config, gpsd, ntp, txEnabled }: Props) {
       <Chip estado={txEnabled && indicativoOk ? 'bien' : 'aviso'} titulo="SAT_APRS_TX en .env">
         {!txEnabled ? 'Emisión desactivada' : indicativoOk ? 'Emisión activada' : 'Sin indicativo: no emite'}
       </Chip>
+      {textoIs && (
+        <Chip estado={is!.estado === 'conectado' ? 'bien' : is!.estado === 'parado' ? 'neutro' : 'aviso'} titulo={is!.detalle ? `${is!.detalle} · ${is!.recibidas} tramas recibidas` : 'Sesión con el servidor APRS-IS'}>
+          {textoIs}
+        </Chip>
+      )}
+      {enlaces && (
+        <Chip estado={enlaces.kiss.conectado ? 'bien' : 'aviso'} titulo={`Puerto KISS ${enlaces.kiss.puerto} de Direwolf`}>
+          {enlaces.kiss.conectado ? 'RF · Direwolf' : 'RF sin Direwolf'}
+        </Chip>
+      )}
       <Chip estado={gpsReal ? 'bien' : 'neutro'}>
         {gpsReal ? `GPS ${gpsd.mode === 3 ? '3D' : '2D'} · ${gpsd.satellitesUsed} sat` : 'Posición fija'}
       </Chip>

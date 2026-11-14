@@ -205,6 +205,8 @@ export interface TelemetryConfig {
   meteoAntelacionH?: number;
   /** Minutos entre repeticiones de un aviso vigente. */
   meteoRepetirMin?: number;
+  /** Mantener una sesión con APRS-IS para recibir las estaciones cercanas. */
+  aprsIsRxEnabled?: boolean;
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

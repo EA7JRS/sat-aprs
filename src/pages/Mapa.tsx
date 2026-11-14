@@ -8,21 +8,23 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Pantalla } from '../navigation';
 import { customFetch } from '../utils/customFetch';
-import { vigenciaLegible, tituloAviso } from '../utils/useAvisos';
+import { vigenciaLegible, tituloAviso, haceCuanto } from '../utils/useAvisos';
 
 interface AvisoMapa {
   id: string; tipo: string; gravedad: 'info' | 'amarillo' | 'naranja' | 'rojo'; titulo: string; detalle: string; fuente: string;
   inicio: number; fin: number; lat: number; lon: number; cumple: boolean; zona: Array<[number, number]> | null;
 }
 interface Incidencia { id: string; tipo: string; carretera: string; poblacion: string; provincia: string; nivel: string; descripcion: string; lat: number; lon: number }
+interface EstacionAprs { nombre: string; origen: string; clase: 'estacion' | 'objeto' | 'item'; lat: number; lon: number; simbolo: string; comentario: string; via: 'RF' | 'IS'; ultima: number }
 interface DatosMapa {
   estacion: { lat: number; lon: number; indicativo: string; gps: boolean; radioSismosKm: number; radioMeteoKm: number };
   avisos: AvisoMapa[];
+  aprs: EstacionAprs[];
   trafico: Incidencia[];
   traficoReal: boolean;
 }
 
-type IdCapa = 'estacion' | 'avisos' | 'trafico';
+type IdCapa = 'estacion' | 'avisos' | 'aprs' | 'trafico';
 
 const COLOR_NIVEL: Record<string, string> = { rojo: '#f87171', naranja: '#fb923c', amarillo: '#fde047', info: '#94a3b8' };
 const COLOR_TRAFICO: Record<string, string> = { NEGRO: '#0f172a', ROJO: '#f87171', AMARILLO: '#fde047', VERDE: '#4ade80' };
@@ -50,9 +52,9 @@ export default function Mapa({ onIr }: { onIr: (p: Pantalla) => void }) {
   const [error, setError] = useState(false);
   const [visibles, setVisibles] = useState<Record<IdCapa, boolean>>(() => {
     try {
-      return { estacion: true, avisos: true, trafico: false, ...JSON.parse(localStorage.getItem('sat_mapa_capas') || '{}') };
+      return { estacion: true, avisos: true, aprs: true, trafico: false, ...JSON.parse(localStorage.getItem('sat_mapa_capas') || '{}') };
     } catch {
-      return { estacion: true, avisos: true, trafico: false };
+      return { estacion: true, avisos: true, aprs: true, trafico: false };
     }
   });
 
@@ -65,7 +67,7 @@ export default function Mapa({ onIr }: { onIr: (p: Pantalla) => void }) {
       attribution: '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
     }).addTo(m);
     L.control.scale({ imperial: false }).addTo(m);
-    grupos.current = { trafico: L.layerGroup(), avisos: L.layerGroup(), estacion: L.layerGroup() };
+    grupos.current = { trafico: L.layerGroup(), aprs: L.layerGroup(), avisos: L.layerGroup(), estacion: L.layerGroup() };
     mapa.current = m;
     return () => {
       m.remove();
@@ -100,6 +102,7 @@ export default function Mapa({ onIr }: { onIr: (p: Pantalla) => void }) {
     g.estacion.clearLayers();
     g.avisos.clearLayers();
     g.trafico.clearLayers();
+    g.aprs.clearLayers();
 
     const e = datos.estacion;
     L.circle([e.lat, e.lon], { radius: e.radioSismosKm * 1000, color: '#38bdf8', weight: 1, dashArray: '6 6', fill: false, interactive: false }).addTo(g.estacion);
@@ -120,6 +123,23 @@ export default function Mapa({ onIr }: { onIr: (p: Pantalla) => void }) {
         L.polygon(a.zona, { color, weight: a.cumple ? 3 : 1, fillColor: color, fillOpacity: a.cumple ? 0.35 : 0.15 }).bindPopup(texto).addTo(g.avisos);
       } else {
         L.circleMarker([a.lat, a.lon], { radius: a.cumple ? 10 : 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.9 }).bindPopup(texto).addTo(g.avisos);
+      }
+    }
+
+    // APRS: verde lo oído por radio, violeta lo que llega por Internet; los objetos, cuadrados
+    for (const x of datos.aprs || []) {
+      const color = x.via === 'RF' ? '#4ade80' : '#c084fc';
+      const texto = globo(x.nombre, [
+        x.clase === 'estacion' ? '' : `${x.clase === 'objeto' ? 'Objeto' : 'Ítem'} de ${x.origen}`,
+        x.comentario,
+        `${x.via === 'RF' ? 'Oído por radio' : 'Recibido por APRS-IS'} · ${haceCuanto(x.ultima)}`,
+      ]);
+      if (x.clase === 'estacion') {
+        L.circleMarker([x.lat, x.lon], { radius: 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.95 }).bindPopup(texto).bindTooltip(x.nombre).addTo(g.aprs);
+      } else {
+        L.marker([x.lat, x.lon], {
+          icon: L.divIcon({ className: '', iconSize: [12, 12], html: `<span style="display:block;width:10px;height:10px;border:1.5px solid #0f172a;background:${color}"></span>` }),
+        }).bindPopup(texto).bindTooltip(x.nombre).addTo(g.aprs);
       }
     }
 
@@ -179,10 +199,18 @@ export default function Mapa({ onIr }: { onIr: (p: Pantalla) => void }) {
         {casilla('estacion', 'Estación', '')}
         {casilla('avisos', 'Avisos', datos ? `· ${datos.avisos.length}` : '')}
         {casilla('trafico', 'Tráfico', datos ? (datos.traficoReal ? `· ${datos.trafico.length}` : '· sin datos reales') : '')}
-        {['APRS', 'AIS', 'ADS-B'].map(pendiente)}
+        {casilla('aprs', 'APRS', datos ? `· ${(datos.aprs || []).length}` : '')}
+        {['AIS', 'ADS-B'].map(pendiente)}
       </div>
 
       {error && <p className="text-sm text-amber-300">No se pudieron cargar los datos del mapa.</p>}
+      {visibles.aprs && (
+        <p className="text-[13px] text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
+          <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-green-400 mr-1.5" />Oído por radio</span>
+          <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-purple-400 mr-1.5" />Recibido por APRS-IS</span>
+          <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 bg-slate-400 mr-1.5" />Objetos (cuadrados)</span>
+        </p>
+      )}
 
       <div
         ref={contenedor}

@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.11.0] - 2026-11-14
+### Recepción APRS y capa APRS del mapa
+- **Lectura de posiciones APRS** (`server/aprsPosicion.ts`): posición sin comprimir y comprimida, objetos, ítems, Mic-E y tramas de terceros.
+- **Estaciones oídas** (`server/estaciones.ts`): última posición de cada estación u objeto, por dónde llegó (radio o APRS-IS) y cuándo. Se conservan dos horas.
+- **Capa APRS en el mapa**: en verde lo oído por radio (puerto KISS de Direwolf), en violeta lo recibido por APRS-IS; los objetos, como cuadrados.
+- **Sesión permanente con APRS-IS** (`server/aprsIs.ts`): una sola sesión para recibir (con filtro por radio alrededor de la estación) y para emitir, con reconexión automática. Antes se abría una conexión por cada trama emitida y no se recibía nada. Solo se abre con un indicativo válido; con un passcode que no corresponda queda en solo recepción. Se desactiva con `aprsIsRxEnabled`.
+- **Barra de estado**: estado real de la sesión con APRS-IS y del enlace con Direwolf (`GET /api/enlaces`).
+
+---
+
 ## [v1.10.0] - 2026-11-14
 ### Mapa con capas
 - **Sección Mapa**: mapa base de OpenStreetMap (Leaflet) con capas que se encienden y apagan: **Estación** (posición y radio de avisos), **Avisos** (sismos como puntos y zonas de AEMET como polígonos, por color de nivel; resaltados los que la estación difunde) y **Tráfico** (incidencias de la DGT). Lo que se ve en el mapa no se retransmite.

@@ -16,6 +16,8 @@ import {
   kissEncode,
   latToAprs,
   lonToAprs,
+  parseTnc2,
+  passcodeMatches,
   toIsPacket,
   toRfFrame
 } from './server/aprs';
@@ -28,6 +30,8 @@ import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
 import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
 import { distanciaAZonaKm } from './server/core/zona';
+import { EstacionesOidas } from './server/estaciones';
+import { ClienteAprsIs } from './server/aprsIs';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
 import { gcDistanceKm } from './server/formulas/geo';
@@ -280,6 +284,8 @@ let config: TelemetryConfig = {
   // Baliza de posición de la propia estación: apagada por defecto para no
   // duplicar la que ya emitan aprx o Direwolf con el mismo indicativo.
   aprsBeaconEnabled: false,
+  // Sesión permanente con APRS-IS para recibir las estaciones cercanas (capa APRS del mapa)
+  aprsIsRxEnabled: true,
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -567,6 +573,50 @@ function scheduleGpsdReconnect() {
   }, gpsdReconnectDelay);
 }
 
+// ---------------------------------------------------------------------------
+// Estaciones oídas (RF y APRS-IS) y sesión permanente con APRS-IS
+// ---------------------------------------------------------------------------
+const estacionesOidas = new EstacionesOidas();
+let firmaAprsIs = '';
+
+const clienteAprsIs = new ClienteAprsIs({
+  alRecibir: (linea) => {
+    const t = parseTnc2(linea);
+    if (t) estacionesOidas.anotar(t.source, t.destination, t.info, 'IS');
+  },
+  alCambiar: (estado, detalle) => {
+    if (estado === 'conectado' || estado === 'solo-recepcion') {
+      addLog('SYS', 'APRS-IS', 'LOCAL', 'ENLACE', `Sesión con APRS-IS abierta (${detalle})${estado === 'solo-recepcion' ? ', solo recepción: el passcode no corresponde al indicativo' : ''}.`, true, 'Enlace');
+    } else if (estado === 'desconectado') {
+      addLog('SYS', 'APRS-IS', 'LOCAL', 'ENLACE', `Sesión con APRS-IS cerrada: ${detalle}. Se reintentará.`, false, 'Enlace');
+    }
+  },
+});
+
+/** Abre, reabre o cierra la sesión con APRS-IS según la configuración actual. */
+function ajustarAprsIs() {
+  const activo = config.systemPower !== false && config.aprsIsRxEnabled !== false && isValidCallsign(config.callsign) && !!config.serverIp;
+  if (!activo) {
+    if (firmaAprsIs) clienteAprsIs.parar();
+    firmaAprsIs = '';
+    return;
+  }
+  const radio = Math.min(500, Math.max(10, Math.round(config.filterRadiusKm || 200)));
+  const opciones = {
+    servidor: config.serverIp,
+    puerto: config.aprscPort,
+    indicativo: config.callsign,
+    passcode: passcodeMatches(config.callsign, config.aprsPasscode) ? String(config.aprsPasscode).trim() : '-1',
+    // Lo que se oye alrededor de la estación (redondeado: no se reabre la sesión por unos metros)
+    filtro: `r/${gpsdState.lat.toFixed(1)}/${gpsdState.lon.toFixed(1)}/${radio}`,
+    version: pkg.version,
+  };
+  const firma = JSON.stringify(opciones);
+  if (firma === firmaAprsIs) return;
+  firmaAprsIs = firma;
+  clienteAprsIs.iniciar(opciones);
+}
+
 let kissClient: net.Socket | null = null;
 let kissReconnectTimer: NodeJS.Timeout | null = null;
 let kissReconnectDelay = 2000;
@@ -648,6 +698,7 @@ function connectKissTcp() {
               const path = match[3] ? match[3].replace(/^,/, '') : 'VHF';
               const payload = match[4];
               addLog('RX', source, dest, path, payload, true, '[KISS RF] Recibido por puerto TNC');
+              estacionesOidas.anotar(source, dest, payload, 'RF');
             } else {
               addLog('RX', 'TNC', 'ALL', 'KISS', packetStr, true, '[KISS RF] Trama cruda recibida');
             }
@@ -732,6 +783,9 @@ function decodeAx25Frame(buffer: Buffer): string | null {
 
 /** Abre sesión en APRS-IS, espera a que el servidor verifique el login y envía la trama. */
 function sendToAprsIs(packet: string): Promise<void> {
+  // Por la sesión permanente si está verificada: abrir otra con el mismo
+  // indicativo haría que el servidor cerrase la que ya recibe.
+  if (clienteAprsIs.enviar(packet)) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
     const sock = new net.Socket();
     let settled = false;
@@ -4450,6 +4504,9 @@ function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string
 
 startSchedules();
 programarAvisosMeteo();
+ajustarAprsIs();
+// Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
+setInterval(ajustarAprsIs, 5 * 60_000);
 
 // Periodic APRS Automatic Transmitter Beacon Simulation is disabled to prevent looping simulated traffic when real data is not active.
 // setInterval(() => {
@@ -7575,6 +7632,16 @@ app.get('/api/avisos', (_req, res) => {
   });
 });
 
+// Estado real de los enlaces de la estación, para la barra de estado
+app.get('/api/enlaces', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    aprsIs: { estado: clienteAprsIs.estado, detalle: clienteAprsIs.detalle, desde: clienteAprsIs.desde, recibidas: clienteAprsIs.recibidas },
+    kiss: { conectado: !!kissClient && !kissClient.destroyed && !kissClient.connecting && kissClient.writable, puerto: config.kissTcpPort },
+    estacionesOidas: estacionesOidas.total,
+  });
+});
+
 // Mapa: todo lo que tiene coordenadas, solo para verlo (nada de esto se retransmite por estar aquí)
 app.get('/api/mapa', (_req, res) => {
   const ahora = Date.now();
@@ -7608,6 +7675,10 @@ app.get('/api/mapa', (_req, res) => {
       radioMeteoKm: Math.max(0, Number(config.meteoRadioKm ?? 25)),
     },
     avisos: avisos.slice(0, 600),
+    aprs: estacionesOidas.lista(ahora).slice(0, 1500).map((x) => ({
+      nombre: x.nombre, origen: x.origen, clase: x.clase, lat: Number(x.lat.toFixed(5)), lon: Number(x.lon.toFixed(5)),
+      simbolo: x.simbolo, comentario: x.comentario, via: x.via, ultima: x.ultima,
+    })),
     trafico,
     traficoReal: dgtDatosReales,
   });
@@ -7745,6 +7816,7 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsPhgDirectivity !== undefined) config.aprsPhgDirectivity = parseInt(updated.aprsPhgDirectivity.toString());
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
     if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
+    if (updated.aprsIsRxEnabled !== undefined) config.aprsIsRxEnabled = !!updated.aprsIsRxEnabled;
     if (updated.meteoRadioKm !== undefined && Number.isFinite(Number(updated.meteoRadioKm))) config.meteoRadioKm = Math.min(500, Math.max(0, Number(updated.meteoRadioKm)));
     if (updated.meteoGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.meteoGravedadMinima))) config.meteoGravedadMinima = updated.meteoGravedadMinima;
     if (updated.meteoAntelacionH !== undefined && Number.isFinite(Number(updated.meteoAntelacionH))) config.meteoAntelacionH = Math.min(72, Math.max(1, Number(updated.meteoAntelacionH)));
@@ -7902,6 +7974,7 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
 
     // Quick async update and scheduler restart
     startSchedules();
+    ajustarAprsIs();
     refreshWeather();
     refreshIQAir();
     refreshEarthquakes();

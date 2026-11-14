@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState } from 'react';
 import { KeyRound, LogOut, ShieldCheck, Unlock } from 'lucide-react';

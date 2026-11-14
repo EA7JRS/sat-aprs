@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 // Pruebas de la autenticación local de la API: nunca se confía en cabeceras declarativas.
 import test from 'node:test';

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 // Cadena de avisos: fuente -> Evento -> reglas -> objeto y boletín APRS -> emisor.
 import test from 'node:test';

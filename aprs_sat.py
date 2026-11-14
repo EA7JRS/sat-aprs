@@ -19,7 +19,7 @@ Seguridad de emisión:
 - Solo se transmite con un indicativo válido y, en APRS-IS, con su passcode.
 - Los datos simulados JAMÁS salen al aire: el modo --simulate implica --dry-run.
 
-Licencia: SPDX-License-Identifier: Apache-2.0
+Licencia: SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (c) 2026 Manuel - EA7JRS
 ================================================================================
 """

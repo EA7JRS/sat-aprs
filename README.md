@@ -7,7 +7,7 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescript.org/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Licencia Apache 2.0](https://img.shields.io/badge/Licencia-Apache_2.0-blue?style=for-the-badge)](LICENSE)
+[![Licencia GPL v3](https://img.shields.io/badge/Licencia-GPL_v3-blue?style=for-the-badge)](LICENSE)
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
 El **S.A.T. APRS Dashboard** es una estación de trabajo digital unificada para operadores de radioafición (IARU/ITU) y redes de telecomunicaciones de emergencia en entornos de catástrofe y misiones críticas. Emula y visualiza el comportamiento de componentes de software de radio esenciales, permitiendo el monitoreo interactivo de señales de RF, la calibración de hardware de audio en tiempo real y la gestión operativa ante catástrofes.
@@ -366,4 +366,4 @@ S.A.T.-APRS es un proyecto personal de EA7JRS. Si te resulta útil, puedes invit
 
 ## 📄 Licencia
 
-[Apache License 2.0](LICENSE). © 2026 Manuel - EA7JRS
+[GNU General Public License v3.0 o posterior](LICENSE), como el resto del ecosistema APRS LoRa+. © 2026 Manuel - EA7JRS

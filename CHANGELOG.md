@@ -10,7 +10,7 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 
 ### Repositorio
 - **Historial reescrito (14-11-2026)** para retirar credenciales y datos personales antiguos. Los clones anteriores deben hacer `git fetch origin && git reset --hard origin/main`.
-- Archivo `LICENSE` (Apache 2.0, la licencia que ya declaraban los archivos) y README puesto al día: qué está operativo, qué es demostración y qué falta.
+- **Licencia GPL-3.0-or-later**, la misma del resto del ecosistema APRS LoRa+ (archivo `LICENSE` y cabeceras; antes las cabeceras declaraban Apache 2.0 y no había archivo de licencia) y README puesto al día: qué está operativo, qué es demostración y qué falta.
 
 ### Consola
 - **Logotipo de APRS LoRa+** en la cabecera y en la pestaña del navegador.

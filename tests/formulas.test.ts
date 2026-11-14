@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 // Las fórmulas portadas del plotter APRS LoRa+ deben dar los mismos resultados
 // que el código C++ original. tests/fixtures/plotter-core-ref.json se generó

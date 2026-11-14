@@ -19,7 +19,7 @@ IMPORTANTE: este módulo solo entrega avisos REALES. Si una fuente no responde o
 no hay clave API, no devuelve nada. Los avisos de ejemplo solo se generan con
 allow_simulated=True (modo --simulate del agente, que nunca transmite).
 
-Licencia: SPDX-License-Identifier: Apache-2.0
+Licencia: SPDX-License-Identifier: GPL-3.0-or-later
 Copyright (c) 2026 Manuel - EA7JRS
 ================================================================================
 """

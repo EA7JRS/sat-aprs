@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 """Pruebas del agente: seguridad de emisión, sismos y avisos meteorológicos."""
 import json

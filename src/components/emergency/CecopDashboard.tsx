@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
+import { leerFocosReales } from '../../utils/focos';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShieldAlert, 
@@ -916,9 +917,10 @@ export default function CecopDashboard({
   useEffect(() => {
     const fetchFiresLog = async () => {
       try {
-        const res = await customFetch('/api/wildfires/latest');
-        if (res.ok) {
-          const data = await res.json();
+        // Focos reales de NASA FIRMS cerca de la estación (cadena de avisos); ya no hay focos de ejemplo
+        const focos = await leerFocosReales();
+        {
+          const data = { hotspots: focos };
           if (data.hotspots && data.hotspots.length > 0) {
             const highFRP = data.hotspots.filter((h: any) => h.frpMw >= 80);
             if (highFRP.length > 0) {
@@ -936,7 +938,7 @@ export default function CecopDashboard({
                       description: `Teledetección satelital de foco de calor extremo con potencia FRP de ${f.frpMw.toFixed(1)} MW. Coordenadas: [${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}]. Satélite: ${f.satellite || 'NASA VIIRS'}.`,
                       severity: f.frpMw > 150 ? 'Crítica' : 'Alta',
                       status: 'Activa',
-                      notes: 'Alerta térmica satelital automática integrada por el sistema de monitoreo espacial Copernicus / NASA FIRMS.'
+                      notes: 'Foco de calor detectado por satélite (NASA FIRMS). No es un incendio confirmado.'
                     });
                     updated = true;
                   }
@@ -952,7 +954,7 @@ export default function CecopDashboard({
     };
 
     fetchFiresLog();
-    const interval = setInterval(fetchFiresLog, 5000);
+    const interval = setInterval(fetchFiresLog, 60000);
     return () => clearInterval(interval);
   }, []);
 

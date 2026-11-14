@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.19.0] - 2026-11-14
+### Limpieza del servidor
+- **Retirado el subsistema antiguo de incendios**: los focos de ejemplo fijos, los inyectados a mano, la «propagación» pseudoaleatoria que los movía, su baliza APRS, el análisis con IA y sus rutas (`/api/wildfires/*`). Los focos de calor son ya solo los reales de NASA FIRMS, por la cadena de avisos.
+- **Coordinación** y la herramienta de pruebas leen esos focos reales en lugar de la lista de ejemplo (`src/utils/focos.ts`).
+- **Retiradas las rutas sin uso** de las pantallas eliminadas: `/api/ica/*`, `/api/seismo/beacon/transmit`, `/api/earthquakes/refresh`, y la baliza antigua de calidad del aire.
+- **Fuera la dependencia de Gemini** (`@google/genai`) y su clave en `.env.example`: ya no hay ninguna función que use IA externa.
+- La fórmula de propagación del fuego de Rothermel se conserva, en la biblioteca de fórmulas (`server/formulas/fuego.ts`).
+- En total, unas 900 líneas menos en `server.ts`.
+
+---
+
 ## [v1.18.0] - 2026-11-14
 ### Limpieza de las pantallas antiguas de Avisos
 - **Retiradas** las pantallas de Sismos, Meteorología, Incendios y Calidad del aire: su función la hace ya la lista «En vigor», con datos de fuentes oficiales, sus reglas y sus tramas. Eran unas 12.000 líneas que mezclaban datos reales con otros de demostración. Siguen en el historial de git (hasta la v1.17.0) por si se quiere recuperar algo, como las gráficas estadísticas de sismos.

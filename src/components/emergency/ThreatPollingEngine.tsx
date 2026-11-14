@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
+import { leerFocosReales } from '../../utils/focos';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShieldCheck, 
@@ -162,13 +163,10 @@ export default function ThreatPollingEngine({
   // Fetch wildfires from NASA / Copernicus on mount
   const fetchWildfires = async () => {
     try {
-      const res = await customFetch('/api/wildfires/latest');
-      if (res.ok) {
-        const json = await res.json();
-        const list = Array.isArray(json) ? json : (json.hotspots || []);
-        setWildfires(list);
-        return list;
-      }
+      // Focos reales de NASA FIRMS cerca de la estación (cadena de avisos)
+      const list = await leerFocosReales();
+      setWildfires(list);
+      return list;
     } catch (e) {
       console.error("Error loading wildfires in ThreatPollingEngine:", e);
     }

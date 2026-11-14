@@ -1,7 +1,7 @@
 {
   "name": "sat-aprs",
   "private": true,
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "S.A.T.-APRS: Servicio de Alerta Temprana por APRS",
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -18,7 +18,6 @@
     "test:py": "python3 -m unittest discover -s tests -v"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",

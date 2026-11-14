@@ -1210,7 +1210,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            <AvisoDemostracion>Herramienta de coordinación y simulacros. Parte de sus datos (por ejemplo, los incendios) son de <b>demostración</b>; los avisos reales están en «En vigor».</AvisoDemostracion>
+            <AvisoDemostracion>Herramienta de coordinación y simulacros. Los focos de calor que registra son los reales de NASA FIRMS; los sucesos que se añadan a mano para un simulacro no se emiten. Los avisos que difunde la estación están en «En vigor».</AvisoDemostracion>
             <CecopDashboard 
               earthquakes={data.earthquakes || []} 
               tsunamiAlerts={data.tsunamiAlerts || []} 

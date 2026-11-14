@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   n2kId, n2kParseId, n2kName, ReclamoDireccion, latLonRapida, cogSogRapida, horaSistema, viento, presion,
-  temperaturaExt, xte, datosNav, tramasFastPacket, EmisorN2k, type TramaCan, type ConfigN2k, CONFIG_N2K_DEFECTO,
+  temperaturaExt, xte, datosNav, tramasFastPacket, mensajeSeguridadAis, EmisorN2k, type TramaCan, type ConfigN2k, CONFIG_N2K_DEFECTO,
 } from '../server/conectividad/nmea2000';
 
 const u16 = (a: Uint8Array, o: number) => a[o] | (a[o + 1] << 8);
@@ -70,6 +70,17 @@ test('fast packet', () => {
   assert.equal(corto.length, 1);
   assert.equal(corto[0][1], 5);
   assert.equal(corto[0][7], 0xff);
+});
+
+test('129802 mensaje de seguridad AIS', () => {
+  const p = mensajeSeguridadAis(8000123, 0, 'SISMO 5.2');
+  assert.equal(p[0], 0x0e);                     // mensaje 14
+  assert.equal(u32(p, 1), 8000123);
+  assert.equal(p[5], 0x01);                     // transceiver 0, bit reservado 1
+  assert.equal(p[6], 2 + 9);                    // STRINGLAU: 2 + "SISMO 5.2"
+  assert.equal(p[7], 0x01);                     // ASCII
+  assert.equal(String.fromCharCode(...p.slice(8, 8 + 9)), 'SISMO 5.2');
+  assert.equal(p[p.length - 1], 0xff);          // SID
 });
 
 test('NAME: orden de los campos', () => {

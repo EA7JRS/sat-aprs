@@ -335,6 +335,25 @@ export function datosNav(sid: number, n: DatosNav): Uint8Array {
   return a;
 }
 
+/**
+ * 129802 mensaje de emisión de seguridad AIS (mensaje 14). Texto ASCII como STRINGLAU. fast packet.
+ * fuenteMmsi: MMSI ficticio o real de la estación; transceiver: 0 = canal A VDL.
+ */
+export function mensajeSeguridadAis(fuenteMmsi: number, transceiver: number, texto: string): Uint8Array {
+  const chars: number[] = [];
+  for (const ch of texto) { const c = ch.charCodeAt(0); if (c >= 0x20 && c < 0x7f) chars.push(c); if (chars.length >= 120) break; }
+  const out = new Uint8Array(6 + 2 + chars.length + 1);
+  const d = new DataView(out.buffer);
+  out[0] = 0x0e;                       // MessageID 14, Repeat 0
+  u32(d, 1, fuenteMmsi & 0x3fffffff);
+  out[5] = ((transceiver & 0x1f) << 1) | 0x01;
+  out[6] = 2 + chars.length;           // longitud total del STRINGLAU (cabecera incluida)
+  out[7] = 0x01;                       // control: ASCII
+  for (let i = 0; i < chars.length; i++) out[8 + i] = chars[i];
+  out[8 + chars.length] = 0xff;        // SID
+  return out;
+}
+
 /** Parte un payload en tramas de fast packet (ISO 11783-3). seq: 0..7, cambia en cada mensaje nuevo. */
 export function tramasFastPacket(payload: Uint8Array, seq: number): Uint8Array[] {
   const len = payload.length;
@@ -370,6 +389,8 @@ export interface ConfigN2k {
   emitirGps: boolean;
   emitirMeteo: boolean;
   emitirNavegacion: boolean;
+  emitirAvisos: boolean;       // avisos de emergencia como mensaje de seguridad AIS (129802)
+  mmsiPropio?: number;         // MMSI (ficticio o real) de la estación para el 129802
   unico?: number;              // número de serie del NAME
 }
 
@@ -380,6 +401,7 @@ export const CONFIG_N2K_DEFECTO: ConfigN2k = {
   emitirGps: true,
   emitirMeteo: true,
   emitirNavegacion: true,
+  emitirAvisos: true,
 };
 
 /** Emisor NMEA 2000: reclama dirección y emite los PGN activados cada segundo desde las fuentes. */
@@ -398,6 +420,14 @@ export class EmisorN2k {
 
   arrancar(nowMs: number) { this.transporte.enviar(this.reclamo.arrancar(nowMs)); }
   direccion(): number { return this.reclamo.direccion(); }
+
+  /** Emite un aviso de emergencia como mensaje de seguridad AIS (129802). Llamar cuando salta un aviso. */
+  emitirAviso(nowMs: number, texto: string): boolean {
+    if (!this.cfg.activo || !this.cfg.emitirAvisos || !this.reclamo.listo(nowMs)) return false;
+    this.sid = (this.sid + 1) % 253;
+    this.envia(129802, mensajeSeguridadAis(this.cfg.mmsiPropio ?? 8000000, 0, texto), 5);
+    return true;
+  }
 
   /** Pásale cada trama recibida del bus para que defienda/negocie la dirección. */
   alRecibir(id: number, datos: Uint8Array, nowMs: number) {

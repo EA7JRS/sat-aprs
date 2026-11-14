@@ -21,11 +21,13 @@ import {
 } from './server/aprs';
 import pkg from './package.json';
 import { AuthInfo, createAuthenticator } from './server/auth';
-import { Evento } from './server/core/evento';
+import { Evento, Gravedad } from './server/core/evento';
 import { Politica, RegistroAvisos, evaluar } from './server/core/reglas';
 import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
 import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
+import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
+import { distanciaAZonaKm } from './server/core/zona';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
 import { gcDistanceKm } from './server/formulas/geo';
@@ -235,6 +237,12 @@ let config: TelemetryConfig = {
   icaTemplateExtremadamente: 'CALIDAD AIRE - ICA: {aqi} {label} ({mainPollutant}) Alerta Sanitaria: Permanezca en interiores y use mascarilla FFP2.',
   criticalEmail: 'emergencias.cenem@proteccioncivil.es',
   aemetAlertsSubscriptionEnabled: true,
+  // Avisos meteorológicos oficiales (AEMET): se anuncian los de las zonas que
+  // contienen la estación o cuyo borde queda a menos de `meteoRadioKm`.
+  meteoRadioKm: 25,
+  meteoGravedadMinima: 'amarillo',
+  meteoAntelacionH: 12,
+  meteoRepetirMin: 60,
   agpsEnabled: true,
   agpsServer: 'supl.google.com',
   agpsInterval: 'daily',
@@ -4430,6 +4438,7 @@ function transmitStationBeacon(): { ok: boolean; packet?: string; error?: string
 }
 
 startSchedules();
+programarAvisosMeteo();
 
 // Periodic APRS Automatic Transmitter Beacon Simulation is disabled to prevent looping simulated traffic when real data is not active.
 // setInterval(() => {
@@ -6880,107 +6889,110 @@ function getClosestProvince(lat: number, lon: number): SpanishProvince {
   return closest;
 }
 
-async function refreshAemetWarnings() {
+// ---------------------------------------------------------------------------
+// Avisos meteorológicos oficiales (AEMET Meteoalerta) sobre la cadena de avisos
+// ---------------------------------------------------------------------------
+const cacheCapAemet: CacheCap = new Map();
+let avisosAemet: AvisoAemet[] = [];
+let eventosMeteo: Evento[] = [];
+let timerAvisosMeteo: NodeJS.Timeout | undefined;
+let timerDifusionMeteo: NodeJS.Timeout | undefined;
+let descargandoAvisosMeteo = false;
+
+const GRAVEDADES: Gravedad[] = ['info', 'amarillo', 'naranja', 'rojo'];
+
+// Zonas que contienen la estación o cercanas, a partir del nivel configurado.
+// Se anuncian con la antelación indicada y se repiten mientras sigan vigentes.
+function politicaMeteo(): Politica {
+  const minima = GRAVEDADES.includes(config.meteoGravedadMinima as Gravedad) ? (config.meteoGravedadMinima as Gravedad) : 'amarillo';
+  return {
+    radioKm: Math.max(0, Number(config.meteoRadioKm ?? 25)),
+    gravedadMinima: minima,
+    vigenciaMs: 24 * 3600_000,
+    antelacionMs: Math.max(1, Number(config.meteoAntelacionH ?? 12)) * 3600_000,
+    repetirCadaMs: Math.max(15, Number(config.meteoRepetirMin ?? 60)) * 60_000,
+    boletin: config.autoGenerarBoletinEmergencia !== false,
+  };
+}
+
+const PARAMETRO_PANEL: Record<string, AemetWeatherAlert['parameter']> = {
+  VI: 'viento', PR: 'lluvia', TO: 'tormentas', AT: 'temperatura', BT: 'temperatura', OC: 'temperatura', OF: 'temperatura',
+};
+const NIVEL_PANEL: Record<string, AemetWeatherAlert['severity']> = { amarillo: 'YELLOW', naranja: 'ORANGE', rojo: 'RED', info: 'GREEN' };
+
+/** Avisos oficiales para el panel: los de las zonas dentro del radio general de la estación. */
+function avisosAemetParaPanel(): AemetWeatherAlert[] {
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const radio = config.filterRadiusKm || 200;
+  return avisosAemet
+    .map((a) => {
+      const e = avisoAEvento(a);
+      const distanceKm = a.poligono.length >= 3 ? distanciaAZonaKm(estacion, a.poligono) : undefined;
+      const alerta: AemetWeatherAlert = {
+        id: e.id,
+        province: a.nombreZona,
+        region: 'AEMET Meteoalerta',
+        headline: a.titular,
+        description: a.descripcion || a.titular,
+        severity: NIVEL_PANEL[a.nivel] || 'YELLOW',
+        parameter: PARAMETRO_PANEL[a.fenomeno] || 'otros',
+        value: a.valor || a.nombreFenomeno,
+        onset: new Date(a.inicio).toISOString(),
+        expires: new Date(a.fin).toISOString(),
+        lat: e.lat,
+        lon: e.lon,
+        distanceKm: distanceKm !== undefined ? Math.round(distanceKm) : undefined,
+      };
+      return alerta;
+    })
+    .filter((a) => a.distanceKm === undefined || a.distanceKm <= radio)
+    .sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
+}
+
+/** Recompone la lista del panel: avisos oficiales más los inyectados a mano como prueba (estos nunca se emiten). */
+function refreshAemetWarnings() {
   if (!config.aemetAlertsSubscriptionEnabled) {
     aemetAlerts = [];
     return;
   }
+  aemetAlerts = [...customInjectedAemetAlerts, ...avisosAemetParaPanel()];
+}
 
-  const currentLat = gpsdState.lat;
-  const currentLon = gpsdState.lon;
-  const province = getClosestProvince(currentLat, currentLon);
-
-  let fetchedAlerts: AemetWeatherAlert[] = [];
-  const now = new Date();
-
-  // 1. Wind warning (if wind speed is high)
-  if (weatherState.windSpeedKts >= 15 || weatherState.gustKts >= 20) {
-    let severity: 'YELLOW' | 'ORANGE' | 'RED' = 'YELLOW';
-    if (weatherState.windSpeedKts >= 40 || weatherState.gustKts >= 55) {
-      severity = 'RED';
-    } else if (weatherState.windSpeedKts >= 28 || weatherState.gustKts >= 38) {
-      severity = 'ORANGE';
-    }
-
-    const valueStr = `${Math.round(weatherState.windSpeedKts * 1.852)} km/h`;
-    fetchedAlerts.push({
-      id: `AEMET-WIND-${province.aemetCode}-${severity}-${now.getFullYear()}`,
-      province: province.name,
-      region: province.region,
-      headline: `Aviso de Nivel ${severity === 'RED' ? 'Rojo' : severity === 'ORANGE' ? 'Naranja' : 'Amarillo'} por Rachas Fuertes de Viento`,
-      description: `Se prevén rachas máximas de viento de componente oeste de hasta ${valueStr} en la provincia de ${province.name} (${province.region}). Riesgo severo para la navegación costera de recreo, desprendimientos en zonas urbanas y degradación de mástiles telescópicos de comunicación de Protección Civil. Se recomienda asegurar elementos sueltos.`,
-      severity,
-      parameter: 'viento',
-      value: valueStr,
-      onset: new Date(now.getTime() - 1800000).toISOString(),
-      expires: new Date(now.getTime() + 10800000).toISOString(),
-      lat: province.lat + 0.05,
-      lon: province.lon - 0.05,
-      distanceKm: calculateDistance(currentLat, currentLon, province.lat, province.lon)
-    });
+/** Descarga los avisos oficiales y difunde los que afectan a la estación. */
+async function descargarAvisosMeteo() {
+  if (descargandoAvisosMeteo) return;
+  if (config.systemPower === false || !config.aemetAlertsSubscriptionEnabled) {
+    avisosAemet = [];
+    eventosMeteo = [];
+    refreshAemetWarnings();
+    return;
   }
-
-  // 2. Rain warning
-  if (weatherState.rain1hIn > 0.05) {
-    const rainMm = parseFloat((weatherState.rain1hIn * 25.4).toFixed(1));
-    let severity: 'YELLOW' | 'ORANGE' | 'RED' = 'YELLOW';
-    if (rainMm >= 50) {
-      severity = 'RED';
-    } else if (rainMm >= 25) {
-      severity = 'ORANGE';
+  descargandoAvisosMeteo = true;
+  try {
+    const avisos = await descargarAvisosAemet(cacheCapAemet, (origen, texto, ok) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Sin datos'));
+    if (avisos) {
+      // Si la descarga falla se conserva la última lista válida (los caducados se descartan solos)
+      avisosAemet = avisos;
+      eventosMeteo = avisos.map(avisoAEvento);
     }
-
-    const valueStr = `${rainMm} mm/h`;
-    fetchedAlerts.push({
-      id: `AEMET-RAIN-${province.aemetCode}-${severity}-${now.getFullYear()}`,
-      province: province.name,
-      region: province.region,
-      headline: `Aviso por Lluvias Intensas y Acumulación de Agua - Nivel ${severity}`,
-      description: `Precipitación acumulada prevista de hasta ${valueStr} en una hora en la provincia de ${province.name} (${province.region}). Riesgo de inundaciones localizadas en pasos subterráneos, avenidas de agua y desbordamiento de ramblas secas. Extremar precauciones al conducir.`,
-      severity,
-      parameter: 'lluvia',
-      value: valueStr,
-      onset: new Date(now.getTime() - 900000).toISOString(),
-      expires: new Date(now.getTime() + 14400000).toISOString(),
-      lat: province.lat - 0.04,
-      lon: province.lon + 0.04,
-      distanceKm: calculateDistance(currentLat, currentLon, province.lat, province.lon)
-    });
+    refreshAemetWarnings();
+    difundirAvisos(eventosMeteo, politicaMeteo());
+  } catch (e: any) {
+    addLog('SYS', 'AEMET', 'LOCAL', 'API', `Error al procesar los avisos de AEMET: ${e?.message || e}.`, false, 'Sin datos');
+  } finally {
+    descargandoAvisosMeteo = false;
   }
+}
 
-  // 3. Convective storms warning
-  const isStormy = weatherState.forecast && weatherState.forecast[0]?.description.toLowerCase().includes('tormenta');
-  if (isStormy) {
-    let severity: 'YELLOW' | 'ORANGE' | 'RED' = 'YELLOW';
-    const desc = `Aviso de Tormentas con probabilidad de granizo y rachas de viento fuertes asociadas en el sector de ${province.name} (${province.region}). Se recomienda desconectar antenas elevadas de radioaficionados, asegurar estaciones repetidoras REMER y mantener la vigilancia de cauces fluviales.`;
-    
-    fetchedAlerts.push({
-      id: `AEMET-STORM-${province.aemetCode}-${severity}-${now.getFullYear()}`,
-      province: province.name,
-      region: province.region,
-      headline: `Aviso de Nivel ${severity} por Tormentas Convectivas Fuertes`,
-      description: desc,
-      severity,
-      parameter: 'tormentas',
-      value: 'Riesgo de Granizo y Rayos',
-      onset: new Date(now.getTime() - 600000).toISOString(),
-      expires: new Date(now.getTime() + 7200000).toISOString(),
-      lat: province.lat + 0.02,
-      lon: province.lon + 0.03,
-      distanceKm: calculateDistance(currentLat, currentLon, province.lat, province.lon)
-    });
-  }
-
-  // Combine custom injected alerts with simulated/calculated ones
-  aemetAlerts = [...customInjectedAemetAlerts, ...fetchedAlerts];
-
-  // Log new alerts
-  aemetAlerts.forEach(alert => {
-    if (!loggedAemetAlertIds.has(alert.id)) {
-      loggedAemetAlertIds.add(alert.id);
-      addLog('SYS', 'AEMET', 'ALERT', 'GPSD_SUB', `Aviso meteorológico inyectado (${alert.severity}) para ${alert.province}: ${alert.headline}`, alert.severity !== 'RED' && alert.severity !== 'ORANGE', 'Meteorología');
-    }
-  });
+function programarAvisosMeteo() {
+  if (timerAvisosMeteo) clearInterval(timerAvisosMeteo);
+  if (timerDifusionMeteo) clearInterval(timerDifusionMeteo);
+  timerAvisosMeteo = setInterval(descargarAvisosMeteo, 10 * 60_000);
+  // Entre descargas: repeticiones y avisos que entran en plazo o en radio (estación móvil)
+  timerDifusionMeteo = setInterval(() => {
+    if (config.aemetAlertsSubscriptionEnabled) difundirAvisos(eventosMeteo, politicaMeteo());
+  }, 60_000);
+  setTimeout(descargarAvisosMeteo, 5000);
 }
 
 // REST API endpoints for GPSD subscription and warning injections
@@ -6992,7 +7004,7 @@ app.post('/api/aemet/subscription/toggle', (req, res) => {
     config.aemetAlertsSubscriptionEnabled = !config.aemetAlertsSubscriptionEnabled;
   }
   
-  refreshAemetWarnings();
+  descargarAvisosMeteo();
   
   addLog('SYS', 'AEMET', 'CONFIG', 'SUB_TOGGLE', `Suscripción meteorológica geolocalizada ${config.aemetAlertsSubscriptionEnabled ? 'ACTIVADA' : 'DESACTIVADA'}`, true, 'Configuración');
   
@@ -7572,7 +7584,7 @@ app.post('/api/config', (req, res) => {
     if (updated.aemetAlertsSubscriptionEnabled !== undefined) {
       config.aemetAlertsSubscriptionEnabled = !!updated.aemetAlertsSubscriptionEnabled;
       // Trigger instant update of warnings
-      setTimeout(() => refreshAemetWarnings(), 50);
+      setTimeout(() => descargarAvisosMeteo(), 50);
     }
 
     // WeatherAPI settings
@@ -7620,6 +7632,10 @@ app.post('/api/config', (req, res) => {
     if (updated.aprsPhgDirectivity !== undefined) config.aprsPhgDirectivity = parseInt(updated.aprsPhgDirectivity.toString());
     if (updated.aprsBeaconInterval !== undefined) config.aprsBeaconInterval = parseInt(updated.aprsBeaconInterval.toString());
     if (updated.aprsBeaconEnabled !== undefined) config.aprsBeaconEnabled = !!updated.aprsBeaconEnabled;
+    if (updated.meteoRadioKm !== undefined && Number.isFinite(Number(updated.meteoRadioKm))) config.meteoRadioKm = Math.min(500, Math.max(0, Number(updated.meteoRadioKm)));
+    if (updated.meteoGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.meteoGravedadMinima))) config.meteoGravedadMinima = updated.meteoGravedadMinima;
+    if (updated.meteoAntelacionH !== undefined && Number.isFinite(Number(updated.meteoAntelacionH))) config.meteoAntelacionH = Math.min(72, Math.max(1, Number(updated.meteoAntelacionH)));
+    if (updated.meteoRepetirMin !== undefined && Number.isFinite(Number(updated.meteoRepetirMin))) config.meteoRepetirMin = Math.min(720, Math.max(15, Number(updated.meteoRepetirMin)));
     if (updated.operatorName !== undefined) config.operatorName = String(updated.operatorName).trim().slice(0, 60);
     if (updated.stationQth !== undefined) config.stationQth = String(updated.stationQth).trim().slice(0, 60);
     if (updated.aprsSmartBeaconing !== undefined) config.aprsSmartBeaconing = !!updated.aprsSmartBeaconing;

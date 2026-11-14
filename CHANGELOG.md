@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.9.0] - 2026-11-14
+### Avisos meteorológicos oficiales de AEMET en la cadena de avisos
+- **Nueva fuente `server/fuentes/aemetAvisos.ts`**: lee los avisos de Meteoalerta que AEMET publica en formato CAP (sin clave), con su nivel, fenómeno, valor, vigencia y el polígono de la zona.
+- **Avisos de zona** (`server/core/zona.ts`): se anuncia un aviso si la estación (fija o móvil) está dentro de la zona o a menos de `meteoRadioKm` (25 km) de su borde. Objeto APRS en el centro de la zona, con nombre estable por fenómeno y zona (p. ej. `PR614102`), y boletín `BLNnMETEO`.
+- Se anuncian con antelación (`meteoAntelacionH`, 12 h), se repiten mientras siguen vigentes (`meteoRepetirMin`, 60 min) y se vuelven a anunciar al instante si suben de nivel. Las actualizaciones sustituyen al aviso anterior y las cancelaciones lo retiran.
+- **El panel de avisos de AEMET muestra ya avisos reales.** Antes los fabricaba la propia consola a partir del viento y la lluvia del momento y los presentaba como avisos de AEMET.
+- Los boletines que no caben en 67 caracteres prescinden primero de la palabra «EMERGENCIA» y después de la fuente, antes de cortar el nombre del lugar.
+
+---
+
 ## [v1.8.0] - 2026-11-13
 ### Fórmulas comunes con el ecosistema APRS LoRa+
 - **`server/formulas/`**: porte a TypeScript de las fórmulas del núcleo del plotter APRS LoRa+ (geodesia, sol y luna, meteorología, Beaufort, movimiento relativo, unidades y Modelo Magnético Mundial WMM2025), con los mismos nombres. Se comparan con el código C++ original en 300 casos.

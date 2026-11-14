@@ -122,7 +122,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Cadena de avisos y cola de emisión | Hecho (`server/core/`) |
 | Sismos (IGN, respaldo USGS) | Hecho: primera fuente sobre la cadena |
 | Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
-| Avisos meteorológicos (AEMET, MeteoAlarm) | Pendiente de portar del agente Python |
+| Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
 | Clima espacial (NOAA), incendios (FIRMS), calidad del aire | En `server.ts`; pendientes de pasar a `server/fuentes/` |
 | Huracanes, tornados, Protección Civil, radiación (EURDEP) | Sin fuente real todavía |
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |

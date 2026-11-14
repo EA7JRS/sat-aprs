@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.8.0)
+## 📌 Qué hace hoy (v1.9.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -38,7 +38,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | :--- | :--- |
 | Emisión APRS real por APRS-IS y por RF (KISS/AX.25), con cola única y política de emisión | Operativo |
 | Sismos del IGN (respaldo USGS): objeto y boletín por radio y distancia | Operativo |
-| Avisos meteorológicos oficiales (MeteoAlarm) en el agente Python | Operativo |
+| Avisos meteorológicos oficiales de AEMET (Meteoalerta, por zonas): objeto y boletín | Operativo desde la v1.9.0; pendiente de validar en la estación |
 | Perfil de la estación APRS y baliza de posición | Operativo |
 | Posición por gpsd y estado real de ntpsec | Operativo |
 | Fórmulas físicas, náuticas, astronómicas, meteorológicas y de radio (`server/formulas/`) | Operativo |
@@ -105,7 +105,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | :--- | :--- |
 | `server/aprs.ts` | Protocolo APRS / AX.25 / KISS y política de emisión |
 | `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
-| `server/fuentes/` | Fuentes oficiales (hoy, sismos) |
+| `server/fuentes/` | Fuentes oficiales (sismos del IGN y avisos de AEMET) |
 | `server/estacion/` | Baliza de posición de la estación |
 | `server/formulas/` | Fórmulas comunes con el plotter APRS LoRa+ |
 | `server/sistema/` | Estado del equipo (ntpsec) |

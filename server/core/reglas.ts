@@ -9,6 +9,7 @@
 
 import { gcDistanceKm } from '../formulas/geo';
 import { Evento, Gravedad, ORDEN_GRAVEDAD } from './evento';
+import { distanciaAZonaKm } from './zona';
 
 export interface Posicion { lat: number; lon: number }
 
@@ -19,6 +20,11 @@ export interface Politica {
   gravedadMinima: Gravedad;
   /** Tiempo durante el que un aviso sin fecha de fin se sigue anunciando. */
   vigenciaMs: number;
+  /**
+   * Antelación con la que se anuncia un aviso que aún no ha empezado. Por
+   * defecto 1 hora: un suceso fechado más allá se toma por un error de la fuente.
+   */
+  antelacionMs?: number;
   /** Cada cuánto se repite el aviso mientras siga vigente (refresca el objeto). */
   repetirCadaMs: number;
   /** Además del objeto con la posición, emitir un boletín de emergencia. */
@@ -40,7 +46,7 @@ export function evaluar(evento: Evento, politica: Politica, estacion: Posicion, 
 
   const fin = evento.fin ?? evento.inicio + politica.vigenciaMs;
   if (ahora > fin) return { emitir: false, motivo: 'aviso caducado' };
-  if (evento.inicio > ahora + 3600_000) return { emitir: false, motivo: 'fecha del aviso en el futuro' };
+  if (evento.inicio > ahora + (politica.antelacionMs ?? 3600_000)) return { emitir: false, motivo: 'el aviso aún no está próximo' };
 
   if (ORDEN_GRAVEDAD[evento.gravedad] < ORDEN_GRAVEDAD[politica.gravedadMinima]) {
     return { emitir: false, motivo: 'gravedad inferior a la mínima' };
@@ -50,7 +56,13 @@ export function evaluar(evento: Evento, politica: Politica, estacion: Posicion, 
   }
 
   let distancia: number | undefined;
-  if (evento.lat !== undefined && evento.lon !== undefined) {
+  if (evento.zona && evento.zona.length >= 3) {
+    // Aviso de zona: 0 km si la estación está dentro; si no, distancia al borde
+    distancia = distanciaAZonaKm(estacion, evento.zona);
+    if (politica.radioKm !== null && distancia > politica.radioKm) {
+      return { emitir: false, motivo: 'fuera del radio de la estación', distanciaKm: distancia };
+    }
+  } else if (evento.lat !== undefined && evento.lon !== undefined) {
     distancia = distanciaKm(estacion, { lat: evento.lat, lon: evento.lon });
     if (politica.radioKm !== null && distancia > politica.radioKm) {
       return { emitir: false, motivo: 'fuera del radio de la estación', distanciaKm: distancia };

@@ -197,6 +197,14 @@ export interface TelemetryConfig {
   aprsPhgGain?: number;
   aprsPhgDirectivity?: number;
   aprsBeaconInterval?: number;
+  /** Avisos de AEMET: distancia máxima (km) del borde de la zona a la estación. 0 = solo zonas que la contienen. */
+  meteoRadioKm?: number;
+  /** Nivel mínimo de los avisos de AEMET que se anuncian. */
+  meteoGravedadMinima?: 'amarillo' | 'naranja' | 'rojo';
+  /** Horas de antelación con las que se anuncia un aviso previsto. */
+  meteoAntelacionH?: number;
+  /** Minutos entre repeticiones de un aviso vigente. */
+  meteoRepetirMin?: number;
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

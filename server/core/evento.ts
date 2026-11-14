@@ -37,6 +37,10 @@ export interface Evento {
   /** Posición del suceso. Sin coordenadas no hay objeto APRS, solo boletín. */
   lat?: number;
   lon?: number;
+  /** Zona afectada (polígono), si el aviso es de zona: la distancia se mide a su borde. */
+  zona?: Array<{ lat: number; lon: number }>;
+  /** Nombre del objeto APRS (máx. 9 caracteres) si la fuente da uno estable; si no, se deriva de la hora. */
+  nombre?: string;
   /** Momento del suceso o inicio de la vigencia (ms epoch). */
   inicio: number;
   /** Fin de la vigencia si la fuente lo indica (ms epoch). */

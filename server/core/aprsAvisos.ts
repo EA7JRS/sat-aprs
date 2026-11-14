@@ -26,7 +26,7 @@ interface Estilo {
 const ESTILOS: Record<TipoEmergencia, Estilo> = {
   sismo:          { simbolo: ['\\', 'Q'], prefijo: 'EQ', grupo: 'SISMO', rotulo: 'SISMO' },
   tsunami:        { simbolo: ['\\', '!'], prefijo: 'TS', grupo: 'TSUNA', rotulo: 'TSUNAMI' },
-  meteo:          { simbolo: ['\\', 'W'], prefijo: 'WX', grupo: 'METEO', rotulo: 'AVISO METEO' },
+  meteo:          { simbolo: ['\\', 'W'], prefijo: 'WX', grupo: 'METEO', rotulo: 'METEO' },
   huracan:        { simbolo: ['\\', '@'], prefijo: 'HU', grupo: 'HURAC', rotulo: 'HURACAN' },
   tornado:        { simbolo: ['\\', 't'], prefijo: 'TO', grupo: 'TORNA', rotulo: 'TORNADO' },
   incendio:       { simbolo: ['/', ':'],  prefijo: 'FG', grupo: 'FUEGO', rotulo: 'INCENDIO' },
@@ -58,15 +58,18 @@ function sello(ms: number): string {
  * uno no «mueve» en el mapa el objeto del otro.
  */
 export function nombreObjeto(evento: Evento): string {
+  const propio = limpio(evento.nombre || '').replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 9);
+  if (propio) return propio.padEnd(9, ' ');
   return (ESTILOS[evento.tipo].prefijo + sello(evento.inicio).slice(0, 6)).padEnd(9, ' ');
 }
 
 /** Objeto APRS con la posición y los datos del suceso; null si no tiene coordenadas. */
-export function objetoAprs(indicativo: string, evento: Evento): string | null {
+export function objetoAprs(indicativo: string, evento: Evento, ahora: number = Date.now()): string | null {
   if (evento.lat === undefined || evento.lon === undefined) return null;
   const [tabla, codigo] = ESTILOS[evento.tipo].simbolo;
   const comentario = limpio([evento.detalle, evento.titulo].filter(Boolean).join(' ')).slice(0, MAX_COMENTARIO_OBJETO).trim();
-  const info = `;${nombreObjeto(evento)}*${sello(evento.inicio)}${latToAprs(evento.lat)}${tabla}${lonToAprs(evento.lon)}${codigo}${comentario}`;
+  // Un aviso previsto aún no ha empezado: el objeto se fecha entonces en el momento de emitirlo
+  const info = `;${nombreObjeto(evento)}*${sello(Math.min(evento.inicio, ahora))}${latToAprs(evento.lat)}${tabla}${lonToAprs(evento.lon)}${codigo}${comentario}`;
   return `${indicativo.toUpperCase()}>${TOCALL}:${info}`;
 }
 
@@ -75,13 +78,19 @@ export function boletinAprs(indicativo: string, evento: Evento, distanciaKm?: nu
   const estilo = ESTILOS[evento.tipo];
   const destinatario = `BLN${LINEA_BOLETIN[evento.gravedad]}${estilo.grupo}`.padEnd(9, ' ');
   const urgente = evento.gravedad === 'rojo' || evento.gravedad === 'naranja';
-  const partes = [
-    `${urgente ? 'EMERGENCIA ' : ''}${estilo.rotulo}`,
+  const cuerpo = [
     evento.detalle || '',
     evento.titulo,
-    distanciaKm !== undefined ? `a ${Math.round(distanciaKm)}km` : '',
-    `(${evento.fuente})`,
-  ];
-  const texto = limpio(partes.filter(Boolean).join(' ')).slice(0, MAX_TEXTO_BOLETIN).trim();
+    distanciaKm !== undefined && distanciaKm >= 1 ? `a ${Math.round(distanciaKm)}km` : '',
+  ].filter(Boolean).join(' ');
+  const cabecera = `${urgente ? 'EMERGENCIA ' : ''}${estilo.rotulo}`;
+  // Si no cabe en 67 caracteres se prescinde, por este orden, de la palabra
+  // «EMERGENCIA» (la línea del boletín ya indica la gravedad) y de la fuente.
+  const variantes = [
+    `${cabecera} ${cuerpo} (${evento.fuente})`,
+    `${estilo.rotulo} ${cuerpo} (${evento.fuente})`,
+    `${estilo.rotulo} ${cuerpo}`,
+  ].map(limpio);
+  const texto = (variantes.find((v) => v.length <= MAX_TEXTO_BOLETIN) ?? variantes[0]).slice(0, MAX_TEXTO_BOLETIN).trim();
   return `${indicativo.toUpperCase()}>${TOCALL}::${destinatario}:${texto}`;
 }

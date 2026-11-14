@@ -30,6 +30,8 @@ interface ConfigProps {
   config: TelemetryConfig;
   onSaveConfig: (updated: TelemetryConfig) => Promise<boolean>;
   gpsd?: GPSDStatus;
+  /** Pestaña con la que se abre (p. ej. «profile» desde Estación → Perfil). */
+  initialTab?: 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'propagation' | 'profile';
 }
 
 // Passcode de APRS-IS: el mismo cálculo que usa el servidor (server/aprs.ts)
@@ -37,10 +39,10 @@ export function calculateAprsPasscode(callsign: string): number {
   return passcodeDe(callsign);
 }
 
-export default function Configurator({ config, onSaveConfig, gpsd }: ConfigProps) {
+export default function Configurator({ config, onSaveConfig, gpsd, initialTab }: ConfigProps) {
   // Configurator Tabs
   type ConfigTab = 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'propagation' | 'profile';
-  const [activeTab, setActiveTab] = useState<ConfigTab>('general');
+  const [activeTab, setActiveTab] = useState<ConfigTab>(initialTab ?? 'general');
 
   // Guard Silence profile states
   const [guardSilence, setGuardSilence] = useState<GuardSilenceConfig>(() => getGuardSilenceConfig());

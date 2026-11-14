@@ -2235,6 +2235,12 @@ function getMainPollutantName(pm25: number, pm10: number, coVal: number, no2: nu
 // que entregar sus avisos como `Evento[]` y declarar su política de difusión.
 // ---------------------------------------------------------------------------
 const AVISOS_FILE = path.join(process.cwd(), 'sat_avisos.json');
+// Estado de la última descarga de cada fuente oficial, para la portada de la consola
+const estadoFuentes: Record<string, { nombre: string; ok: boolean; cuando: number; texto: string }> = {};
+function anotarFuente(id: string, nombre: string, ok: boolean, texto: string) {
+  estadoFuentes[id] = { nombre, ok, cuando: Date.now(), texto };
+}
+
 let registroAvisos = new RegistroAvisos();
 try {
   if (fs.existsSync(AVISOS_FILE)) registroAvisos = new RegistroAvisos(JSON.parse(fs.readFileSync(AVISOS_FILE, 'utf8')));
@@ -3394,6 +3400,7 @@ async function refreshEarthquakes() {
   }
   try {
     const sismos = await descargarSismos((origen, texto, ok) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Fallback'));
+    anotarFuente('sismos', 'Sismos · IGN', sismos.length > 0, sismos.length > 0 ? `${sismos.length} sismos (${sismos[0].fuente})` : 'Sin respuesta de IGN ni USGS');
     if (sismos.length === 0) return; // sin datos nuevos se conserva la última lista válida
 
     const limite = Date.now() - 30 * 24 * 3600_000;
@@ -6970,6 +6977,7 @@ async function descargarAvisosMeteo() {
   descargandoAvisosMeteo = true;
   try {
     const avisos = await descargarAvisosAemet(cacheCapAemet, (origen, texto, ok) => addLog('SYS', origen, 'LOCAL', 'API', texto, ok, ok ? 'Servicios' : 'Sin datos'));
+    anotarFuente('aemet', 'Avisos · AEMET', avisos !== null, avisos !== null ? `${avisos.length} avisos en vigor o previstos` : 'No se pudo descargar el índice');
     if (avisos) {
       // Si la descarga falla se conserva la última lista válida (los caducados se descartan solos)
       avisosAemet = avisos;
@@ -7512,6 +7520,68 @@ app.post('/api/radiological/rar-ran/simulate', (req, res) => {
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Avisos: lista única de todo lo que pasa por la cadena, con su decisión
+// ---------------------------------------------------------------------------
+function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo: boolean }> {
+  return [
+    { eventos: eventosSismos, politica: politicaSismos(), activo: config.ignSeismoEnabled !== false },
+    { eventos: eventosMeteo, politica: politicaMeteo(), activo: !!config.aemetAlertsSubscriptionEnabled },
+  ];
+}
+
+app.get('/api/avisos', (_req, res) => {
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const avisos: any[] = [];
+  for (const { eventos, politica, activo } of gruposDeAvisos()) {
+    for (const e of eventos) {
+      const fin = e.fin ?? e.inicio + politica.vigenciaMs;
+      if (fin < ahora) continue; // lo caducado no se lista
+      const d = evaluar(e, politica, estacion, ahora);
+      const apunte = registroAvisos.consulta(e.id);
+      avisos.push({
+        id: e.id, tipo: e.tipo, gravedad: e.gravedad, titulo: e.titulo, detalle: e.detalle || '',
+        fuente: e.fuente, inicio: e.inicio, fin, lat: e.lat, lon: e.lon,
+        deZona: !!e.zona,
+        distanciaKm: d.distanciaKm !== undefined && Number.isFinite(d.distanciaKm) ? Math.round(d.distanciaKm) : null,
+        cumple: d.emitir && activo,
+        motivo: !activo ? 'fuente desactivada' : d.motivo,
+        emitido: apunte,
+        proxima: d.emitir && activo ? (apunte ? apunte.ultima + politica.repetirCadaMs : ahora) : null,
+        objeto: objetoAprs(config.callsign, e, ahora),
+        boletin: politica.boletin ? boletinAprs(config.callsign, e, d.distanciaKm) : null,
+        reglas: {
+          radioKm: politica.radioKm, gravedadMinima: politica.gravedadMinima,
+          antelacionH: (politica.antelacionMs ?? 3600_000) / 3600_000, repetirMin: politica.repetirCadaMs / 60_000,
+        },
+      });
+    }
+  }
+  const orden: Record<string, number> = { rojo: 0, naranja: 1, amarillo: 2, info: 3 };
+  avisos.sort((a, b) => Number(b.cumple) - Number(a.cumple) || orden[a.gravedad] - orden[b.gravedad] || (a.distanciaKm ?? 1e9) - (b.distanciaKm ?? 1e9));
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    avisos: avisos.slice(0, 300),
+    total: avisos.length,
+    fuentes: Object.entries(estadoFuentes).map(([id, f]) => ({ id, ...f })),
+    txEnabled: TX_ENABLED,
+  });
+});
+
+// Emitir ya un aviso que cumple las reglas, sin esperar a su repetición
+app.post('/api/avisos/emitir', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede emitir avisos.' });
+  const id = String(req.body?.id || '');
+  for (const { eventos, politica } of gruposDeAvisos()) {
+    const evento = eventos.find((e) => e.id === id);
+    if (!evento) continue;
+    const n = difundirAvisos([evento], politica, true);
+    return res.status(n > 0 ? 200 : 409).json({ ok: n > 0, txEnabled: TX_ENABLED, error: n > 0 ? undefined : 'El aviso no cumple las reglas de difusión.' });
+  }
+  return res.status(404).json({ ok: false, error: 'Aviso no encontrado o caducado.' });
 });
 
 // Baliza de la estación: vista previa de la trama y envío manual

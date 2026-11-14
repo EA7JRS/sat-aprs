@@ -10,6 +10,14 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 - **El panel de avisos de AEMET muestra ya avisos reales.** Antes los fabricaba la propia consola a partir del viento y la lluvia del momento y los presentaba como avisos de AEMET.
 - Los boletines que no caben en 67 caracteres prescinden primero de la palabra «EMERGENCIA» y después de la fuente, antes de cortar el nombre del lugar.
 
+### Consola reorganizada
+- **Seis secciones** en un menú lateral (Inicio, Avisos, Estación, Mapa, Radio, Sistema) en lugar de los 10 «pilares» y las 11 pestañas. Todas las pantallas anteriores siguen estando, repartidas en su sección (`src/navigation.ts`).
+- **Barra de estado** única: indicativo, emisión, GPS, hora y acceso de administrador.
+- **Inicio**: avisos activos en la zona, estado de la estación, últimas emisiones y estado de las fuentes, en una sola pantalla (la portada anterior medía más de 7.000 píxeles de alto).
+- **Avisos**: lista única de sismos y avisos meteorológicos; cada uno indica si se ha emitido o por qué no, sus tramas APRS y las reglas que se le aplican, con «Emitir ahora» para el administrador (`GET /api/avisos`, `POST /api/avisos/emitir`).
+- **Estación → Perfil** abre directamente el perfil de la estación APRS. El estado detallado del equipo y los modos de pantalla pasan a Sistema.
+- **Mapa**: la sección existe y explica qué capas tendrá; el visor sigue pendiente.
+
 ---
 
 ## [v1.8.0] - 2026-11-13

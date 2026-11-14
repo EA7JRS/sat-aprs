@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 import pkg from '../package.json';
+import { Pantalla, seccionDe } from './navigation';
+import Sidebar from './components/shell/Sidebar';
+import StatusBar from './components/shell/StatusBar';
+import SubTabs from './components/shell/SubTabs';
+import Inicio from './pages/Inicio';
+import Avisos from './pages/Avisos';
+import Mapa from './pages/Mapa';
+import { useAvisos } from './utils/useAvisos';
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
@@ -107,7 +115,8 @@ function getBandStatusText(band: string, sfi: number, kp: number) {
 export default function App() {
   const [data, setData] = useState<ServerTelemetryData | null>(null);
   const [cecopSituacion, setCecopSituacion] = useState<0 | 1 | 2 | 3>(0);
-  const [activeTab, setActiveTab ] = useState<'monitor' | 'radiological' | 'dgt' | 'sismos-ign' | 'aemet-portal' | 'portus' | 'navareas' | 'salud' | 'engineering' | 'incendios' | 'sistema' | 'weewx-pillar' | 'direwolf-pillar' | 'aprx-pillar' | 'cecop-dashboard' | 'aprs-adaptor' | 'pat-pillar' | 'ica' | 'propagacion'>('monitor');
+  const [activeTab, setActiveTab] = useState<Pantalla>('inicio');
+  const avisosCadena = useAvisos(30000);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -1442,33 +1451,15 @@ export default function App() {
       )}
       {(
         <>
-          {/* HEADER COMPONENT */}
-          <ConsoleHeader 
-        gpsd={data.gpsd} 
-        ntp={data.ntp} 
-        config={data.config}
-        nucStats={data.nucStats}
-        onRefresh={() => fetchTelemetry()}
-        isRefreshing={isRefreshing}
-        nightMode={nightMode}
-        onToggleNightMode={handleToggleNightMode}
-        dayMode={dayMode}
-        onToggleDayMode={handleToggleDayMode}
-        emergencyMode={emergencyMode}
-        onToggleEmergencyMode={handleToggleEmergencyMode}
-        nightModeAuto={nightModeAuto}
-        onToggleNightModeAuto={handleToggleNightModeAuto}
-        nightModeUseSolar={nightModeUseSolar}
-        onToggleNightModeUseSolar={handleToggleNightModeUseSolar}
-        startHour={startHour}
-        endHour={endHour}
-        onChangeHours={handleChangeHours}
-        rtt={rtt !== null ? rtt : undefined}
-        noaaAlerts={data.noaaAlerts}
-        isAdmin={adminSession.isAdmin}
-        propagation={data.propagation}
-        onUpdateConfig={handleSaveConfig}
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+      <Sidebar
+        actual={seccionDe(activeTab).id}
+        onIr={(seccion) => setActiveTab(seccion.pantallas[0].id)}
+        avisosActivos={avisosCadena.avisos.filter((a) => a.cumple).length}
+        version={pkg.version}
       />
+      <div className="flex-1 min-w-0 flex flex-col">
+      <StatusBar config={data.config} gpsd={data.gpsd} ntp={data.ntp} txEnabled={adminSession.txEnabled} />
 
       {/* CENTRAL EMERGENCY & BROADCAST STATUS HUB */}
       {(rangeHazards > 0 || isEmergencyBroadcastActive) && (
@@ -1505,589 +1496,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SECCIÓN DE PILARES SAT - MARCO DE ALERTA TEMPRANA ONU/OMM */}
-      <div className="bg-slate-900 border-b border-slate-800 p-4 flex flex-col gap-4">
-        
-        {/* Tier 1: 10 Pillars Responsive Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3">
-          
-          {/* PILAR I */}
-          <button
-            onClick={() => setActiveTab('monitor')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab)
-                ? 'bg-emerald-950/20 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={16} className={['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) ? 'text-emerald-400' : 'text-slate-300'}`}>
-                Pilar I: Sondeo y Diagnóstico
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Sondeo, Evaluación y Alertas
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
-                Integral Sismos, Radiactividad, NASA, DGT, NAVTEX
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR II: VERIFICACIÓN Y CECOP (EXCLUSIVE NEW PILLAR) */}
-          <button
-            onClick={() => setActiveTab('cecop-dashboard')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              activeTab === 'cecop-dashboard'
-                ? 'bg-amber-950/20 border-amber-550/50 shadow-[0_0_15px_rgba(245,158,11,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {activeTab === 'cecop-dashboard' && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-amber-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <ShieldAlert size={16} className={activeTab === 'cecop-dashboard' ? 'text-amber-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${activeTab === 'cecop-dashboard' ? 'text-amber-400' : 'text-slate-300'}`}>
-                Pilar II: Verificación y CECOP
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Coordinación y Triage (PEM)
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                Validación, Drills y Riesgos
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR III (formerly PILAR II) */}
-          <button
-            onClick={() => setActiveTab('navareas')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['navareas', 'portus'].includes(activeTab)
-                ? 'bg-cyan-950/20 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['navareas', 'portus'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-cyan-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <Radio size={16} className={['navareas', 'portus'].includes(activeTab) ? 'text-cyan-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['navareas', 'portus'].includes(activeTab) ? 'text-cyan-400' : 'text-slate-300'}`}>
-                Pilar III: Canales Marítimos
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-cyan-400 font-mono leading-relaxed truncate">
-                Difusión, Red VHF y NAVTEX
-              </span>
-              <span className="text-[9px] text-slate-550 font-mono mt-0.5 flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${isEmergencyBroadcastActive ? 'bg-red-500 animate-ping shrink-0' : 'bg-cyan-500'}`}></span>
-                {navareas.length} Avisos • Portus Boyas
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR IV (formerly PILAR III) */}
-          <button
-            onClick={() => setActiveTab('engineering')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['engineering'].includes(activeTab)
-                ? 'bg-indigo-950/20 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['engineering'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <FileCode size={16} className={['engineering'].includes(activeTab) ? 'text-indigo-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['engineering'].includes(activeTab) ? 'text-indigo-400' : 'text-slate-300'}`}>
-                Pilar IV: Respuesta
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Garantía y Preparación Civil
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-indigo-400"></span>
-                Planificadores • Parámetros Alarma
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR V: SISTEMA (formerly PILAR IV) */}
-          <button
-            onClick={() => setActiveTab('sistema')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['sistema'].includes(activeTab)
-                ? 'bg-violet-950/20 border-violet-500/50 shadow-[0_0_15px_rgba(139,92,246,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['sistema'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-violet-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <Cpu size={16} className={['sistema'].includes(activeTab) ? 'text-violet-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['sistema'].includes(activeTab) ? 'text-violet-400' : 'text-slate-300'}`}>
-                Pilar V: Sistema
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Diagnósticos, Núcleo y Logs
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-violet-400 animate-pulse"></span>
-                Servidor NUC • Terminal SAT
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR VI: WEEWX (formerly PILAR V) */}
-          <button
-            onClick={() => setActiveTab('weewx-pillar')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['weewx-pillar'].includes(activeTab)
-                ? 'bg-amber-950/20 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['weewx-pillar'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-amber-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <CloudSun size={16} className={['weewx-pillar'].includes(activeTab) ? 'text-amber-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['weewx-pillar'].includes(activeTab) ? 'text-amber-400' : 'text-slate-200'}`}>
-                Pilar VI: WeeWX
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Consola y Motor Met.
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                WeeWX Activo • SQLite sdb
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR VII: DIREWOLF (formerly PILAR VI) */}
-          <button
-            onClick={() => setActiveTab('direwolf-pillar')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['direwolf-pillar'].includes(activeTab)
-                ? 'bg-emerald-950/20 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['direwolf-pillar'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <Radio size={16} className={['direwolf-pillar'].includes(activeTab) ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['direwolf-pillar'].includes(activeTab) ? 'text-emerald-400' : 'text-slate-200'}`}>
-                Pilar VII: Direwolf
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                TNC de Radiocom.
-              </span>
-              <span className="text-[9px] text-slate-550 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                144.800 MHz • AFSK
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR VIII: APRX (formerly PILAR VII) */}
-          <button
-            onClick={() => setActiveTab('aprx-pillar')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['aprx-pillar'].includes(activeTab)
-                ? 'bg-blue-950/20 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['aprx-pillar'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-blue-5/5 bg-blue-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <Globe size={16} className={['aprx-pillar'].includes(activeTab) ? 'text-blue-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['aprx-pillar'].includes(activeTab) ? 'text-blue-400' : 'text-slate-200'}`}>
-                Pilar VIII: APRX
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                IGate y Enrutador
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                Standby • APRS-IS
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR IX: COMPILADOR Y ADAPTADOR APRS */}
-          <button
-            onClick={() => setActiveTab('aprs-adaptor')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['aprs-adaptor'].includes(activeTab)
-                ? 'bg-orange-950/20 border-orange-500/50 shadow-[0_0_15px_rgba(245,158,11,0.08)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['aprs-adaptor'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-orange-5/5 bg-orange-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-               <Radio size={16} className={['aprs-adaptor'].includes(activeTab) ? 'text-orange-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['aprs-adaptor'].includes(activeTab) ? 'text-orange-400' : 'text-slate-200'}`}>
-                Pilar IX: Adaptación APRS
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Compilador y Red AX.25
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${aprsPackets.some(p => p.status === 'PENDIENTE') ? 'bg-amber-400 animate-ring' : 'bg-orange-400'}`}></span>
-                {aprsPackets.length} Tráfico • Cola FM
-              </span>
-            </div>
-          </button>
-
-          {/* PILAR X: PAT MAIL & AX.25 SUBSYSTEM */}
-          <button
-            onClick={() => setActiveTab('pat-pillar')}
-            className={`text-left p-3.5 rounded-xl border transition-all duration-300 relative cursor-pointer flex flex-col gap-1.5 overflow-hidden ${
-              ['pat-pillar'].includes(activeTab)
-                ? 'bg-violet-950/30 border-violet-500/50 shadow-[0_0_15px_rgba(139,92,246,0.1)]'
-                : 'bg-slate-950/40 border-slate-850 hover:border-slate-800 hover:bg-slate-950/80'
-            }`}
-          >
-            {/* Corner Decorative Accent */}
-            {['pat-pillar'].includes(activeTab) && (
-              <div className="absolute top-0 right-0 w-8 h-8 bg-violet-50/5 rounded-bl-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-ping" />
-              </div>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <Mail size={16} className={['pat-pillar'].includes(activeTab) ? 'text-violet-400 animate-pulse' : 'text-slate-400'} />
-              <span className={`font-sans font-bold text-xs uppercase tracking-wide ${['pat-pillar'].includes(activeTab) ? 'text-violet-400' : 'text-slate-200'}`}>
-                Pilar X: Pat Winlink
-              </span>
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-400 font-mono leading-relaxed truncate">
-                Winlink y AX.25 Debian
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse"></span>
-                Web Server 8080 • ax0/wl0
-              </span>
-            </div>
-          </button>
-
-        </div>
-
-        {/* Tier 2: Secondary Tab Selection Bar */}
-        <div className="flex items-center justify-between flex-wrap gap-3 border-t border-slate-800 pt-3">
-          <div className="flex items-center flex-wrap gap-1.5">
-            
-            {/* Pilar I Sub-tabs (Merged with Pilar II and Pilar III NAVTEX/Portus boyas) */}
-            {['monitor', 'sismos-ign', 'aemet-portal', 'incendios', 'navareas', 'portus', 'radiological', 'salud', 'dgt', 'ica', 'propagacion'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('monitor')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'monitor'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-monitor-trigger"
-                >
-                  <ShieldCheck size={13} />
-                  Consola Operativa S.A.T. (Central)
-                </button>
-                <button
-                  onClick={() => setActiveTab('sismos-ign')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'sismos-ign'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-sismos-trigger"
-                >
-                  <Globe size={13} />
-                  Sismógrafo IGN en Directo
-                </button>
-                <button
-                  onClick={() => setActiveTab('aemet-portal')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'aemet-portal'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-aemet-trigger"
-                >
-                  <CloudRain size={13} />
-                  Meteorología AEMET OpenData
-                </button>
-                <button
-                  onClick={() => setActiveTab('incendios')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'incendios'
-                      ? 'bg-[#ef4444] text-[#ffffff] shadow-md shadow-red-500/20'
-                      : 'text-rose-400 hover:text-rose-300 hover:bg-slate-800 border border-slate-800'
-                  }`}
-                  id="tab-incendios-trigger"
-                >
-                  <Flame size={13} className="text-red-500 animate-pulse" />
-                  Monitor Incendios (NASA/Copernicus)
-                </button>
-                <button
-                  onClick={() => setActiveTab('radiological')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'radiological'
-                      ? 'bg-emerald-400 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-radiological-trigger"
-                >
-                  <Database size={13} />
-                  Radiactividad Ambiental (CSN/JRC)
-                </button>
-                <button
-                  onClick={() => setActiveTab('salud')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'salud'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-salud-trigger"
-                >
-                  <HeartPulse size={13} />
-                  Índice Climatológico Meteosalud
-                </button>
-                <button
-                  onClick={() => setActiveTab('dgt')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'dgt'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-dgt-trigger"
-                >
-                  <Radio size={13} />
-                  Tránsito e Incidencias DGT
-                </button>
-                <button
-                  onClick={() => setActiveTab('navareas')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'navareas'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-navareas-trigger"
-                >
-                  <Anchor size={13} />
-                  Boletines Marítimos NAVAREA III
-                </button>
-                <button
-                  onClick={() => setActiveTab('portus')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'portus'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-portus-trigger"
-                >
-                  <Waves size={13} />
-                  Física de Aguas Portus (boyas)
-                </button>
-                <button
-                  onClick={() => setActiveTab('ica')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'ica'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-ica-trigger"
-                >
-                  <Wind size={13} />
-                  Calidad del Aire (ICA)
-                </button>
-                <button
-                  onClick={() => setActiveTab('propagacion')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'propagacion'
-                      ? 'bg-emerald-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-propagacion-trigger"
-                >
-                  <Waves size={13} />
-                  Propagación HF y Clima Espacial
-                </button>
-              </>
-            )}
-
-            {/* Pilar III Sub-tabs */}
-            {['engineering'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('engineering')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'engineering'
-                      ? 'bg-indigo-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-engineer-trigger"
-                >
-                  <FileCode size={13} />
-                  Soporte, Parámetros y Planificadores S.A.T.
-                </button>
-              </>
-            )}
-
-            {/* Pilar IV Sub-tabs */}
-            {['sistema'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('sistema')}
-                  className={`px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                    activeTab === 'sistema'
-                      ? 'bg-violet-400 text-slate-955 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
-                  }`}
-                  id="tab-sistema-trigger"
-                >
-                  <Cpu size={13} className="text-violet-950" />
-                  Diagnósticos de Servidor Intel NUC & Terminal Logs
-                </button>
-              </>
-            )}
-
-            {/* Pilar V Sub-tabs */}
-            {['weewx-pillar'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('weewx-pillar')}
-                  className="px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none bg-amber-400 text-slate-950 shadow-md font-sans"
-                  id="tab-weewx-trigger"
-                >
-                  <CloudSun size={13} />
-                  Consola de Motor Meteorológico WeeWX (SQLite)
-                </button>
-              </>
-            )}
-
-            {/* Pilar VI Sub-tabs */}
-            {['direwolf-pillar'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('direwolf-pillar')}
-                  className="px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none bg-emerald-400 text-slate-950 shadow-md font-sans"
-                  id="tab-direwolf-trigger"
-                >
-                  <Radio size={13} />
-                  TNC de Radiocomunicaciones Direwolf (144.800 MHz)
-                </button>
-              </>
-            )}
-
-            {/* Pilar VII Sub-tabs */}
-            {['aprx-pillar'].includes(activeTab) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('aprx-pillar')}
-                  className="px-3 py-1.5 rounded-lg font-sans text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none bg-blue-500 text-slate-950 shadow-md font-sans font-black"
-                  id="tab-aprx-trigger"
-                >
-                  <Globe size={13} />
-                  Consola de Enrutamiento e IGate APRX
-                </button>
-              </>
-            )}
-
-          </div>
-
-          {/* Localized parameters badge */}
-          <div className="flex items-center gap-3 font-mono text-[10px] text-slate-500">
-            <div className="flex items-center gap-1">
-              <MapPin size={12} className="text-yellow-500/80" />
-              <span>QTH: <span className="text-slate-300">{data.gpsd.isFallback ? 'Madrid CENTRAL' : 'Coordenadas Fijas de Red'}</span></span>
-            </div>
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span className="hidden sm:inline">Esquema Integrado S.A.T. • 1 Hz</span>
-          </div>
-
-        </div>
-
-      </div>
+      <SubTabs seccion={seccionDe(activeTab)} actual={activeTab} onIr={setActiveTab} />
 
       {/* ERROR STATUS BAR */}
       <AnimatePresence>
@@ -2105,9 +1514,17 @@ export default function App() {
       </AnimatePresence>
 
       {/* CONTAINER BODY TAB CONTENT AREA */}
-      <main className="flex-1 p-4 max-w-7xl mx-auto w-full flex flex-col gap-4">
+      <main className="flex-1 p-4 lg:px-6 max-w-7xl mx-auto w-full flex flex-col gap-4">
         
-        {activeTab === 'monitor' ? (
+        {activeTab === 'inicio' ? (
+          <Inicio data={data} onIr={setActiveTab} />
+        ) : activeTab === 'avisos' ? (
+          <Avisos />
+        ) : activeTab === 'mapa' ? (
+          <Mapa onIr={setActiveTab} />
+        ) : activeTab === 'perfil' ? (
+          <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} initialTab="profile" />
+        ) : activeTab === 'monitor' ? (
           /* CONSOLA OPERATIVA MONITORS GRID - REDISEÑO HAMCLOCK / WORLD RADIO LEAGUE */
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
@@ -2647,6 +2064,35 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
+            {/* Estado del equipo y ajustes de pantalla (antes, la cabecera de toda la consola) */}
+            <div className="rounded-xl overflow-hidden border border-slate-800">
+              <ConsoleHeader 
+              gpsd={data.gpsd} 
+              ntp={data.ntp} 
+              config={data.config}
+              nucStats={data.nucStats}
+              onRefresh={() => fetchTelemetry()}
+              isRefreshing={isRefreshing}
+              nightMode={nightMode}
+              onToggleNightMode={handleToggleNightMode}
+              dayMode={dayMode}
+              onToggleDayMode={handleToggleDayMode}
+              emergencyMode={emergencyMode}
+              onToggleEmergencyMode={handleToggleEmergencyMode}
+              nightModeAuto={nightModeAuto}
+              onToggleNightModeAuto={handleToggleNightModeAuto}
+              nightModeUseSolar={nightModeUseSolar}
+              onToggleNightModeUseSolar={handleToggleNightModeUseSolar}
+              startHour={startHour}
+              endHour={endHour}
+              onChangeHours={handleChangeHours}
+              rtt={rtt !== null ? rtt : undefined}
+              noaaAlerts={data.noaaAlerts}
+              isAdmin={adminSession.isAdmin}
+              propagation={data.propagation}
+              onUpdateConfig={handleSaveConfig}
+            />
+            </div>
             <UserProfileManager />
 
             {/* Low-Level ntpsec / gpsd Channels */}
@@ -3328,7 +2774,7 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-slate-950 border-t border-slate-900 py-3 text-center text-[10px] text-slate-500 font-mono flex flex-col lg:flex-row items-center justify-between px-4 gap-2 gap-y-3">
         <span>
-          © 2026 S.A.T.-APRS by EA7JRS • Todos los derechos reservados • Licencia SPDX • IARU / ITU / BOE-A-2013-7624 •{' '}
+          S.A.T.-APRS · © 2026 Manuel - EA7JRS · GPL-3.0-or-later ·{' '}
           <a
             href="https://paypal.me/ea7jrs"
             target="_blank"
@@ -3345,6 +2791,8 @@ export default function App() {
           S.A.T.-APRS • v{pkg.version}
         </span>
       </footer>
+      </div>
+      </div>
         </>
       )}
     </motion.div>

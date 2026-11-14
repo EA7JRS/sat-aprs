@@ -92,6 +92,12 @@ export class RegistroAvisos {
     return !a || ahora - a.ultima >= repetirCadaMs;
   }
 
+  /** Cuándo y cuántas veces se ha emitido el aviso, o null si nunca. */
+  consulta(id: string): { primera: number; ultima: number; veces: number } | null {
+    const a = this.apuntes.get(id);
+    return a ? { ...a } : null;
+  }
+
   esNuevo(id: string): boolean {
     return !this.apuntes.has(id);
   }

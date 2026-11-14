@@ -8,6 +8,7 @@ import SubTabs from './components/shell/SubTabs';
 import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
+import RadioPrincipal from './pages/RadioPrincipal';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
 import BoyasCercanas from './components/environment/BoyasCercanas';
@@ -1116,6 +1117,8 @@ export default function App() {
           <Avisos sismos={data.earthquakes} config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'mapa' ? (
           <Mapa onIr={setActiveTab} config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
+        ) : activeTab === 'radio-principal' ? (
+          <RadioPrincipal config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'perfil' ? (
           <Configurator config={data.config} onSaveConfig={handleSaveConfig} gpsd={data.gpsd} initialTab="profile" />
         ) : activeTab === 'monitor' ? (

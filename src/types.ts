@@ -215,6 +215,12 @@ export interface TelemetryConfig {
   /** Entrada ADS-B para el mapa: puerto SBS (30003) de readsb o dump1090. */
   adsbEnabled?: boolean;
   adsbHost?: string;
+  clusterEnabled?: boolean;
+  clusterHost?: string;
+  clusterPort?: number;
+  dapnetUser?: string;
+  dapnetPassword?: string;
+  dapnetGroup?: string;
   adsbPort?: number;
   /** Parte meteorológico de la estación por APRS. */
   wxBeaconEnabled?: boolean;

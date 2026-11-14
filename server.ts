@@ -10,6 +10,12 @@ import { execFile, execFileSync } from 'child_process';
 import os from 'os';
 import { descargarMeteoAbierta } from './server/fuentes/meteoAbierta';
 import { Boya, boyasCercanas, descargarBoyas } from './server/fuentes/boyas';
+import { Mensajeria, ViaMensaje } from './server/radio/mensajes';
+import { ClusterDx } from './server/radio/clusterDx';
+import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
+import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
+import { gcInitialBearing } from './server/formulas/geo';
+import { TOCALL, IS_PATH } from './server/aprs';
 import net from 'net';
 import {
   DEFAULT_RF_PATH,
@@ -199,7 +205,7 @@ function isAuthorizedRequest(req: express.Request): boolean {
 }
 
 // Claves y credenciales que solo puede ver un administrador
-const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey'] as const;
+const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword'] as const;
 const SECRET_MASK = '********';
 
 function isMaskedSecret(value: unknown): boolean {
@@ -323,6 +329,13 @@ let config: TelemetryConfig = {
   adsbEnabled: true,
   adsbHost: '127.0.0.1',
   adsbPort: 30003,
+  // Radio: cluster DX por telnet (vacío = sin configurar) y cuenta de DAPNET para buscapersonas
+  clusterEnabled: false,
+  clusterHost: '',
+  clusterPort: 7300,
+  dapnetUser: '',
+  dapnetPassword: '',
+  dapnetGroup: 'ea-all',
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -616,10 +629,82 @@ function scheduleGpsdReconnect() {
 const estacionesOidas = new EstacionesOidas();
 let firmaAprsIs = '';
 
+// ---------------------------------------------------------------------------
+// Radio: mensajería APRS de la estación y cluster DX
+// ---------------------------------------------------------------------------
+const mensajeria = new Mensajeria(() => config.callsign);
+
+/** Emite un mensaje, acuse o boletín de la mensajería por la cola de emisión (con su política). */
+function emitirMensajeria(info: string, motivo: string) {
+  if (!isValidCallsign(config.callsign)) return;
+  const trama = `${config.callsign.trim().toUpperCase()}>${TOCALL},${IS_PATH}:${info}`;
+  // Un mensaje o un acuse no espera detrás de las balizas: va con prioridad
+  addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, trama, true, motivo, { urgente: true });
+}
+
+/** Pasa a la mensajería una trama recibida; si es de terceros («}»), la de dentro. */
+function mensajeRecibido(origen: string, info: string, via: ViaMensaje, nivel = 0) {
+  if (info.startsWith('}') && nivel < 2) {
+    const interior = parseTnc2(info.slice(1));
+    if (interior) mensajeRecibido(interior.source, interior.info, via, nivel + 1);
+    return;
+  }
+  if (!info.startsWith(':')) return;
+  const respuesta = mensajeria.recibir(origen, info, via);
+  if (respuesta) emitirMensajeria(respuesta.info, respuesta.motivo);
+}
+setInterval(() => {
+  for (const e of mensajeria.reintentos()) emitirMensajeria(e.info, e.motivo);
+}, 5000);
+
+const tablaDxcc = new TablaDxcc();
+let dxccLeida = 0;
+let dxccIntento = 0;
+async function cargarDxcc() {
+  const ahora = Date.now();
+  // Una vez por semana; si falla, se reintenta a la hora
+  if ((dxccLeida && ahora - dxccLeida < 7 * 86400_000) || ahora - dxccIntento < 3600_000) return;
+  dxccIntento = ahora;
+  try {
+    const r = await fetch(URL_CTY, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const n = tablaDxcc.cargar(await r.text());
+    if (n < 100) throw new Error(`solo ${n} entidades legibles`);
+    dxccLeida = ahora;
+    anotarFuente('dxcc', 'Países DXCC · cty.dat', true, `${n} entidades`);
+  } catch (e: any) {
+    anotarFuente('dxcc', 'Países DXCC · cty.dat', false, `Sin tabla de países: ${e?.message ?? e}`);
+    addLog('SYS', 'DXCC', 'LOCAL', 'API', `No se pudo descargar la tabla de países (cty.dat): ${e?.message ?? e}. Los spots salen sin rumbo ni distancia.`, false, 'Sin datos');
+  }
+}
+
+const clusterDx = new ClusterDx((estado, detalle) => {
+  if (estado === 'conectado') addLog('SYS', 'CLUSTER', 'LOCAL', 'ENLACE', `Cluster DX conectado (${detalle}).`, true, 'Enlace');
+  else if (estado === 'desconectado') addLog('SYS', 'CLUSTER', 'LOCAL', 'ENLACE', `Cluster DX desconectado: ${detalle}. Se reintentará.`, false, 'Enlace');
+});
+
+/** Conecta o desconecta el cluster DX según la configuración actual. */
+function ajustarCluster() {
+  const host = String(config.clusterHost || '').trim();
+  const puerto = Number(config.clusterPort) || 0;
+  const activo = config.systemPower !== false && config.clusterEnabled === true && !!host && puerto > 0 && isValidCallsign(config.callsign);
+  if (!activo) {
+    if (clusterDx.estado !== 'parado') clusterDx.parar();
+    return;
+  }
+  // El nodo se identifica con el indicativo sin SSID
+  clusterDx.iniciar(host, puerto, config.callsign.trim().toUpperCase().replace(/-\d+$/, ''));
+  cargarDxcc();
+}
+setInterval(() => { if (clusterDx.estado !== 'parado') cargarDxcc(); }, 3600_000);
+
 const clienteAprsIs = new ClienteAprsIs({
   alRecibir: (linea) => {
     const t = parseTnc2(linea);
-    if (t) estacionesOidas.anotar(t.source, t.destination, t.info, 'IS');
+    if (t) {
+      estacionesOidas.anotar(t.source, t.destination, t.info, 'IS');
+      mensajeRecibido(t.source, t.info, 'IS');
+    }
   },
   alCambiar: (estado, detalle) => {
     if (estado === 'conectado' || estado === 'solo-recepcion') {
@@ -817,6 +902,7 @@ function connectKissTcp() {
               const payload = match[4];
               addLog('RX', source, dest, path, payload, true, '[KISS RF] Recibido por puerto TNC');
               estacionesOidas.anotar(source, dest, payload, 'RF');
+              mensajeRecibido(source, payload, 'RF');
             } else {
               addLog('RX', 'TNC', 'ALL', 'KISS', packetStr, true, '[KISS RF] Trama cruda recibida');
             }
@@ -2681,6 +2767,7 @@ setImmediate(() => {
   programarOtrasFuentes();
   ajustarAprsIs();
   ajustarEntradasMapa();
+  ajustarCluster();
 });
 // Estación móvil o cambios de configuración: se revisa el filtro cada 5 minutos
 setInterval(ajustarAprsIs, 5 * 60_000);
@@ -4330,6 +4417,80 @@ app.get('/api/boyas', async (_req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Radio · Principal: mensajería y cluster DX
+// ---------------------------------------------------------------------------
+app.get('/api/radio/mensajes', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  // El contenido de los mensajes solo se enseña al administrador
+  const admin = isAuthorizedRequest(req);
+  res.json({
+    indicativo: config.callsign,
+    txEnabled: TX_ENABLED,
+    sinLeer: mensajeria.sinLeer,
+    admin,
+    recibidos: admin ? mensajeria.recibidos.slice(0, 100) : [],
+    enviados: admin ? mensajeria.enviados.slice(0, 100) : [],
+    dapnet: { configurado: !!config.dapnetUser && !!config.dapnetPassword, grupo: config.dapnetGroup || '', max: MAX_DAPNET },
+  });
+});
+
+app.post('/api/radio/mensajes', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede enviar mensajes.' });
+  if (!isValidCallsign(config.callsign)) return res.status(400).json({ ok: false, error: 'La estación no tiene un indicativo válido.' });
+  const r = mensajeria.redactar(String(req.body?.para ?? ''), String(req.body?.texto ?? ''));
+  if (!r.ok) return res.status(400).json(r);
+  emitirMensajeria(r.emision.info, r.emision.motivo);
+  res.json({ ok: true, mensaje: r.mensaje, txEnabled: TX_ENABLED });
+});
+
+app.post('/api/radio/mensajes/leidos', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false });
+  mensajeria.marcarLeidos();
+  res.json({ ok: true });
+});
+
+app.post('/api/radio/dapnet', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede enviar por DAPNET.' });
+  const indicativos = String(req.body?.para ?? '').split(/[\s,;]+/).filter(Boolean);
+  const grupo = String(req.body?.grupo || config.dapnetGroup || '');
+  const r = await enviarDapnet(config.dapnetUser || '', config.dapnetPassword || '', {
+    texto: String(req.body?.texto ?? ''), indicativos, grupos: [grupo], emergencia: req.body?.emergencia === true,
+  });
+  addLog('SYS', 'DAPNET', 'LOCAL', 'API', r.ok ? `Mensaje DAPNET enviado a ${indicativos.join(', ')} (${grupo}).` : `DAPNET: ${r.error}`, r.ok, r.ok ? 'Enviado' : 'Error');
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.get('/api/radio/cluster', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  res.json({
+    configurado: !!config.clusterHost,
+    activo: config.clusterEnabled === true,
+    estado: clusterDx.estado,
+    detalle: clusterDx.detalle,
+    nodo: clusterDx.destinoActual || (config.clusterHost ? `${config.clusterHost}:${config.clusterPort}` : ''),
+    paises: tablaDxcc.entidades > 0,
+    spots: clusterDx.spots.slice(0, 150).map((s) => {
+      const e = tablaDxcc.buscar(s.dx);
+      return {
+        ...s,
+        pais: e?.nombre ?? null,
+        rumbo: e ? Math.round(gcInitialBearing(estacion, e)) : null,
+        distanciaKm: e ? Math.round(gcDistanceKm(estacion, e)) : null,
+      };
+    }),
+    // La salida cruda del nodo, para la consola: solo para el administrador
+    lineas: isAuthorizedRequest(req) ? clusterDx.lineas.slice(-80) : [],
+  });
+});
+
+app.post('/api/radio/cluster/orden', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede enviar órdenes al cluster.' });
+  const ok = clusterDx.orden(String(req.body?.orden ?? ''));
+  res.status(ok ? 200 : 400).json({ ok, error: ok ? undefined : 'El cluster no está conectado o la orden está vacía.' });
+});
+
 // Estado real de los enlaces de la estación, para la barra de estado
 app.get('/api/enlaces', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -4584,6 +4745,12 @@ app.post('/api/config', (req, res) => {
     if (updated.adsbEnabled !== undefined) config.adsbEnabled = !!updated.adsbEnabled;
     if (updated.adsbHost !== undefined) config.adsbHost = String(updated.adsbHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
     if (updated.adsbPort !== undefined) config.adsbPort = puertoValido(updated.adsbPort);
+    if (updated.clusterEnabled !== undefined) config.clusterEnabled = !!updated.clusterEnabled;
+    if (updated.clusterHost !== undefined) config.clusterHost = String(updated.clusterHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
+    if (updated.clusterPort !== undefined) config.clusterPort = puertoValido(updated.clusterPort);
+    if (updated.dapnetUser !== undefined) config.dapnetUser = String(updated.dapnetUser).trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+    if (updated.dapnetPassword !== undefined && !isMaskedSecret(updated.dapnetPassword)) config.dapnetPassword = String(updated.dapnetPassword).slice(0, 100);
+    if (updated.dapnetGroup !== undefined) config.dapnetGroup = String(updated.dapnetGroup).trim().toLowerCase().replace(/[^a-z0-9\-]/g, '').slice(0, 30);
     if (updated.meteoRadioKm !== undefined && Number.isFinite(Number(updated.meteoRadioKm))) config.meteoRadioKm = Math.min(500, Math.max(0, Number(updated.meteoRadioKm)));
     if (updated.meteoGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.meteoGravedadMinima))) config.meteoGravedadMinima = updated.meteoGravedadMinima;
     if (updated.meteoAntelacionH !== undefined && Number.isFinite(Number(updated.meteoAntelacionH))) config.meteoAntelacionH = Math.min(72, Math.max(1, Number(updated.meteoAntelacionH)));
@@ -4748,6 +4915,7 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
     startSchedules();
     ajustarAprsIs();
     ajustarEntradasMapa();
+    ajustarCluster();
     refreshWeather();
     refreshIQAir();
     refreshEarthquakes();

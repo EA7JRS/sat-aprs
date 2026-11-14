@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.22.0] - 2026-11-14
+### Radio · Principal: cluster DX y mensajería
+- **Pantalla nueva «Principal»** en Radio, la consola de operación. Empieza con dos módulos; el equipo por CAT, el rotor, el grupo de estaciones y la consola de comandos llegarán después.
+- **Cluster DX** (`server/radio/clusterDx.ts`): cliente telnet para nodos DXSpider, AR-Cluster o CC Cluster. Entra con el indicativo de la estación, recoge los spots según llegan y los enseña con banda, **país, rumbo y distancia** desde la posición actual (`server/radio/dxcc.ts`, con el fichero público cty.dat). Filtro por banda, órdenes al nodo (`sh/dx`, `sh/wwv`, `dx …`) y consola con su salida. Se reconecta solo.
+- **Mensajería APRS** (`server/radio/mensajes.ts`): bandeja con los mensajes dirigidos a la estación, por radio o por APRS-IS, y los boletines que se oyen. Contesta con el **acuse de recibo**, no duplica los repetidos, y los mensajes que escribe el operador se repiten hasta cinco veces mientras no llegue el acuse. También envía boletines (`BLNn`). Mensajes y acuses van con prioridad en la cola de emisión y respetan su política: sin emisión activada no sale nada.
+- **DAPNET** (`server/radio/dapnet.ts`): envío a buscapersonas con la cuenta de hampager.de del operador, con prioridad de emergencia opcional. La contraseña se guarda como secreto.
+- El número de mensaje (`{12`) ya no se pierde al recortar un texto de 67 caracteres.
+- El contenido de los mensajes y la consola del cluster solo se muestran al administrador.
+
+---
+
 ## [v1.21.0] - 2026-11-14
 ### El servidor deja de simular: meteorología, boyas, tráfico y equipo
 - **Meteorología siempre real** (`server/fuentes/meteoAbierta.ts`): sin clave de OpenWeatherMap ni de AEMET, o si fallan, se usa Open-Meteo (sin clave): estado actual y previsión de cinco días en la posición de la estación, indicado en pantalla como dato de modelo. Desaparecen el simulador de clima, la previsión inventada y las «microfluctuaciones» que alteraban cada 1,5 s los valores leídos. Si ninguna fuente responde, se conserva una hora la última lectura real y después se muestra «sin datos».

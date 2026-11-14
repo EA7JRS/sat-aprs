@@ -126,7 +126,10 @@ export function normalizeInfo(info: string): string {
   const ascii = toAscii(info);
   const m = /^(:[^:]{9}:)(.*)$/s.exec(ascii);
   if (!m) return ascii;
-  return m[1] + m[2].slice(0, MAX_MESSAGE_TEXT).trimEnd();
+  // El número de mensaje («{12») no forma parte de los 67 caracteres: se conserva
+  const cola = /\{[A-Za-z0-9]{1,5}(\}[A-Za-z0-9]{0,2})?$/.exec(m[2]);
+  const texto = cola ? m[2].slice(0, cola.index) : m[2];
+  return m[1] + texto.slice(0, MAX_MESSAGE_TEXT).trimEnd() + (cola ? cola[0] : '');
 }
 
 /** Trama para APRS-IS: siempre «ORIGEN>DESTINO,TCPIP*:info» en ASCII. */

@@ -7,6 +7,7 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescript.org/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Licencia Apache 2.0](https://img.shields.io/badge/Licencia-Apache_2.0-blue?style=for-the-badge)](LICENSE)
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
 El **S.A.T. APRS Dashboard** es una estación de trabajo digital unificada para operadores de radioafición (IARU/ITU) y redes de telecomunicaciones de emergencia en entornos de catástrofe y misiones críticas. Emula y visualiza el comportamiento de componentes de software de radio esenciales, permitiendo el monitoreo interactivo de señales de RF, la calibración de hardware de audio en tiempo real y la gestión operativa ante catástrofes.
@@ -22,6 +23,31 @@ S.A.T.-APRS como estación de radio desatendida operando las 24/7, permite gener
 S.A.T.-APRS tiene la capacidad y objetivo de transmitir alertas e información posterior ante todo tipo de evento, peligros u otros riesgos para salvaguardar la salud y seguridad pública.
 
 S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda responsabilidad debida a un uso y configuración incorrectos por parte del operador de radio como usuario final.
+
+---
+
+## 📌 Qué hace hoy (v1.8.0)
+
+S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
+
+1. **Avisos de emergencia.** Recoge avisos de fuentes oficiales y, si ocurren dentro del radio configurado alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
+2. **Estación APRS y meteorológica.** Con el **perfil de la estación** (indicativo y SSID, passcode, posición o GPS, símbolo, PHG, comentario) emite su baliza de posición.
+3. **Consola web.** Configura la estación y los servicios de radio del equipo (Direwolf, aprx, Pat, WeeWX) y muestra el estado del GPS y de la hora (gpsd y ntpsec).
+
+| Función | Estado |
+| :--- | :--- |
+| Emisión APRS real por APRS-IS y por RF (KISS/AX.25), con cola única y política de emisión | Operativo |
+| Sismos del IGN (respaldo USGS): objeto y boletín por radio y distancia | Operativo |
+| Avisos meteorológicos oficiales (MeteoAlarm) en el agente Python | Operativo |
+| Perfil de la estación APRS y baliza de posición | Operativo |
+| Posición por gpsd y estado real de ntpsec | Operativo |
+| Fórmulas físicas, náuticas, astronómicas, meteorológicas y de radio (`server/formulas/`) | Operativo |
+| Clima espacial (NOAA), incendios y calidad del aire | En la consola; pendientes de pasar a la cadena de avisos |
+| AIS, NAVTEX e Inmarsat | **Demostración**: datos simulados, nunca se emiten |
+| Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
+| ADS-B y mapa con capas (AIS, ADS-B, APRS, tráfico) | Pendiente |
+
+Los paneles de demostración enseñan cómo quedará cada módulo; lo simulado va marcado y no sale al aire. El detalle de la arquitectura y del plan está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) y los cambios de cada versión en [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -73,12 +99,20 @@ Consola táctica unificada para la gestión de emergencias:
 
 ## 🚀 Arquitectura de Desarrollo
 
-Este proyecto está construido sobre un stack moderno y eficiente diseñado para baja latencia e interfaces tácticas de alta fidelidad:
-- **Framework Principal**: React 19 con TypeScript.
-- **Sistema de Compilación**: Vite (HMR desactivado en la plataforma de desarrollo interactivo).
-- **Estilos Visuales**: Tailwind CSS integrado mediante arquitectura de temas de alto contraste.
-- **Animaciones e Interacciones**: Motion (`motion/react`) para efectos fluidos y de transición CRT-phosphor.
-- **Detección de Coordenadas**: Geolocalización integrada en navegador con visualizadores de cartografía locales hiperprecisos.
+Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que habla por TCP/UDP con los programas nativos del equipo: Direwolf, aprx, gpsd, ntpsec, Hamlib, Pat, AIS-catcher, WeeWX…
+
+| Carpeta | Contenido |
+| :--- | :--- |
+| `server/aprs.ts` | Protocolo APRS / AX.25 / KISS y política de emisión |
+| `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
+| `server/fuentes/` | Fuentes oficiales (hoy, sismos) |
+| `server/estacion/` | Baliza de posición de la estación |
+| `server/formulas/` | Fórmulas comunes con el plotter APRS LoRa+ |
+| `server/sistema/` | Estado del equipo (ntpsec) |
+| `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
+| `src/` | Consola web: React 19, Vite y Tailwind CSS |
+| `aprs_sat.py` | Agente en Python, que se retirará cuando todo esté portado al servicio |
+| `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y agente |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)
 
@@ -165,7 +199,11 @@ Variables principales de `.env` (todas documentadas en `.env.example`):
 | `SAT_TRUST_LOCALHOST` | `on` trata como administrador al navegador del propio equipo, sin token. |
 | `HOST` / `PORT` | Interfaz y puerto de escucha (`HOST=127.0.0.1` tras un proxy con TLS). |
 
-> **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. Las preferencias del operador (perfil, estaciones, presets, sonidos) se guardan en el navegador. Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
+> **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. El perfil del operador, sus estaciones y presets se guardan en la propia estación (`sat_perfil.json`) y se ven igual desde cualquier navegador; los sonidos, en cada navegador. Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
+
+#### 1.6- Perfil de la estación
+
+En la consola, **Configuración → «Estación APRS»**: titular, indicativo y SSID, passcode de APRS-IS (la consola indica si corresponde al indicativo), posición fija por coordenadas o locator (o tomada del GPS), símbolo, PHG, comentario y ruta. La **baliza de posición** viene apagada: actívela solo si aprx o Direwolf no emiten ya la suya con el mismo indicativo.
 
 ---
 
@@ -278,7 +316,7 @@ cp .env .env.bak
 cp config.ini config.ini.bak 2>/dev/null
 cp sat_config.json sat_config.json.bak 2>/dev/null
 
-git pull --ff-only
+git pull --ff-only     # si falla, vea la nota sobre el 14-11-2026
 
 npm ci
 npm run build
@@ -286,6 +324,8 @@ npm run build
 sudo systemctl start sat-aprs.service sat-aprs-agent.service
 journalctl -u sat-aprs-agent.service -f -n 50
 ```
+
+> **Clones anteriores al 14-11-2026:** ese día se reescribió el historial del repositorio y `git pull` falla. Con la copia de seguridad hecha: `git fetch origin && git reset --hard origin/main`.
 
 > **Al actualizar desde una versión anterior a la 1.5.0:** `config.ini` y `sat_config.json` han dejado de estar versionados en git, y git los borrará al traer esta versión. Haga la copia de seguridad de arriba y restáurela después (`cp config.ini.bak config.ini`). A partir de entonces las actualizaciones ya no tocan su configuración.
 
@@ -295,7 +335,7 @@ journalctl -u sat-aprs-agent.service -f -n 50
 
 ```bash
 npm run lint       # comprobación de tipos (TypeScript)
-npm test           # protocolo APRS, política de emisión y autenticación
+npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP y fórmulas
 npm run test:py    # agente: tramas, filtros de sismos, avisos y seguridad de emisión
 ```
 
@@ -311,7 +351,7 @@ La consola genera y valida, desde el panel de configuración, las plantillas de 
 ---
 
 ## 🛡️ Estándares de Seguridad de Radioaficionados
-Esta consola promueve el uso ético del espectro electromagnético. Las emulaciones de tramas de balizas AX.25 generadas por el simulador se adhieren a la normativa internacional de la UIT y la legislación local de telecomunicaciones:
+Esta consola promueve el uso ético del espectro electromagnético. Las tramas que emite se atienen a la normativa internacional de la UIT y a la legislación local de telecomunicaciones:
 - **Identificación Obligatoria**: Todas las tramas salientes llevan el indicativo de la estación, y el sistema se niega a transmitir si no es un indicativo válido.
 - **Uso sin Cifrado**: Conforme al reglamento de radioaficionados, las transmisiones se realizan en texto claro y legible por cualquier estación de escucha terrestre o satelital (ISS / Satélites LEO).
 
@@ -322,4 +362,8 @@ S.A.T.-APRS es un proyecto personal de EA7JRS. Si te resulta útil, puedes invit
 
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal.me%2Fea7jrs-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
-© 2026 Manuel - EA7JRS
+---
+
+## 📄 Licencia
+
+[Apache License 2.0](LICENSE). © 2026 Manuel - EA7JRS

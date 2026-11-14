@@ -17,6 +17,7 @@ import {
   toIsPacket,
   toRfFrame
 } from './server/aprs';
+import pkg from './package.json';
 import { AuthInfo, createAuthenticator } from './server/auth';
 import { Evento } from './server/core/evento';
 import { Politica, RegistroAvisos, evaluar } from './server/core/reglas';
@@ -749,7 +750,7 @@ function sendToAprsIs(packet: string): Promise<void> {
       sock.write(`${packet}\r\n`, () => setTimeout(() => finish(), 500));
     });
     sock.connect(config.aprscPort, config.serverIp, () => {
-      sock.write(`user ${config.callsign} pass ${config.aprsPasscode} vers SAT-APRS 2.1\r\n`);
+      sock.write(`user ${config.callsign} pass ${config.aprsPasscode} vers SAT-APRS ${pkg.version}\r\n`);
     });
   });
 }

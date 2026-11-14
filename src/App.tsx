@@ -1,3 +1,4 @@
+import pkg from '../package.json';
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { Radio, AlertTriangle, ShieldCheck, ShieldAlert, MapPin, Sliders, FileCode, CheckCircle, Database, Globe, CloudRain, Waves, Anchor, Megaphone, VolumeX, Volume2, Locate, X, BellOff, Bell, Compass, Sun, Clock, ExternalLink, Flame, Cpu, CloudSun, Wind, Leaf, BookOpen, RefreshCw, Send } from 'lucide-react';
@@ -3339,7 +3340,7 @@ export default function App() {
         
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-          S.A.T.-APRS Dashboard • v2.4.0 (Centralizado)
+          S.A.T.-APRS • v{pkg.version}
         </span>
       </footer>
         </>

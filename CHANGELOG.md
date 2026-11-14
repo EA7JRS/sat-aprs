@@ -9,6 +9,7 @@ Este archivo registra el historial de versiones progresivas y cambios realizados
 - **Tocar la frecuencia de un spot** del cluster sintoniza el equipo y gira el rotor a su rumbo (cada cosa se puede desmarcar).
 - Sin enlace con el equipo o el rotor no se muestra ninguna lectura; lo que un equipo no da (por ejemplo el S-meter) se indica como tal.
 - Las órdenes al equipo y al rotor son solo para el administrador.
+- El **S-meter** usa la misma escala de color que el rotor, el Display y la app Android: colores IARU, 9 tramos S y 6 sobre S9, los apagados al 15 %.
 
 ---
 

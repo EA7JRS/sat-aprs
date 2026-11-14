@@ -50,6 +50,36 @@ const BANDAS: Array<[string, number, number, number]> = [
   ['10 m', 28000, 29700, 28400], ['6 m', 50000, 52000, 50150], ['2 m', 144000, 146000, 144300], ['70 cm', 430000, 440000, 432200],
 ];
 
+// S-meter como el del rotor, el Display y la app Android (SMeterBar): colores
+// IARU, 9 tramos S y 6 sobre S9 algo más altos, los apagados al 15 %.
+const COLORES_S = ['#4FC3E0', '#52D4C0', '#5BDFA0', '#72E688', '#96EA74', '#D4E650', '#F2DE3E', '#FFCF33', '#FF9A2E', '#FF5A3C', '#FF4636', '#FF3A33', '#FF3030', '#FF2A2A', '#FF2424'];
+
+/** `tramos`: 0-15 (S0..S9 = 0..9, S9+10..+60 = 10..15); -1 = el equipo no da señal. */
+export function SMeter({ tramos }: { tramos: number }) {
+  const encendidos = tramos < 0 ? 0 : Math.min(15, tramos);
+  const lectura = tramos < 0 ? 'S—' : tramos <= 9 ? `S${tramos}` : `S9+${(encendidos - 9) * 10}`;
+  const tramo = (i: number, alto: string) => <i key={i} className={`flex-1 rounded-sm ${alto}`} style={{ background: COLORES_S[i], opacity: i < encendidos ? 1 : 0.15 }} />;
+  return (
+    <div className="flex-1 basis-56 min-w-0 flex items-center gap-3" id="equipo-smeter-caja">
+      <div className="flex-1 min-w-0">
+        <div role="img" aria-label={tramos < 0 ? 'Sin lectura de señal' : `Señal ${lectura}`} className="flex items-end">
+          <div className="flex items-end gap-[2px]" style={{ flex: 9 }}>{Array.from({ length: 9 }, (_, i) => tramo(i, 'h-[10px]'))}</div>
+          <span className="w-[2px] h-4 mx-[3px] rounded-[1px] bg-slate-100 opacity-80" />
+          <div className="flex items-end gap-[2px]" style={{ flex: 6 }}>{Array.from({ length: 6 }, (_, i) => tramo(i + 9, 'h-[13px]'))}</div>
+        </div>
+        <div className="flex text-[11px] leading-tight text-slate-400 pt-px">
+          <div className="flex" style={{ flex: 9 }}>
+            <span style={{ flex: 2 }}>1</span><span style={{ flex: 2 }}>3</span><span style={{ flex: 2 }}>5</span><span style={{ flex: 2 }}>7</span><span style={{ flex: 1, color: '#FF9A2E' }}>9</span>
+          </div>
+          <div className="w-2" />
+          <div className="flex text-right" style={{ flex: 6 }}><span className="flex-1">+20</span><span className="flex-1">+40</span><span className="flex-1">+60</span></div>
+        </div>
+      </div>
+      <span className="font-mono text-lg whitespace-nowrap" id="equipo-smeter" style={{ color: encendidos ? COLORES_S[encendidos - 1] : '#6F8293' }} title={tramos < 0 ? 'El equipo no da el S-meter por CAT' : undefined}>{lectura}</span>
+    </div>
+  );
+}
+
 export function PanelEquipo({ datos, admin, config, onGuardar, onCambio }: { datos: DatosEquipo | null; admin: boolean; config: TelemetryConfig; onGuardar: Guardar; onCambio: () => void }) {
   const e = datos?.equipo;
   const [ajustes, setAjustes] = useState(false);
@@ -111,15 +141,7 @@ export function PanelEquipo({ datos, admin, config, onGuardar, onCambio }: { dat
                 {e.frecuenciaHz === null ? '—' : frecuenciaLegible(e.frecuenciaHz)}<span className="text-lg text-slate-400"> Hz</span>
               </div>
             </div>
-            <div className="flex-1 basis-56 min-w-0">
-              <div className="flex justify-between text-xs text-slate-400"><span>S-meter</span><span className="font-mono text-sm text-slate-100" id="equipo-smeter">{s ? s.texto : 'el equipo no lo da'}</span></div>
-              <div role="img" aria-label={s ? `Señal ${s.texto}` : 'Sin lectura de señal'} className="flex gap-[3px] mt-1">
-                {Array.from({ length: 15 }, (_, i) => (
-                  <span key={i} className={`flex-1 h-3.5 rounded-sm ${i < tramos ? (i < 9 ? 'bg-emerald-400' : 'bg-red-400') : 'bg-slate-800'}`} />
-                ))}
-              </div>
-              <div className="flex justify-between font-mono text-[11px] text-slate-400 mt-0.5"><span>1</span><span>3</span><span>5</span><span>7</span><span>9</span><span>+20</span><span>+40</span><span>+60</span></div>
-            </div>
+            <SMeter tramos={s ? tramos : -1} />
           </div>
 
           {admin && (

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShieldAlert, 

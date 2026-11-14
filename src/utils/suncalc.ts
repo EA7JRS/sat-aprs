@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 /**
  * Solar Utility calculations for Civil Protection Radio Console
  * Calculates sunrise ("orto") and sunset ("ocaso") using Almanac Equations (NOAA algorithm).

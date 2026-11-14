@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Radio, Terminal, Volume2, Activity, Play, Settings, RefreshCw, 

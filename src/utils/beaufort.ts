@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 /**
  * Beaufort Scale Wind Force and Color Mappings
  * Standardized Beaufort Scale for meteorological visualization.

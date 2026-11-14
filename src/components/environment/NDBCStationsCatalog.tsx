@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Radio, Anchor, MapPin, Waves, Plus, 

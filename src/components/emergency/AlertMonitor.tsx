@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState, useEffect, useMemo } from 'react';
 import { AlertOctagon, Activity, Radio, AlertTriangle, Waves, Clock, ShieldCheck, EyeOff, MapPin, Plus, Trash2, Compass, Map, Sliders, Database, Cloud, Volume2, Eye, RefreshCw, FileText, Power } from 'lucide-react';
 import { EarthquakeEvent, NoaaSpaceAlert, TsunamiAlert } from '../../types';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 /**
  * TYPES FOR APRS S.A.T. NUC EMER CONSOLE
  * Civil Protection Emergency & Radiocommunication Console

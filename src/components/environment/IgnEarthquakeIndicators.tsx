@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { customFetch } from '../../utils/customFetch';
 import { 

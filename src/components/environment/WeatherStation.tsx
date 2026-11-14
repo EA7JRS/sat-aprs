@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import { useState } from 'react';
 import { CloudSun, Wind, Thermometer, Droplets, Gauge, Compass } from 'lucide-react';
 import { WeatherTelemetry, IQAirStatus } from '../../types';

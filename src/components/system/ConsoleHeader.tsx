@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState } from 'react';
 import AdminAccess from './AdminAccess';
 import { Radio, RefreshCw, Cpu, Disc, Server, Flame, Activity, Moon, Sun, Clock, Power } from 'lucide-react';

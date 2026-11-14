@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState } from 'react';
 import { ShieldAlert, Radio, Megaphone, Save, Check, AlertCircle, Sparkles, Cloud } from 'lucide-react';
 import { TelemetryConfig } from '../../types';

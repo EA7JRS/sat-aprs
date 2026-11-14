@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import { useState, useEffect, FormEvent } from 'react';
 import { 
   Database, Search, Filter, Compass, Download, RefreshCw, 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Bell, BellOff, ShieldAlert, Sliders, Play, 

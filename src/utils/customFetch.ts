@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 /** Clave de localStorage con el token local de administrador (SAT_ADMIN_TOKEN). */
 export const ADMIN_TOKEN_STORAGE_KEY = 'sat_admin_token';
 

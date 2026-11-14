@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Manuel - EA7JRS
 import React, { useState } from 'react';
 import { Clock, RefreshCw, AlertTriangle, CloudRain, Shield, Activity, HelpCircle, Check, Info } from 'lucide-react';
 import { TelemetryConfig } from '../../types';

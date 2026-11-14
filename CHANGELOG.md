@@ -2,6 +2,14 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.26.0] - 2026-11-14
+### Conectividad: salida NMEA 2000 (SocketCAN)
+- **El NUC como nodo NMEA 2000** (`server/conectividad/nmea2000.ts`, `nmea2000Servicio.ts`): por **SocketCAN** (adaptador CAN, 250 kbit/s) reclama una dirección ISO (PGN 60928 / petición 59904, con defensa y negociación) y pone en el bus los datos propios de la estación para un plotter. Requiere `can-utils` (`cansend` / `candump`); sin dependencias nativas de Node.
+- **PGN emitidos**: posición y COG/SOG del **GPS (gpsd)** (129025 / 129026) y la hora (126992); **meteorología** de la estación o de Internet — viento (130306), presión (130314) y temperatura de rango ampliado (130316); **navegación** si hay objetivo o ruta (129283 cross-track, 129284 datos de navegación, fast packet); y los **avisos de emergencia** como **mensaje de seguridad AIS** (129802), en el mismo punto donde se despachan por APRS. Formatos contrastados con las definiciones de canboat y con el plotter APRS LoRa+.
+- **Lo recibido por RF (AIS, ADS-B, APRS) no se retransmite**: sigue siendo solo para el mapa.
+- **Consola**: nueva pantalla **Conectividad** en la sección Sistema (enciende el bus, interfaz, dirección, qué grupos emitir, MMSI para el 129802 y estado del bus); API `/api/nmea2000`.
+- Pruebas: `tests/nmea2000.test.ts` (9 casos). Sin probar con un bus NMEA 2000 real.
+
 ## [v1.25.0] - 2026-11-14
 ### Satélites: descarga de TLE, pasos y seguimiento
 - **Descarga de elementos orbitales (TLE)** (`server/radio/satelites.ts`): el mismo archivo `sats_all.txt` que usan el tracker y la app APRS LoRa+ (rama `satdata` de APRS-LoRa-Plus; TLE de CelesTrak y transmisores de SatNOGS DB, CC BY-SA 4.0). Se relee cada 12 horas y a petición («Actualizar TLE»); la pantalla dice cuántos satélites hay y la antigüedad de los TLE, y avisa si pasan de una semana.

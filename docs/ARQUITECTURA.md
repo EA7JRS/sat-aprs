@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · v1.33.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.34.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -137,6 +137,6 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Configuración de Direwolf/aprx desde la consola | Hecho: generador de `direwolf.conf` (sin `CBEACON`, con `LOGDIR`) y editor de archivos `.conf` |
 | Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |
 | Salida NMEA 2000 (`server/conectividad/`) | Hecho; PGN contrastados con CANboat en la CI; sin probar con un bus real |
-| Pantallas con partes de demostración | Rehechas en la v1.33.0: Tramas APRS (`server/radio/tramas.ts`), WeeWX (`server/estacion/weewx.ts`), enlaces de Sistema → Equipo (`/api/enlaces`). Fuera el A-GPS simulado. Pendiente: Coordinación |
+| Pantallas con partes de demostración | Rehechas en la v1.33.0: Tramas APRS (`server/radio/tramas.ts`), WeeWX (`server/estacion/weewx.ts`), enlaces de Sistema → Equipo (`/api/enlaces`). Fuera el A-GPS simulado. En la v1.34.0 se retiran Coordinación y los paneles de demostración de Pruebas |
 | Persistencia en SQLite | Pendiente (hoy, archivos JSON) |
 | `server.ts` | Aún contiene el resto de la lógica; se irá vaciando bloque a bloque |

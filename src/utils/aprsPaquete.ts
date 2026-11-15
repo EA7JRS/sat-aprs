@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 //
 // Paquete APRS que guarda la consola en el navegador: mensajes y boletines
-// recibidos para esta estación (aviso emergente) y los de Coordinación.
+// recibidos para esta estación (aviso emergente).
 
 export interface AprsPacket {
   id: string;

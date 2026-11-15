@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.33.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.34.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -107,10 +107,6 @@ Los sismos tienen además su tabla con fecha, magnitud, profundidad, lugar y dis
 ### Salud
 
 El **Plan Meteosalud** del Ministerio de Sanidad: temperaturas máximas previstas por provincia, los avisos de AEMET en vigor y el portal oficial. Es informativo; no emite nada.
-
-### Coordinación
-
-Herramientas para coordinar incidentes: perfiles de alerta, plan de frecuencias, destinatarios, unidades y matriz de riesgo. Es un cuaderno de trabajo que se guarda **en este navegador**, no en la estación. Ya no tiene datos aleatorios, pero **está pendiente de rehacer** como el resto de pantallas: úsela como apoyo, no como fuente.
 
 ---
 
@@ -358,7 +354,7 @@ sudo ip link set can0 up type can bitrate 250000
 
 ### Pruebas y simulación
 
-Para ensayar sin emitir: inyectar un sismo o un aviso de prueba, una trama APRS de prueba, y ver el terminal de registros. Todo lo que entra por aquí se ve en pantalla pero **nunca se transmite**; en el registro aparece como `[NO EMITIDO: datos simulados o de prueba]`.
+Para ensayar sin emitir: el terminal de tramas, con su inyector de un sismo, una alerta de clima espacial o una trama APRS de prueba. Todo lo que entra por aquí se ve en pantalla pero **nunca se transmite**; en el registro aparece como `[NO EMITIDO: datos simulados o de prueba]`.
 
 ---
 

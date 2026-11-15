@@ -26,7 +26,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 
 ---
 
-## 📌 Qué hace hoy (v1.33.0)
+## 📌 Qué hace hoy (v1.34.0)
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
@@ -58,7 +58,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Radio · Tramas APRS: todo lo que entra (radio y APRS-IS) y sale, explicado, y analizador de tramas | Operativo desde la v1.33.0 |
 | Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real |
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
-| Avisos · Coordinación | Cuaderno de trabajo en el navegador, ya sin datos aleatorios; **pendiente de rehacer** |
+| Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 
@@ -71,7 +71,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 | Sección | Pantallas | Para qué |
 | :--- | :--- | :--- |
 | **Inicio** | Inicio | Avisos activos en tu zona, estado de la estación (posición, hora, baliza, meteo), últimas emisiones y si las fuentes responden. |
-| **Avisos** | En vigor · Salud · Coordinación | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; Plan Meteosalud del Ministerio de Sanidad; coordinación de incidentes. |
+| **Avisos** | En vigor · Salud | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; Plan Meteosalud del Ministerio de Sanidad. |
 | **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza); WeeWX con sus últimas 24 h. |
 | **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
 | **Radio** | Principal · Direwolf · HF y propagación · aprx · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |

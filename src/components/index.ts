@@ -3,9 +3,6 @@
 // Unified public exports for S.A.T. APRS Dashboard components
 
 // Emergency & Response System Components
-export { default as CecopDashboard } from './emergency/CecopDashboard';
-export { default as AlertMonitor } from './emergency/AlertMonitor';
-export { default as ThreatPollingEngine } from './emergency/ThreatPollingEngine';
 
 // Amateur Radio & Digital TNC Components
 export type { AprsPacket } from '../utils/aprsPaquete';

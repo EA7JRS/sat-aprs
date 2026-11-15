@@ -32,7 +32,6 @@ import {
   ConsoleHeader,
   TelemetryStatus,
   WeatherStation,
-  AlertMonitor,
   TerminalLogs,
   Configurator,
   AlarmThresholds,
@@ -41,8 +40,6 @@ import {
   NotificationPanel,
   SyncScheduler,
   MeteosaludPortal,
-  ThreatPollingEngine,
-  CecopDashboard,
   NtpSyncStatus,
   HelpOverlay,
   PropagacionMonitor,
@@ -110,7 +107,6 @@ function getBandStatusText(band: string, sfi: number, kp: number) {
 
 export default function App() {
   const [data, setData] = useState<ServerTelemetryData | null>(null);
-  const [cecopSituacion, setCecopSituacion] = useState<0 | 1 | 2 | 3>(0);
   const [activeTab, setActiveTab] = useState<Pantalla>('inicio');
   const avisosCadena = useAvisos(30000);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -119,15 +115,6 @@ export default function App() {
   const [navareas, setNavareas] = useState<NavareaWarning[]>([]);
   const [rtt, setRtt] = useState<number | null>(null);
 
-  // APRS dynamic packet state
-  const [aprsPackets, setAprsPackets] = useState<AprsPacket[]>(() => {
-    try {
-      const stored = localStorage.getItem('sat_aprs_packets');
-      return stored ? JSON.parse(stored) : [];
-    } catch (e) {
-      return [];
-    }
-  });
 
   // Eco Mode state
   const [isEcoMode, setIsEcoMode] = useState<boolean>(() => {
@@ -185,9 +172,8 @@ export default function App() {
     return (localStorage.getItem('aprs_popup_filter') as any) || 'ALL';
   });
 
-  // Hazard tracking for AlertMonitor slide-in animation
+  // Aviso en pantalla cuando aparece una amenaza crítica nueva
   const [knownHazardIds, setKnownHazardIds] = useState<Set<string> | null>(null);
-  const [alertAnimKey, setAlertAnimKey] = useState<number>(0);
   const [lastSeenLogId, setLastSeenLogId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -210,8 +196,7 @@ export default function App() {
     } else {
       const hasNewEvent = currentIds.some(id => !knownHazardIds.has(id));
       if (hasNewEvent) {
-        setAlertAnimKey(prev => prev + 1);
-        showToast("⚠️ NUEVA AMENAZA CRÍTICA DETECTADA: Sincronizando consola de alertas");
+        showToast("Nueva amenaza crítica: mírala en Avisos.");
         playBuzzerSound(1100, 0.3, 'sawtooth');
       }
       setKnownHazardIds(new Set(currentIds));
@@ -460,15 +445,6 @@ export default function App() {
           if (shouldShowPopup) {
             setIncomingAprsModal(newPacket);
           }
-
-          // Append to local state list so it appears in the logs and gonio map
-          setAprsPackets(prev => {
-            const exists = prev.some(p => p.id === newPacket.id);
-            if (exists) return prev;
-            const updated = [newPacket, ...prev];
-            localStorage.setItem('sat_aprs_packets', JSON.stringify(updated));
-            return updated;
-          });
 
           // Play notification feedback
           playBuzzerSound(isEmergency ? 1100 : 880, 0.25, isEmergency ? 'sawtooth' : 'sine');
@@ -769,21 +745,9 @@ export default function App() {
   };
 
   // Handler: Acknowledge and Mark APRS Message as Read
-  const handleAcknowledgeAprs = (packetId: string) => {
-    setAprsPackets(prev => {
-      const updated = prev.map(pkt => {
-        if (pkt.id === packetId) {
-          return { 
-            ...pkt, 
-            status: 'TRANSMITIDO' as const, 
-            auditNotes: 'Leído y Reconocido por el Operador de Consola' 
-          };
-        }
-        return pkt;
-      });
-      localStorage.setItem('sat_aprs_packets', JSON.stringify(updated));
-      return updated;
-    });
+  const handleAcknowledgeAprs = (_packetId: string) => {
+    // Marca como leídos los mensajes de la mensajería de la estación
+    customFetch('/api/radio/mensajes/leidos', { method: 'POST' }).catch(() => {});
     
     showToast(`📬 Mensaje de ${incomingAprsModal?.callsign || 'Estación'} reconocido.`);
     setIncomingAprsModal(null);
@@ -1073,55 +1037,6 @@ export default function App() {
               onClearLogs={handleClearLogs}
               retentionLimit={data.config?.terminalLogsRetention || 150}
             />
-            <ThreatPollingEngine 
-              gpsd={data.gpsd}
-              earthquakes={data.earthquakes} 
-              noaaAlerts={data.noaaAlerts} 
-              tsunamiAlerts={data.tsunamiAlerts || []} 
-              csnStations={data.csnStations || []} 
-              dgtIncidents={data.dgtIncidents || []} 
-              erddapBuoys={data.erddapBuoys || []} 
-              navareas={navareas} 
-              weather={data.weather} 
-              aemetAlerts={data.aemetAlerts || []}
-              config={data.config}
-              onInjectRaw={handleInjectRaw} 
-              isEcoMode={isEcoMode}
-            />
-            <AlertMonitor 
-              earthquakes={data.earthquakes} 
-              noaaAlerts={data.noaaAlerts} 
-              tsunamiAlerts={data.tsunamiAlerts || []} 
-              minMagnitudeVisualAlert={data.config.minMagnitudAlertaVisual ?? 3.0}
-              aprsPackets={aprsPackets}
-              setAprsPackets={setAprsPackets}
-              config={data.config}
-            />
-          </motion.div>
-        ) : activeTab === 'cecop-dashboard' ? (
-          /* PILAR II: COORDINACIÓN Y VERIFICACIÓN CECOP (PEM) */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AvisoDemostracion>Herramienta de coordinación y simulacros. Los focos de calor que registra son los reales de NASA FIRMS; los sucesos que se añadan a mano para un simulacro no se emiten. Los avisos que difunde la estación están en «En vigor».</AvisoDemostracion>
-            <CecopDashboard 
-              earthquakes={data.earthquakes || []} 
-              tsunamiAlerts={data.tsunamiAlerts || []} 
-              csnStations={data.csnStations || []} 
-              dgtIncidents={data.dgtIncidents || []} 
-              erddapBuoys={data.erddapBuoys || []} 
-              navareas={navareas} 
-              weather={data.weather} 
-              iqair={data.iqair}
-              playBuzzerSound={playBuzzerSound}
-              showToast={showToast}
-              aprsPackets={aprsPackets}
-              setAprsPackets={setAprsPackets}
-              cecopSituacion={cecopSituacion}
-              setCecopSituacion={setCecopSituacion}
-            />
           </motion.div>
         ) : activeTab === 'aprs-adaptor' ? (
           <TramasAprs />
@@ -1248,7 +1163,6 @@ export default function App() {
               minMagnitudVisualThreshold={data.config.minMagnitudAlertaVisual ?? 3.0}
               weather={data.weather}
               tsunamiAlerts={data.tsunamiAlerts || []}
-              cecopSituacion={cecopSituacion}
               aemetAlerts={data.aemetAlerts || []}
               aemetAlertsSubscriptionEnabled={data.config.aemetAlertsSubscriptionEnabled ?? true}
               gpsd={data.gpsd}

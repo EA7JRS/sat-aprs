@@ -2,6 +2,21 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.34.0] - 2026-11-15
+### Fuera lo innecesario
+- **Fuera la pantalla Avisos · Coordinación** (`CecopDashboard`, unas 3800 líneas). Era un cuaderno que se guardaba solo en el navegador, con matriz de riesgo, cola de firma, unidades y actividad de canal sin fuente detrás. Lo útil ya está en su sitio: los avisos en «En vigor», el grupo ARTS, la mensajería y el equipo en Radio · Principal.
+- Fuera también lo que solo la alimentaba:
+  - el «nivel CECOP» y sus notificaciones;
+  - la lista local de paquetes APRS del navegador (`sat_aprs_packets`).
+- **Aviso de mensaje recibido**: «Reconocer» marca como leídos los mensajes en la mensajería de la estación.
+- **Sistema · Pruebas y simulación**: queda solo el terminal de tramas con su inyector (sismo, clima espacial o trama de prueba, que nunca se emiten). Se retiran dos paneles de demostración:
+  - `ThreatPollingEngine`, con caudales de ríos que variaban al azar;
+  - `AlertMonitor`, con centros de coordinación escritos a mano.
+- **Ayuda de la consola rehecha**: las seis secciones con lo que hay en cada una, un botón para ir a cada pantalla y el enlace al manual. Sustituye a la antigua guía de «diez pilares», que tenía un simulador AX.25 con bytes inventados.
+- Notificaciones: sin fuente de radiación conectada, la radiación ya no toma un valor supuesto (0,12 µSv/h).
+
+---
+
 ## [v1.33.0] - 2026-11-15
 ### Fuera lo simulado que quedaba en pantallas
 - **Radio · Tramas APRS, nueva** (`src/pages/TramasAprs.tsx`, `server/radio/tramas.ts`, `GET /api/radio/tramas`, `POST /api/radio/tramas/analizar`):

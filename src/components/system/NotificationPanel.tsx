@@ -14,7 +14,7 @@ export interface ThreatRule {
   id: string;
   name: string;
   threatType: 'sísmica' | 'meteorológica' | 'radiológica' | 'marítima' | 'otros';
-  variable: 'earthquake_magnitude' | 'tempC' | 'windSpeedKts' | 'rainMm' | 'humidityPct' | 'pressureHpa' | 'radiationUsVh' | 'navarea_count' | 'cecop_situacion';
+  variable: 'earthquake_magnitude' | 'tempC' | 'windSpeedKts' | 'rainMm' | 'humidityPct' | 'pressureHpa' | 'radiationUsVh' | 'navarea_count';
   operator: 'greater_than' | 'less_than';
   threshold: number;
   enabled: boolean;
@@ -38,7 +38,6 @@ interface NotificationPanelProps {
   onAddSimulatedNavarea?: () => void;
   weather?: WeatherTelemetry;
   tsunamiAlerts?: TsunamiAlert[];
-  cecopSituacion?: 0 | 1 | 2 | 3;
   aemetAlerts?: AemetWeatherAlert[];
   aemetAlertsSubscriptionEnabled?: boolean;
   gpsd?: GPSDStatus;
@@ -52,7 +51,6 @@ export default function NotificationPanel({
   onAddSimulatedNavarea,
   weather,
   tsunamiAlerts = [],
-  cecopSituacion = 0,
   aemetAlerts = [],
   aemetAlertsSubscriptionEnabled = true,
   gpsd
@@ -96,10 +94,6 @@ export default function NotificationPanel({
     return saved !== null ? saved === 'true' : true;
   });
 
-  const [enabledCecop, setEnabledCecop] = useState(() => {
-    const saved = localStorage.getItem('notif_cecop');
-    return saved !== null ? saved === 'true' : true;
-  });
 
   const [enabledAemet, setEnabledAemet] = useState(() => {
     const saved = localStorage.getItem('notif_aemet');
@@ -325,9 +319,9 @@ export default function NotificationPanel({
 
   // Derive active threat/telemetry values
   const activeMagnitude = isSimActive ? simMagnitude : (earthquakes.length > 0 ? Math.max(...earthquakes.map(eq => eq.magnitud)) : 0);
-  const activeRadiation = isSimActive ? simRadiation : 0.12;
+  // Sin fuente de radiación conectada: sin dato (0), nunca un valor supuesto
+  const activeRadiation = isSimActive ? simRadiation : 0;
   const activeNavarea = isSimActive ? simNavarea : navareas.length;
-  const activeCecop = cecopSituacion;
 
   // Evaluate which rules are currently triggered
   const evaluatedRulesStatus = useMemo(() => {
@@ -358,9 +352,6 @@ export default function NotificationPanel({
         case 'navarea_count':
           currentValue = activeNavarea;
           break;
-        case 'cecop_situacion':
-          currentValue = activeCecop;
-          break;
         default:
           currentValue = 0;
       }
@@ -377,7 +368,7 @@ export default function NotificationPanel({
         isTriggered
       };
     });
-  }, [weatherRules, activeTemp, activeWind, activeRain, activeHum, activePress, activeMagnitude, activeRadiation, activeNavarea, activeCecop]);
+  }, [weatherRules, activeTemp, activeWind, activeRain, activeHum, activePress, activeMagnitude, activeRadiation, activeNavarea]);
 
   // Filter triggered rules
   const triggeredRules = useMemo(() => {
@@ -428,7 +419,7 @@ export default function NotificationPanel({
               playEmergencyAlertSound('seismic');
             } else if (rule.threatType === 'meteorológica') {
               playEmergencyAlertSound('weather');
-            } else if (rule.variable === 'cecop_situacion' || rule.variable === 'navarea_count') {
+            } else if (rule.variable === 'navarea_count') {
               playEmergencyAlertSound('civil');
             } else {
               playAlertSound();
@@ -448,7 +439,6 @@ export default function NotificationPanel({
             case 'earthquake_magnitude': variableLabel = 'Magnitud de Sismo'; unit = ' Mw'; break;
             case 'radiationUsVh': variableLabel = 'Radiación Ambiental'; unit = ' µSv/h'; break;
             case 'navarea_count': variableLabel = 'Cantidad Avisos NAVAREA'; unit = ' avisos'; break;
-            case 'cecop_situacion': variableLabel = 'Nivel CECOP'; unit = ''; break;
           }
 
           const comparisonStr = rule.operator === 'greater_than' ? 'superior a' : 'inferior a';
@@ -479,7 +469,6 @@ export default function NotificationPanel({
   const seenNoaaIds = useRef<Set<string>>(new Set());
   const seenTsunamiIds = useRef<Set<string>>(new Set());
   const seenAemetAlertIds = useRef<Set<string>>(new Set());
-  const prevCecopSituacion = useRef<number>(cecopSituacion);
   const isFirstRender = useRef(true);
 
   // Sync state to local storage
@@ -503,9 +492,6 @@ export default function NotificationPanel({
     localStorage.setItem('notif_tsunamis', String(enabledTsunamis));
   }, [enabledTsunamis]);
 
-  useEffect(() => {
-    localStorage.setItem('notif_cecop', String(enabledCecop));
-  }, [enabledCecop]);
 
   useEffect(() => {
     localStorage.setItem('notif_aemet', String(enabledAemet));
@@ -539,7 +525,6 @@ export default function NotificationPanel({
     if (aemetAlerts.length > 0) {
       aemetAlerts.forEach(ale => seenAemetAlertIds.current.add(ale.id));
     }
-    prevCecopSituacion.current = cecopSituacion;
     isFirstRender.current = false;
   }, []);
 
@@ -725,34 +710,6 @@ export default function NotificationPanel({
       setHasNewCritical(true);
     }
   }, [aemetAlerts, enabledAemet, permission, soundEnabled]);
-
-  // Watch for CECOP Situation Level changes
-  useEffect(() => {
-    const prev = prevCecopSituacion.current;
-    prevCecopSituacion.current = cecopSituacion;
-
-    if (isFirstRender.current) return;
-
-    if (cecopSituacion >= 2 && cecopSituacion > prev) {
-      setHasNewCritical(true);
-
-      if (enabledCecop && permission === 'granted') {
-        const title = `🚨 Emergencia Civil Activada - SITUACIÓN ${cecopSituacion}`;
-        const description = cecopSituacion === 3
-          ? 'Caso de emergencia catastrófica nacional. Activación de UME y apoyo estatal.'
-          : 'Alerta generalizada con intervención supramunicipal. CECOP activado al 100%.';
-
-        triggerSystemNotification(
-          title,
-          {
-            body: description,
-            tag: `cecop-sit-${cecopSituacion}-${Date.now()}`,
-            requireInteraction: true
-          }
-        );
-      }
-    }
-  }, [cecopSituacion, enabledCecop, permission]);
 
   // Helper function to play sound or activate native HTML5 notification
   const triggerSystemNotification = (title: string, options: NotificationOptions) => {
@@ -1110,29 +1067,6 @@ export default function NotificationPanel({
                   </p>
                 </div>
 
-                {/* CIVIL EMERGENCIES AND CECOP SITUATIONS CHANNEL SETTINGS */}
-                <div className="p-3 bg-slate-950/70 border border-slate-900 rounded-lg flex flex-col gap-3 justify-between font-sans">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="notif-cecop-cb"
-                        checked={enabledCecop}
-                        onChange={(e) => setEnabledCecop(e.target.checked)}
-                        className="accent-emerald-400 w-4 h-4 rounded cursor-pointer"
-                      />
-                      <label htmlFor="notif-cecop-cb" className="font-bold text-slate-200 text-xs cursor-pointer">
-                        Emergencias de Protección Civil (CECOP)
-                      </label>
-                    </div>
-                    <span className="text-[8.5px] font-mono text-slate-500 uppercase">SIT-2 / SIT-3</span>
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 pl-6 leading-relaxed">
-                    Recibe notificaciones inmediatas al activarse la Situación 2 (Alerta General) o Situación 3 (Emergencia Nacional) del plan territorial.
-                  </p>
-                </div>
-
                 {/* AEMET GEOLOCATIONAL SUBSCRIPTION CARD */}
                 <div className="p-3 bg-slate-950/70 border border-slate-900 rounded-lg flex flex-col gap-3 font-sans md:col-span-2">
                   <div className="flex items-center justify-between border-b border-slate-900 pb-2">
@@ -1350,7 +1284,7 @@ export default function NotificationPanel({
               </div>
 
               <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                Define criterios de alerta personalizados para múltiples amenazas (sísmica, meteorológica, radiológica, marítima y CECOP) según tus necesidades operativas. El S.A.T. evaluará las condiciones actuales frente a estos umbrales y disparará alertas visuales y del sistema operativo al instante.
+                Define criterios de alerta personalizados para múltiples amenazas (sísmica, meteorológica, radiológica y marítima) según tus necesidades operativas. El S.A.T. evaluará las condiciones actuales frente a estos umbrales y disparará alertas visuales y del sistema operativo al instante.
               </p>
 
               {/* ACTIVE ALERT OVERVIEW BAR */}
@@ -1375,7 +1309,6 @@ export default function NotificationPanel({
                         case 'earthquake_magnitude': unit = ' Mw'; valLabel = 'Sismo Mag'; break;
                         case 'radiationUsVh': unit = ' µSv/h'; valLabel = 'Radiación'; break;
                         case 'navarea_count': unit = ' avisos'; valLabel = 'Avisos Marítimos'; break;
-                        case 'cecop_situacion': unit = ''; valLabel = 'Nivel CECOP'; break;
                       }
                       const opChar = rule.operator === 'greater_than' ? '>' : '<';
                       return (
@@ -1449,11 +1382,6 @@ export default function NotificationPanel({
                             varName = 'Cant. NAVAREAs';
                             varIcon = <AlertTriangle size={13} className="text-amber-400" />;
                             unit = ' avisos';
-                            break;
-                          case 'cecop_situacion':
-                            varName = 'CECOP Situación';
-                            varIcon = <ShieldAlert size={13} className="text-red-500" />;
-                            unit = '';
                             break;
                         }
 
@@ -1577,9 +1505,6 @@ export default function NotificationPanel({
                         } else if (type === 'marítima') {
                           setNewRuleVar('navarea_count');
                           setNewRuleThreshold(5);
-                        } else if (type === 'otros') {
-                          setNewRuleVar('cecop_situacion');
-                          setNewRuleThreshold(2);
                         }
                       }}
                       className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-slate-100 focus:outline-none focus:border-sky-500 cursor-pointer font-mono"
@@ -1588,7 +1513,6 @@ export default function NotificationPanel({
                       <option value="meteorológica">🌦️ Meteorológica (Clima)</option>
                       <option value="radiológica">☢️ Radiológica (Radiación)</option>
                       <option value="marítima">⚓ Marítima (NAVAREA)</option>
-                      <option value="otros">🚨 Otros (CECOP Situación)</option>
                     </select>
                   </div>
 
@@ -1612,7 +1536,6 @@ export default function NotificationPanel({
                           else if (val === 'earthquake_magnitude') setNewRuleThreshold(4.0);
                           else if (val === 'radiationUsVh') setNewRuleThreshold(0.35);
                           else if (val === 'navarea_count') setNewRuleThreshold(5);
-                          else if (val === 'cecop_situacion') setNewRuleThreshold(2);
                         }}
                         className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-slate-100 focus:outline-none focus:border-sky-500 cursor-pointer font-mono"
                       >
@@ -1633,9 +1556,6 @@ export default function NotificationPanel({
                         )}
                         {newRuleType === 'marítima' && (
                           <option value="navarea_count">Cantidad NAVAREAs</option>
-                        )}
-                        {newRuleType === 'otros' && (
-                          <option value="cecop_situacion">Situación CECOP</option>
                         )}
                       </select>
                     </div>

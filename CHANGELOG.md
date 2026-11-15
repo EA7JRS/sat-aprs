@@ -2,6 +2,22 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.32.0] - 2026-11-15
+### Radio · Winlink: el correo de Pat, de verdad
+- **Pantalla nueva** (`src/pages/Winlink.tsx`, `server/radio/pat.ts`, `GET/POST /api/radio/winlink`): habla con la **API HTTP de Pat** («pat http», de serie en `http://127.0.0.1:8080`). Estado del servicio y de Pat, enlace (llamando, conectado, con quién), y el buzón real: entrada, salida y enviados.
+- **Leer** un mensaje (se marca como leído en Pat), **responder** con cita y **redactar**: el mensaje queda en la bandeja de salida de Pat; no se transmite al pulsar.
+- **Sesión**: con los alias de conexión de Pat o una URL (`ax25:///…`, `varafm:///…`, `telnet`), con confirmación que avisa de que Pat transmitirá por radio. Muestra el resultado (recibidos o fallo) y se puede cortar. Durante la sesión se sigue el enlace cada 3 s.
+- **Pasarelas RMS** por modo y banda, con distancia, rumbo, frecuencia y predicción, de la lista que Pat descarga de winlink.org.
+- El correo solo se enseña al administrador; a los demás, las cuentas. Las contraseñas de las URL de conexión no salen de la consola.
+- Ajustes nuevos `patUrl` y `patServicio` (por ejemplo `pat@usuario`, como lo instala el paquete de Debian); «Ver registro» y «Reiniciar servicio» usan ese servicio. Los correos nuevos de entrada quedan en el registro de la consola.
+- Si Pat no contesta, se dice cómo arrancarlo; no hay buzón de ejemplo.
+- Fuera el buzón simulado del servidor (`patState`, la inyección `TRIGGER_WINLINK_SYNC` y `patStatus` en la telemetría) y la pantalla antigua (`PatAx25Console`).
+
+### Sistema · Configuración: direwolf.conf sin CBEACON
+- El generador de `direwolf.conf` ya no escribe una `CBEACON` (que transmitía por su cuenta, fuera de la política de emisión) y añade `LOGDIR /var/log/direwolf`, como la plantilla del servidor. Fuera los campos de texto e intervalo de esa baliza.
+
+---
+
 ## [v1.31.0] - 2026-11-15
 ### Radio · aprx: solo lo que aprx da de verdad
 - **Pantalla nueva** (`src/pages/Aprx.tsx`, `server/radio/aprx.ts`, `GET/POST /api/radio/aprx`): estado del servicio, de la **pasarela a APRS-IS** (si está pasando tramas o las pierde por falta de conexión), del digipeater y de las interfaces; recibidas, pasadas a APRS-IS, descartadas y repetidas en la última hora; tráfico por minuto; cifras **por interfaz**; registro en directo con el resultado de cada trama (a APRS-IS, sin APRS-IS, rechazada, repetida, baliza, de APRS-IS) y qué es.

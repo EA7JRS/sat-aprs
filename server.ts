@@ -20,6 +20,7 @@ import { EstadoDoppler, decidir as decidirDoppler, modoEquipo } from './server/r
 import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } from './server/radio/consola';
 import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfAprx, MonitorAprx, SeguidorArchivo, leerConfAprx, leerLineaRf } from './server/radio/aprx';
+import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
@@ -73,7 +74,6 @@ import {
   TelemetryConfig, 
   AprsPacketLog,
   AISVessel,
-  PatWinlinkStatus,
   NucDiagnostics,
   TrafficDataPoint,
   IQAirStatus,
@@ -356,6 +356,9 @@ let config: TelemetryConfig = {
   rotorPin: '',
   // true = el rotor va en un vehículo o barco: se descuenta el rumbo de la proa
   rotorMovil: false,
+  // Winlink: API HTTP de Pat («pat http») y nombre de su servicio de systemd (p. ej. pat@manuel)
+  patUrl: 'http://127.0.0.1:8080',
+  patServicio: 'pat',
   // Satélites favoritos (números NORAD, separados por comas); de serie, la ISS
   satFavoritos: '25544',
   // Vigilancia de grupo (estilo ARTS), como en el tracker APRS LoRa+
@@ -1415,21 +1418,6 @@ const CODIGOS_CRITICOS = new Set(["04", "13", "14", "24", "31", "34", "44"]);
 // Mensajes Inmarsat-C recibidos por UDP de un descodificador real (ya no hay mensajes de ejemplo)
 let inmarsatMessages: InmarsatMessage[] = [];
 
-// Simulated Winlink Pat Mailbox + Native AX.25 Link
-let patState: PatWinlinkStatus = {
-  connected: false,
-  lastSync: 'Nunca',
-  outboxCount: 0,
-  inboxCount: 4,
-  ax25Port: 'wl2k',
-  localCallsign: initialSyncedCallsign,
-  targetBbs: 'ED3YNZ-10',
-  activeSessionLog: [
-    'Initializing pat Winlink client...',
-    'AX25 socket bound to Linux kernel ax0 port',
-    'Ready for HF/VHF KISS packet connection over direwolf'
-  ]
-};
 
 // Intel NUC 5i3 CPU Broadwell Core i3-5010U, dual-core - robust server status
 let nucStats: NucDiagnostics = {
@@ -3085,7 +3073,6 @@ app.get('/api/telemetry', async (req, res) => {
     earthquakes,
     noaaAlerts,
     vessels: barcosParaPaneles(),
-    patStatus: patState,
     nucStats,
     logs,
     trafficTrends,
@@ -5269,6 +5256,106 @@ app.post('/api/radio/aprx', async (req, res) => {
   res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
 
+// Winlink (Pat): lo que su API HTTP da de verdad
+const clientePat = new ClientePat(() => String(config.patUrl || 'http://127.0.0.1:8080'));
+let patDesde: number | null = null;
+let patNuevos = new Set<string>();
+function servicioPat() { return /^pat(@[A-Za-z0-9_.-]{1,32})?$/.test(String(config.patServicio)) ? String(config.patServicio) : 'pat'; }
+async function sondearPat() {
+  const antes = new Set(clientePat.estado.buzones.in.map((m) => m.mid));
+  const primera = clientePat.estado.leido === 0;
+  await clientePat.sondear();
+  patDesde = desdeServicio(servicioPat());
+  if (!primera && clientePat.estado.alcanzable) {
+    for (const m of clientePat.estado.buzones.in) {
+      if (!antes.has(m.mid) && !patNuevos.has(m.mid)) {
+        patNuevos.add(m.mid);
+        addLog('RX', m.de || 'WINLINK', 'LOCAL', 'WINLINK', `Correo Winlink de ${m.de}: ${m.asunto}`, true, 'Recibido');
+      }
+    }
+  }
+}
+setImmediate(() => { void sondearPat(); });
+// Cada 15 s; durante una sesión, cada 3 s para seguir el enlace
+setInterval(() => {
+  const viva = (clientePat.sesion && clientePat.sesion.fin === null) || clientePat.estado.conectado || clientePat.estado.marcando;
+  if (viva || Date.now() - clientePat.estado.leido >= 14_500) void sondearPat();
+}, 3000);
+
+/** Las URL de conexión de Pat pueden llevar una contraseña: no sale de la consola. */
+const sinClavePat = (u: string) => u.replace(/(:\/\/[^:/@]*:)[^@]*@/, '$1***@');
+app.get('/api/radio/winlink', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const e = clientePat.estado;
+  // El correo solo se enseña al administrador; al resto, las cuentas
+  const admin = isAuthorizedRequest(req);
+  const b = e.buzones;
+  const estadoServicio = process.platform === 'linux' ? (servicioPat() === 'pat' ? nucStats.services.pat : (patDesde ? 'active' : 'inactive')) : null;
+  res.json({
+    url: String(config.patUrl),
+    servicio: { nombre: servicioPat(), estado: estadoServicio, desde: patDesde },
+    ...e,
+    admin,
+    cuentas: { in: b.in.length, sinLeer: b.in.filter((m) => m.sinLeer).length, out: b.out.length, sent: b.sent.length },
+    buzones: admin ? b : { in: [], out: [], sent: [] },
+    alias: admin ? e.alias.map((a) => ({ ...a, destino: sinClavePat(a.destino) })) : [],
+    sesion: clientePat.sesion ? { ...clientePat.sesion, destino: sinClavePat(clientePat.sesion.destino) } : null,
+    modosRms: MODOS_RMS,
+  });
+});
+
+app.get('/api/radio/winlink/mensaje', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede leer el correo.' });
+  try {
+    const m = await clientePat.mensaje(String(req.query.buzon) as Buzon, String(req.query.mid ?? ''));
+    res.json({ ok: true, mensaje: m });
+  } catch (e: any) { res.status(502).json({ ok: false, error: e?.message ?? String(e) }); }
+});
+
+app.get('/api/radio/winlink/rms', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  try {
+    res.json({ ok: true, rms: await clientePat.rms(String(req.query.modo ?? ''), String(req.query.banda ?? ''), req.query.forzar === '1') });
+  } catch (e: any) { res.status(502).json({ ok: false, error: e?.message ?? String(e) }); }
+});
+
+app.post('/api/radio/winlink', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const b = req.body ?? {};
+  try {
+    switch (b.accion) {
+      case 'enviar':
+        await clientePat.enviar({ para: String(b.para ?? ''), cc: String(b.cc ?? ''), asunto: String(b.asunto ?? ''), cuerpo: String(b.cuerpo ?? ''), soloP2P: b.soloP2P === true });
+        addLog('SYS', clientePat.estado.indicativo || 'WINLINK', String(b.para ?? '').slice(0, 40), 'WINLINK', `Correo a la bandeja de salida: ${String(b.asunto ?? '').slice(0, 60)}`, true, 'En cola');
+        return res.json({ ok: true });
+      case 'conectar': {
+        if (!clientePat.estado.alcanzable) return res.status(409).json({ ok: false, error: clientePat.estado.error || 'Pat no contesta.' });
+        const destino = String(b.destino ?? '').trim();
+        const s = clientePat.conectar(destino, (fin) => addLog('SYS', 'WINLINK', destino, 'WINLINK',
+          fin.error ? `Sesión Winlink con ${destino}: ${fin.error}` : `Sesión Winlink con ${destino} terminada${fin.recibidos !== null ? `: ${fin.recibidos} recibido(s)` : ''}.`, !fin.error, fin.error ? 'Error' : 'Hecho'));
+        addLog('SYS', 'WINLINK', destino, 'WINLINK', `Sesión Winlink abierta con ${destino}`, true, 'Conectando');
+        return res.json({ ok: true, sesion: s });
+      }
+      case 'desconectar':
+        await clientePat.desconectar(b.sucio === true);
+        return res.json({ ok: true });
+      case 'leido':
+        await clientePat.marcarLeido(String(b.buzon) as Buzon, String(b.mid ?? ''));
+        return res.json({ ok: true });
+      case 'reiniciar': {
+        const error = await reiniciarServicio(servicioPat());
+        setTimeout(() => { void sondearPat(); }, 3000);
+        return res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
+      }
+      default:
+        return res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+    }
+  } catch (e: any) {
+    res.status(e?.message?.startsWith('Pat respondió') || /contesta|fetch/i.test(e?.message ?? '') ? 502 : 400).json({ ok: false, error: e?.message ?? String(e) });
+  }
+});
+
 // Equipo de radio (CAT) y rotor
 app.get('/api/radio/equipo', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -5514,7 +5601,6 @@ app.post('/api/config', (req, res) => {
     const updated = req.body as TelemetryConfig;
     if (updated.callsign) {
       config.callsign = updated.callsign.toUpperCase().trim();
-      patState.localCallsign = config.callsign;
     }
     // Un valor enmascarado (********) es el que el servidor entregó a un usuario
     // sin privilegios: se ignora para no sobrescribir la credencial real.
@@ -5647,6 +5733,14 @@ app.post('/api/config', (req, res) => {
     if (updated.grupoSondeoS !== undefined) config.grupoSondeoS = Number(updated.grupoSondeoS);
     if (updated.satFavoritos !== undefined) config.satFavoritos = String(updated.satFavoritos).split(/[^0-9]+/).filter(Boolean).slice(0, 16).join(',');
     if (updated.rotorMovil !== undefined) config.rotorMovil = !!updated.rotorMovil;
+    if (updated.patUrl !== undefined) {
+      const u = String(updated.patUrl).trim().slice(0, 120);
+      if (/^https?:\/\/[A-Za-z0-9.:_\[\]-]+(\/[A-Za-z0-9._~\/-]*)?$/.test(u)) config.patUrl = u;
+    }
+    if (updated.patServicio !== undefined) {
+      const sv = String(updated.patServicio).trim();
+      if (/^pat(@[A-Za-z0-9_.-]{1,32})?$/.test(sv)) config.patServicio = sv;
+    }
     if (updated.rotorPin !== undefined && !isMaskedSecret(updated.rotorPin)) config.rotorPin = String(updated.rotorPin).replace(/[^0-9A-Za-z]/g, '').slice(0, 16);
     if (updated.dapnetUser !== undefined) config.dapnetUser = String(updated.dapnetUser).trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
     if (updated.dapnetPassword !== undefined && !isMaskedSecret(updated.dapnetPassword)) config.dapnetPassword = String(updated.dapnetPassword).slice(0, 100);
@@ -6464,28 +6558,6 @@ app.post('/api/aprs/inject', (req, res) => {
       return res.json({ success: true, noaa: customNoaa });
     }
 
-    if (type === 'TRIGGER_WINLINK_SYNC') {
-      patState.connected = true;
-      nucStats.services.pat = 'active';
-      patState.activeSessionLog.push(`[${new Date().toLocaleTimeString('es-ES')}] Conectando a CMS Winlink remoto via BBS ${patState.targetBbs}...`);
-      patState.activeSessionLog.push(`[${new Date().toLocaleTimeString('es-ES')}] Enlace AX.25 establecido a 144.800 MHz (Frecuencia REMER)`);
-      
-      addLog('WINLINK', config.callsign, patState.targetBbs, 'VHF AX.25 Red Local', 'CONNECT wl2k via ED3YNZ-10', true, 'Iniciada sincronización del correo de emergencia');
-
-      setTimeout(() => {
-        patState.activeSessionLog.push(`[${new Date().toLocaleTimeString('es-ES')}] Handshake Winlink FBB completado con éxito`);
-        if (patState.inboxCount > 0) {
-          patState.activeSessionLog.push(`[${new Date().toLocaleTimeString('es-ES')}] Descargando mensaje ID: WIN_REMER_${Date.now().toString().slice(-4)}`);
-          patState.inboxCount = Math.max(0, patState.inboxCount - 1);
-        }
-        patState.lastSync = new Date().toLocaleTimeString('es-ES');
-        patState.connected = false;
-        patState.activeSessionLog.push(`[${new Date().toLocaleTimeString('es-ES')}] Desconectado. Enlace de radio liberado.`);
-        addLog('WINLINK', patState.targetBbs, config.callsign, 'VHF/HF AX.25 link', 'Descarga de boletín civil Pat Winlink finalizada con éxito.', true, 'Buzón sincronizado');
-      }, 3000);
-
-      return res.json({ success: true, patStatus: patState });
-    }
 
     res.status(400).json({ success: false, error: 'Acción de inyección desconocida' });
   } catch (err: any) {
@@ -6638,7 +6710,8 @@ app.post('/api/aprs/schedules/:id/trigger', (req, res) => {
 app.get('/api/system/journal', (req, res) => {
   // El diario real del sistema solo se muestra a un administrador verificado
   // Solo servicios conocidos de la estación
-  const servicio = ['direwolf', 'aprx', 'weewx', 'gpsd', 'pat'].includes(String(req.query.servicio)) ? String(req.query.servicio) : 'sat-aprs';
+  let servicio = ['direwolf', 'aprx', 'weewx', 'gpsd', 'pat'].includes(String(req.query.servicio)) ? String(req.query.servicio) : 'sat-aprs';
+  if (servicio === 'pat') servicio = servicioPat();
   const journalArgs = ['-u', `${servicio}.service`, '-n', servicio === 'sat-aprs' ? '50' : '80', '--no-pager'];
   execFile(isAuthorizedRequest(req) ? 'journalctl' : 'false', isAuthorizedRequest(req) ? journalArgs : [], { timeout: 5000 }, (error, stdout, stderr) => {
     if (error) {

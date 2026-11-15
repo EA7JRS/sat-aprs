@@ -11,6 +11,7 @@ import Mapa from './pages/Mapa';
 import RadioPrincipal from './pages/RadioPrincipal';
 import Direwolf from './pages/Direwolf';
 import Aprx from './pages/Aprx';
+import Winlink from './pages/Winlink';
 import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
@@ -43,7 +44,6 @@ import {
   AprsAdaptor,
   AprsPacket,
   NtpSyncStatus,
-  PatAx25Console,
   HelpOverlay,
   PropagacionMonitor,
   UserProfileManager
@@ -1248,13 +1248,13 @@ export default function App() {
             />
           </motion.div>
         ) : activeTab === 'pat-pillar' ? (
-          /* PILAR X: PAT WINLINK & AX.25 NATIVO */
+          /* Radio · Winlink (Pat) */
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col gap-4"
           >
-            <PatAx25Console callsign={data.config.callsign} />
+            <Winlink config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
           </motion.div>
         ) : activeTab === 'dgt' ? (
           /* DGT ETRAFFIC INCIDENTS DATABASE PANEL */

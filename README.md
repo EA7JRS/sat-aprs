@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.31.0)
+## 📌 Qué hace hoy (v1.32.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -57,6 +57,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Grupo de estaciones (ARTS) con sondeo y emergencia remota (EAI), como en el tracker APRS LoRa+ | Operativo desde la v1.28.0; pendiente de validar en la estación |
 | Radio · aprx: pasarela a APRS-IS, digipeater e interfaces, a partir de aprx.conf y su registro de radio (rflog) | Operativo desde la v1.31.0; pendiente de validar en la estación |
 | Consola de comandos de Radio (cat, rot, dx, aprs, dapnet, sat, arts, eai, n2k) | Operativo desde la v1.29.0; pendiente de validar en la estación |
+| Radio · Winlink: buzón, redacción, sesiones y pasarelas RMS a través de la API HTTP de Pat | Operativo desde la v1.32.0; sin probar con un Pat real |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 | Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
@@ -81,10 +82,11 @@ Emulación completa del software de enrutamiento IGate y Digipeater APRS de uso 
 - **Visor Topológico de Enrutamiento**: Visualiza los saltos de paquetes (`WIDE1-1`, `WIDE2-1`, etc.).
 - **Inspección de Tramas**: Diagnóstico y trazabilidad del flujo de tramas AX.25 de telemetría a APRS-IS.
 
-### 3. Cliente Pat Winlink
-Gestión y transferencia de correo electrónico y reportes de incidentes por radio de alta frecuencia (HF/VHF) usando el protocolo de sesión ARQ AX.25:
-- **Buzón Operativo**: Bandejas de entrada, salida, borradores y enviados.
-- **Plantillas de Emergencia**: Creación rápida de partes de incidencias conformes a estándares de protección civil.
+### 3. Winlink con Pat
+La consola maneja el correo por radio a través de la API HTTP de [Pat](https://getpat.io) («pat http»; dirección y servicio en Radio → Winlink → Ajustes):
+- **Buzón**: entrada, salida y enviados de Pat; leer, responder y redactar (queda en salida hasta la próxima sesión).
+- **Sesiones**: con los alias de Pat o una URL de conexión (AX.25, VARA, ARDOP, telnet), con confirmación antes de transmitir.
+- **Pasarelas RMS** cercanas por modo y banda, de la lista de winlink.org que descarga Pat.
 
 ### 4. Consola Meteorológica WeeWX y servicios meteorológicos
 Recopilación y retransmisión de datos meteorológicos locales mediante telemetría APRS:

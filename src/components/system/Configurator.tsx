@@ -396,8 +396,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
   const [direwolfBaudrate, setDirewolfBaudrate] = useState('1200');
   const [direwolfPttDevice, setDirewolfPttDevice] = useState('/dev/ttyUSB0 RTS');
   const [direwolfGpsdServer, setDirewolfGpsdServer] = useState('localhost');
-  const [direwolfCbeaconMsg, setDirewolfCbeaconMsg] = useState('S.A.T. NODO DE ALERTA VHF [Debian 13 Core]');
-  const [direwolfCbeaconInterval, setDirewolfCbeaconInterval] = useState(600);
 
   // Tab 3: WeeWX specific inputs
   const [weewxDriver, setWeewxDriver] = useState('weewx.drivers.fousb');
@@ -772,14 +770,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
                 const m = trimmed.match(/^gpsd\s+(\S+)/i);
                 if (m) setDirewolfGpsdServer(m[1].trim());
               }
-              // CBEACON msg
-              if (/^cbeacon\s+(.+)/i.test(trimmed)) {
-                const mMsg = trimmed.match(/info="([^"]+)"/i);
-                if (mMsg) setDirewolfCbeaconMsg(mMsg[1]);
-                
-                const mEv = trimmed.match(/every=(\d+)/i);
-                if (mEv) setDirewolfCbeaconInterval(parseInt(mEv[1]) * 60);
-              }
             });
           }
 
@@ -1004,8 +994,11 @@ GPSD ${direwolfGpsdServer}
 AGWPORT 8000
 KISSPORT ${kissTcpPort}
 
-# Balizas de Emergencia de Posición Periódicas de RF
-CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbeaconInterval / 60)}
+# Registro CSV: da a la consola el nivel de audio y los bits corregidos de cada trama
+LOGDIR /var/log/direwolf
+
+# Sin CBEACON: la baliza la emite la consola, con su política de emisión
+# (ajustes APRS de esta pantalla). Una CBEACON aquí transmitiría por su cuenta.
 `;
   };
 
@@ -2330,28 +2323,9 @@ CBEACON dest=APDIW1 info="${direwolfCbeaconMsg}" every=${Math.floor(direwolfCbea
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label htmlFor="input-cbeacon-msg" className="text-slate-400 text-[10px]">Texto de baliza RF CBEACON:</label>
-                  <input
-                    type="text"
-                    id="input-cbeacon-msg"
-                    value={direwolfCbeaconMsg}
-                    onChange={(e) => setDirewolfCbeaconMsg(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-emerald-500/30 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="input-cbeacon-interval" className="text-slate-400 text-[10px]">Frecuencia Baliza (segundos):</label>
-                  <input
-                    type="number"
-                    id="input-cbeacon-interval"
-                    value={direwolfCbeaconInterval}
-                    onChange={(e) => setDirewolfCbeaconInterval(Number(e.target.value) || 600)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-emerald-500/30 focus:outline-none"
-                  />
-                  <span className="text-[8px] text-slate-550 block mt-1">Sincroniza balizas de emergencia cada {Math.floor(direwolfCbeaconInterval / 60)} min sobre la señal física de radio.</span>
-                </div>
+                <p className="text-slate-400 text-[11px] leading-snug" id="nota-sin-cbeacon">
+                  Sin CBEACON en direwolf.conf: la baliza la emite la consola con su política de emisión (ajustes APRS de esta pantalla: intervalo y SmartBeaconing), para que no salga nada por radio que la consola no controle.
+                </p>
               </div>
             </div>
           </div>

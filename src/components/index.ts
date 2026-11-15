@@ -12,7 +12,6 @@ export { default as AprsAdaptor } from './radio/AprsAdaptor';
 export type { AprsPacket } from './radio/AprsAdaptor';
 export { default as AprsValidator } from './radio/AprsValidator';
 export { default as WeewxConsole } from './radio/WeewxConsole';
-export { default as PatAx25Console } from './radio/PatAx25Console';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors

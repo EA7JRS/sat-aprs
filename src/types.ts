@@ -95,18 +95,6 @@ export interface AISVessel {
   aprsPacket?: string; // Formatted APRS marine report (Symbol: /s or ship)
 }
 
-// NEW: Pat Winlink / AX.25 status
-export interface PatWinlinkStatus {
-  connected: boolean;
-  lastSync: string;
-  outboxCount: number;
-  inboxCount: number;
-  ax25Port: string; // e.g., wl2k (VHF)
-  localCallsign: string;
-  targetBbs: string;
-  activeSessionLog: string[];
-}
-
 // NEW: Intel NUC 5i3 Broadwell Debian 13 status diagnostics
 export interface NucDiagnostics {
   cpuUsagePct: number;
@@ -229,6 +217,8 @@ export interface TelemetryConfig {
   rotorPort?: number;
   rotorPin?: string;
   rotorMovil?: boolean;
+  patUrl?: string;
+  patServicio?: string;
   satFavoritos?: string;
   grupoActivo?: boolean;
   grupoIndicativos?: string;
@@ -496,7 +486,6 @@ export interface ServerTelemetryData {
   earthquakes: EarthquakeEvent[];
   noaaAlerts: NoaaSpaceAlert[];
   vessels: AISVessel[]; // Extended
-  patStatus: PatWinlinkStatus; // Extended
   nucStats: NucDiagnostics; // Extended
   logs: AprsPacketLog[];
   /** Fuentes de clima espacial que no han respondido; con alguna, `propagation` no se envía. */

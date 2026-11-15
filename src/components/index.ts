@@ -12,10 +12,8 @@ export { default as AprsAdaptor } from './radio/AprsAdaptor';
 export type { AprsPacket } from './radio/AprsAdaptor';
 export { default as AprsValidator } from './radio/AprsValidator';
 export { default as AprxConsole } from './radio/AprxConsole';
-export { default as DirewolfConsole } from './radio/DirewolfConsole';
 export { default as WeewxConsole } from './radio/WeewxConsole';
 export { default as PatAx25Console } from './radio/PatAx25Console';
-export { default as NucConsole } from './radio/NucConsole';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors
@@ -25,7 +23,6 @@ export { default as WeatherStation } from './environment/WeatherStation';
 // Diagnostic, Logs, Layout & Core System Utilities
 export { default as ConsoleHeader } from './system/ConsoleHeader';
 export { default as TerminalLogs } from './system/TerminalLogs';
-export { default as TransmissionTrafficTrends } from './system/TransmissionTrafficTrends';
 export { default as TelemetryStatus } from './system/TelemetryStatus';
 export { default as NotificationPanel } from './system/NotificationPanel';
 export { default as NtpSyncStatus } from './system/NtpSyncStatus';

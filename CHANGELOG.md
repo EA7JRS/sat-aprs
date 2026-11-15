@@ -2,6 +2,18 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.27.0] - 2026-11-15
+### Radio · Direwolf: solo lo que Direwolf da de verdad
+- **Pantalla nueva** (`src/pages/Direwolf.tsx`, `server/radio/direwolf.ts`, `GET/POST /api/radio/direwolf`): estado del servicio (systemd, y desde cuándo está en marcha), del enlace KISS, del audio y módem y del PTT; recibidas, emitidas, nivel de audio medio y tramas con bits corregidos en la última hora; tráfico por minuto; tramas en directo **explicadas** (posición con distancia y rumbo, mensaje, acuse, boletín, estado, telemetría…), por qué repetidor llegaron y con su nivel de audio, y al tocarlas, enteras en texto y hexadecimal.
+- **Nivel de audio por estación**, con la franja buena (30 a 70) marcada, para ajustar el volumen. Sale del **registro CSV de Direwolf** (`LOGDIR`), que la consola sigue según crece; sin registro, la pantalla explica cómo activarlo y no muestra niveles.
+- **Configuración** leída de `direwolf.conf` (indicativo, módem, tarjeta, PTT, puertos, TXDELAY/TXTAIL, FIX_BITS, LOGDIR), con su registro del sistema (`journalctl -u direwolf`) y **reiniciar el servicio** (administrador, con confirmación).
+- **Prueba de emisión**: emite la baliza de la estación y dice qué repetidor la devolvió y a los cuántos segundos.
+- Las tramas recibidas por KISS marcan con `*` el repetidor que las retransmitió (bit H de AX.25), como en TNC2.
+- La plantilla de `direwolf.conf` incluye `KISSPORT 8001` y `LOGDIR /var/log/direwolf`, y ya no lleva `CBEACON`: la baliza la emite la consola, con su política de emisión.
+- **Fuera** el espectro, las formas de onda, el audio y el módem simulados de la pantalla antigua (`DirewolfConsole`, `NucConsole`, `TransmissionTrafficTrends`). El terminal de tramas con inyección de pruebas pasa a **Sistema → Pruebas y simulación**.
+
+---
+
 ## [v1.26.0] - 2026-11-14
 ### Conectividad: salida NMEA 2000 (SocketCAN)
 - **El NUC como nodo NMEA 2000** (`server/conectividad/nmea2000.ts`, `nmea2000Servicio.ts`): por **SocketCAN** (adaptador CAN, 250 kbit/s) reclama una dirección ISO (PGN 60928 / petición 59904, con defensa y negociación) y pone en el bus los datos propios de la estación para un plotter. Requiere `can-utils` (`cansend` / `candump`); sin dependencias nativas de Node.

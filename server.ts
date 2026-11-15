@@ -15,6 +15,7 @@ import { ClusterDx } from './server/radio/clusterDx';
 import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
+import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
 import { gcInitialBearing } from './server/formulas/geo';
@@ -981,6 +982,9 @@ function barcosParaPaneles(): AISVessel[] {
 }
 
 let kissClient: net.Socket | null = null;
+// Estado del enlace KISS con Direwolf, para su pantalla
+let kissConectado = false;
+let kissDesde = 0;
 let kissReconnectTimer: NodeJS.Timeout | null = null;
 let kissReconnectDelay = 2000;
 
@@ -1001,6 +1005,8 @@ function connectKissTcp() {
   socket.connect(config.kissTcpPort, '127.0.0.1', () => {
     console.log(`[KISS CLIENT] ¡Conectado con éxito a TNC/Direwolf KISS en puerto ${config.kissTcpPort}!`);
     kissReconnectDelay = 2000;
+    kissConectado = true;
+    kissDesde = Date.now();
     addLog('SYS', 'KISS', 'LOCAL', 'TNC', `Conectado a puerto KISS de Direwolf en puerto ${config.kissTcpPort}`, true, 'Enlace RF establecido');
   });
 
@@ -1063,6 +1069,7 @@ function connectKissTcp() {
               addLog('RX', source, dest, path, payload, true, '[KISS RF] Recibido por puerto TNC');
               estacionesOidas.anotar(source, dest, payload, 'RF');
               mensajeRecibido(source, payload, 'RF');
+              monitorDirewolf.anotarRx(source, dest, path === 'VHF' ? '' : path, payload);
             } else {
               addLog('RX', 'TNC', 'ALL', 'KISS', packetStr, true, '[KISS RF] Trama cruda recibida');
             }
@@ -1077,6 +1084,7 @@ function connectKissTcp() {
   });
 
   socket.on('close', () => {
+    if (kissClient === socket || kissClient === null) { kissConectado = false; kissDesde = Date.now(); }
     scheduleKissReconnect();
   });
 }
@@ -1096,7 +1104,7 @@ function decodeAx25Frame(buffer: Buffer): string | null {
     
     let offset = 0;
     
-    const decodeAddress = (buf: Buffer, start: number): { callsign: string; ssid: number; last: boolean } => {
+    const decodeAddress = (buf: Buffer, start: number): { callsign: string; ssid: number; last: boolean; repetido: boolean } => {
       let callsign = '';
       for (let i = 0; i < 6; i++) {
         const charCode = buf[start + i] >> 1;
@@ -1108,7 +1116,9 @@ function decodeAx25Frame(buffer: Buffer): string | null {
       const ssidByte = buf[start + 6];
       const ssid = (ssidByte >> 1) & 0x0F;
       const last = (ssidByte & 0x01) === 1;
-      return { callsign, ssid, last };
+      // Bit H: en un repetidor, ya ha retransmitido la trama
+      const repetido = (ssidByte & 0x80) !== 0;
+      return { callsign, ssid, last, repetido };
     };
 
     const destObj = decodeAddress(buffer, offset);
@@ -1121,14 +1131,20 @@ function decodeAx25Frame(buffer: Buffer): string | null {
 
     let pathParts: string[] = [];
     let lastAddr = srcObj.last;
+    let ultimoRepetido = -1;
 
     while (!lastAddr && offset + 7 <= buffer.length) {
       const digiObj = decodeAddress(buffer, offset);
       offset += 7;
       const digi = digiObj.ssid > 0 ? `${digiObj.callsign}-${digiObj.ssid}` : digiObj.callsign;
-      if (digi) pathParts.push(digi);
+      if (digi) {
+        pathParts.push(digi);
+        if (digiObj.repetido) ultimoRepetido = pathParts.length - 1;
+      }
       lastAddr = digiObj.last;
     }
+    // Como en TNC2: «*» tras el último repetidor que la ha retransmitido
+    if (ultimoRepetido >= 0) pathParts[ultimoRepetido] += '*';
 
     if (offset + 2 > buffer.length) return null;
     const control = buffer[offset];
@@ -1240,6 +1256,7 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
     if (decision.rf) {
       try {
         await sendToKiss(toRfFrame(packet, config.aprsPath || DEFAULT_RF_PATH));
+        monitorDirewolf.anotarTx(packet.source, packet.destination, config.aprsPath || DEFAULT_RF_PATH, packet.info);
         console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`);
       } catch (err: any) {
         console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a RF: ${err.message}`);
@@ -4692,6 +4709,81 @@ app.post('/api/radio/satelites', async (req, res) => {
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
 });
 
+// ---------------------------------------------------------------------------
+// Direwolf: tramas del enlace KISS, su registro CSV y su configuración
+// ---------------------------------------------------------------------------
+const monitorDirewolf = new MonitorDirewolf(() => config.callsign);
+const lectorLogDirewolf = new LectorLog((l) => monitorDirewolf.anotarLog(l));
+let confDirewolf: { conf: ConfDirewolf; ruta: string } | null = null;
+let direwolfDesde: number | null = null;
+
+function leerDirewolf() {
+  for (const ruta of ['/etc/direwolf.conf', './direwolf.conf']) {
+    try {
+      confDirewolf = { conf: leerConfDirewolf(fs.readFileSync(ruta, 'utf8')), ruta };
+      break;
+    } catch { confDirewolf = null; }
+  }
+  // Desde cuándo está en marcha el servicio (systemd)
+  if (process.platform === 'linux') {
+    try {
+      const r = execFileSync('systemctl', ['show', 'direwolf', '-p', 'ActiveEnterTimestampMonotonic', '-p', 'ActiveState', '--value'], { encoding: 'utf8', timeout: 3000 }).trim().split('\n');
+      const mono = Number(r[1] ?? r[0]);
+      const activo = r.includes('active');
+      direwolfDesde = activo && mono > 0 ? Date.now() - (os.uptime() * 1000 - mono / 1000) : null;
+    } catch { direwolfDesde = null; }
+  }
+}
+leerDirewolf();
+setInterval(leerDirewolf, 30_000);
+setInterval(() => lectorLogDirewolf.leer(confDirewolf?.conf.carpetaLog ?? null), 2000);
+
+app.get('/api/radio/direwolf', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const c = confDirewolf?.conf ?? null;
+  res.json({
+    servicio: { estado: nucStats.services.direwolf, desde: direwolfDesde },
+    kiss: { conectado: kissConectado, desde: kissDesde || null, puerto: config.kissTcpPort },
+    conf: c ? { ...c, ruta: confDirewolf!.ruta } : null,
+    registro: {
+      activado: !!c?.carpetaLog, archivo: lectorLogDirewolf.actual || null, error: lectorLogDirewolf.error,
+      ultimaLinea: lectorLogDirewolf.ultimaLinea || null,
+    },
+    franja: { bajo: NIVEL_BAJO, alto: NIVEL_ALTO },
+    resumen: monitorDirewolf.resumen(ahora),
+    niveles: monitorDirewolf.nivelesRecientes(ahora),
+    propia: monitorDirewolf.propia,
+    ultimaEmisionPropia: monitorDirewolf.ultimaEmisionPropia || null,
+    txEnabled: TX_ENABLED,
+    tramas: monitorDirewolf.tramas.slice(0, 60).map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) })),
+  });
+});
+
+app.post('/api/radio/direwolf', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const accion = req.body?.accion;
+  if (accion === 'prueba') {
+    if (!kissConectado) return res.status(400).json({ ok: false, error: 'Direwolf no está conectado por KISS.' });
+    const r = transmitStationBeacon();
+    return res.status(r.ok ? 200 : 400).json({ ...r, txEnabled: TX_ENABLED });
+  }
+  if (accion === 'reiniciar') {
+    const intentar = (orden: string, args: string[]) => new Promise<string>((resolver) =>
+      execFile(orden, args, { timeout: 15000 }, (e, _o, err) => resolver(e ? (String(err || e.message).trim() || 'error') : '')));
+    (async () => {
+      let error = await intentar('systemctl', ['restart', 'direwolf']);
+      if (error) error = await intentar('sudo', ['-n', 'systemctl', 'restart', 'direwolf']);
+      addLog('SYS', 'DIREWOLF', 'LOCAL', 'SERVICIO', error ? `No se pudo reiniciar Direwolf: ${error}` : 'Direwolf reiniciado desde la consola.', !error, error ? 'Error' : 'Reiniciado');
+      setTimeout(leerDirewolf, 3000);
+      res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
+    })();
+    return;
+  }
+  res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
 // Equipo de radio (CAT) y rotor
 app.get('/api/radio/equipo', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -5491,7 +5583,11 @@ MYCALL EA1URG-13
 MODEM 1200
 PTT /dev/ttyUSB0 RTS
 GPSD localhost
-CBEACON dest=APDIW1 info="S.A.T. NODO DE ALERTA VHF [Debian 13 Core]" every=10
+# Puerto KISS por el que la consola recibe y emite
+KISSPORT 8001
+# Registro CSV: da a la consola el nivel de audio y los bits corregidos de cada trama
+LOGDIR /var/log/direwolf
+# Sin CBEACON: la baliza la emite la consola, con su política de emisión
 `;
 
   const defaultAprx = `# ===============================================
@@ -6051,7 +6147,9 @@ app.post('/api/aprs/schedules/:id/trigger', (req, res) => {
 // GET journalctl logs for systemd service
 app.get('/api/system/journal', (req, res) => {
   // El diario real del sistema solo se muestra a un administrador verificado
-  const journalArgs = ['-u', 'sat-aprs.service', '-n', '50', '--no-pager'];
+  // Solo servicios conocidos de la estación
+  const servicio = ['direwolf', 'aprx', 'weewx', 'gpsd'].includes(String(req.query.servicio)) ? String(req.query.servicio) : 'sat-aprs';
+  const journalArgs = ['-u', `${servicio}.service`, '-n', servicio === 'sat-aprs' ? '50' : '80', '--no-pager'];
   execFile(isAuthorizedRequest(req) ? 'journalctl' : 'false', isAuthorizedRequest(req) ? journalArgs : [], { timeout: 5000 }, (error, stdout, stderr) => {
     if (error) {
       // Sin journalctl o sin permiso: se dice, no se enseña un diario de ejemplo

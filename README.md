@@ -365,7 +365,7 @@ npm run test:py    # agente: tramas, filtros de sismos, avisos y seguridad de em
 
 ## 🛠️ Archivos de Configuración de los Servicios de Radio
 La consola genera y valida, desde el panel de configuración, las plantillas de los servicios nativos de Debian (`/etc` o `/etc/ax25/`):
-* **`direwolf.conf`:** módem de software AFSK 1200 baudios / GMSK 9600 baudios.
+* **`direwolf.conf`:** módem de software AFSK 1200 baudios / GMSK 9600 baudios. Con `LOGDIR /var/log/direwolf` (carpeta legible por la consola), la pantalla **Radio → Direwolf** muestra el nivel de audio y los bits corregidos de cada trama.
 * **`aprx.conf`:** digipeater / I-Gate APRS.
 * **`weewx.conf`:** telemetría meteorológica.
 * **`pat` (`config.json`) y `axports`:** puertos de radio para Winlink / AX.25.

@@ -9,6 +9,7 @@ import Inicio from './pages/Inicio';
 import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import RadioPrincipal from './pages/RadioPrincipal';
+import Direwolf from './pages/Direwolf';
 import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
@@ -26,16 +27,13 @@ import {
   ConsoleHeader,
   TelemetryStatus,
   WeatherStation,
-  NucConsole,
   WeewxConsole,
-  DirewolfConsole,
   AprxConsole,
   AlertMonitor,
   TerminalLogs,
   Configurator,
   AlarmThresholds,
   ScriptExporter,
-  TransmissionTrafficTrends,
   DgtTrafficDatabase,
   NotificationPanel,
   SyncScheduler,
@@ -1159,6 +1157,15 @@ export default function App() {
             <p className="text-sm text-slate-400">
               Herramientas para ensayar con sucesos de prueba. Lo que se inyecta aquí se ve en pantalla pero nunca se transmite; los avisos reales están en Avisos.
             </p>
+            {/* Terminal de tramas con inyección de pruebas (antes en la pantalla de Direwolf) */}
+            <TerminalLogs 
+              logs={data.logs ? data.logs.filter(l => l.type === 'TX' || l.type === 'RX' || l.type === 'WINLINK') : []}
+              onInjectRaw={handleInjectRaw}
+              onTriggerSismoTest={handleTriggerSismoTest}
+              onTriggerNoaaTest={handleTriggerNoaaTest}
+              onClearLogs={handleClearLogs}
+              retentionLimit={data.config?.terminalLogsRetention || 150}
+            />
             <ThreatPollingEngine 
               gpsd={data.gpsd}
               earthquakes={data.earthquakes} 
@@ -1318,48 +1325,7 @@ export default function App() {
             />
           </motion.div>
         ) : activeTab === 'direwolf-pillar' ? (
-          /* PILAR DE CONTROL DIREWOLF EXCLUSIVO (CON DIAGNÓSTICOS, LOGS Y TENDENCIAS CENTRALIZADAS) */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-5"
-          >
-            <DirewolfConsole 
-              weather={data.weather} 
-              callsign={data.config.callsign}
-              systemLogs={data?.logs}
-            />
-
-            {/* Tendencia de Tráfico y Modulación de Radio (Última Hora) */}
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 shadow-lg">
-              <TransmissionTrafficTrends trafficTrends={data.trafficTrends} />
-            </div>
-
-            {/* Módem de Radiocomunicaciones Direwolf y Terminal TNC */}
-            <div className="bg-slate-900/30 border border-slate-800 rounded-2xl p-5 flex flex-col gap-5">
-              <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2.5">
-                <Sliders size={14} className="text-emerald-400" />
-                <h4 className="font-mono text-xs font-black uppercase tracking-widest text-slate-300">
-                  Consola Operativa S.A.T. (Central) - Enlace de Datos Direwolf
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-1 gap-5">
-                {/* Módem de Radiocomunicaciones Direwolf (Núcleo TNC AX.25) */}
-                <NucConsole callsign={data.config.callsign} />
-
-                {/* Terminal TNC de Tráfico de Paquetes APRS */}
-                <TerminalLogs 
-                  logs={data.logs ? data.logs.filter(l => l.type === 'TX' || l.type === 'RX' || l.type === 'WINLINK') : []}
-                  onInjectRaw={handleInjectRaw}
-                  onTriggerSismoTest={handleTriggerSismoTest}
-                  onTriggerNoaaTest={handleTriggerNoaaTest}
-                  onClearLogs={handleClearLogs}
-                  retentionLimit={data.config?.terminalLogsRetention || 150}
-                />
-              </div>
-            </div>
-          </motion.div>
+          <Direwolf />
         ) : activeTab === 'aprx-pillar' ? (
           /* PILAR DE ENRUTAMIENTO APRX EXCLUSIVO */
           <motion.div

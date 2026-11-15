@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.26.0)
+## 📌 Qué hace hoy (v1.27.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -53,6 +53,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna, con la estación fija o en movimiento y objetivos en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
 | Satélites: descarga de TLE, próximos pasos, transmisores con Doppler y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
 | Conectividad · salida NMEA 2000 (SocketCAN): posición (gpsd), hora, meteorología y avisos de emergencia al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
+| Radio · Direwolf: estado, tramas explicadas, nivel de audio por estación (registro CSV de Direwolf), configuración y prueba de emisión | Operativo desde la v1.27.0; pendiente de validar en la estación |
 | Grupo de estaciones (ARTS) y consola de comandos | En preparación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |

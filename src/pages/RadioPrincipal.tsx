@@ -11,6 +11,7 @@ import { haceCuanto, horaUtc } from '../utils/useAvisos';
 import { TelemetryConfig } from '../types';
 import { DatosEquipo, PanelEquipo, PanelRotor, ordenRadio } from '../components/radio/EquipoRotor';
 import Satelites from '../components/radio/Satelites';
+import Grupo from '../components/radio/Grupo';
 
 type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
 
@@ -376,9 +377,12 @@ export default function RadioPrincipal({ config, onGuardar }: { config: Telemetr
         <div className="xl:col-span-2 min-w-0"><PanelRotor datos={equipo} admin={admin} config={config} onGuardar={onGuardar} onCambio={releer} /></div>
         <div className="xl:col-span-5 min-w-0"><Satelites admin={admin} config={config} onGuardar={onGuardar} puedeSeguir={alTocar.puedeGirar} puedeSintonizar={alTocar.puedeSintonizar} onCambio={releer} /></div>
         <div className="xl:col-span-3 min-w-0"><Cluster config={config} onGuardar={onGuardar} admin={admin} alTocar={alTocar} onCambio={releer} /></div>
-        <div className="xl:col-span-2 min-w-0"><Mensajes config={config} onGuardar={onGuardar} admin={admin} /></div>
+        <div className="xl:col-span-2 min-w-0 flex flex-col gap-4">
+          <Grupo admin={admin} config={config} onGuardar={onGuardar} />
+          <Mensajes config={config} onGuardar={onGuardar} admin={admin} />
+        </div>
       </div>
-      <p className="text-[13px] text-slate-400">Próximos módulos de esta pantalla: grupo de estaciones (ARTS) y consola de comandos.</p>
+      <p className="text-[13px] text-slate-400">Próximo módulo de esta pantalla: consola de comandos.</p>
     </div>
   );
 }

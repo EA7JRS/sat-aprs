@@ -15,6 +15,8 @@ import { ClusterDx } from './server/radio/clusterDx';
 import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
+import { Grupo, mensajeEai } from './server/radio/grupo';
+import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
@@ -353,6 +355,12 @@ let config: TelemetryConfig = {
   rotorMovil: false,
   // Satélites favoritos (números NORAD, separados por comas); de serie, la ISS
   satFavoritos: '25544',
+  // Vigilancia de grupo (estilo ARTS), como en el tracker APRS LoRa+
+  grupoActivo: false,
+  grupoIndicativos: '',
+  grupoMinutos: 10,
+  grupoMaxKm: 0,
+  grupoSondeoS: 0,
   operatorName: '',
   stationQth: '',
   aprsSmartBeaconing: false,
@@ -679,6 +687,25 @@ setInterval(() => {
   for (const e of mensajeria.reintentos()) emitirMensajeria(e.info, e.motivo);
 }, 5000);
 
+// Vigilancia de grupo (estilo ARTS)
+const grupoVigilado = new Grupo();
+function grupoOido(origen: string, destino: string, info: string, via: 'RF' | 'IS') {
+  if (config.grupoActivo !== true) return;
+  const p = leerPosicionAprs(origen, destino, info);
+  grupoVigilado.oida(origen, via, p && p.clase === 'estacion' && !p.baja ? { lat: p.lat, lon: p.lon } : null);
+}
+setInterval(() => {
+  if (config.grupoActivo !== true) return;
+  grupoVigilado.ajustar({ indicativos: config.grupoIndicativos, minutos: config.grupoMinutos, maxKm: config.grupoMaxKm, sondeoS: config.grupoSondeoS });
+  for (const c of grupoVigilado.revisar({ lat: gpsdState.lat, lon: gpsdState.lon })) {
+    addLog('SYS', 'GRUPO', 'LOCAL', 'ARTS', `${c.indicativo} ${c.estado === 'dentro' ? 'EN ALCANCE' : 'FUERA DE ALCANCE'} (${c.detalle}).`, c.estado === 'dentro', c.estado === 'dentro' ? 'En alcance' : 'Fuera');
+  }
+  for (const destino of grupoVigilado.sondeos()) {
+    const r = mensajeria.redactar(destino, 'ping');
+    if (r.ok) emitirMensajeria(r.emision.info, `Sondeo del grupo a ${destino}`);
+  }
+}, 1000);
+
 const tablaDxcc = new TablaDxcc();
 let dxccLeida = 0;
 let dxccIntento = 0;
@@ -865,6 +892,7 @@ const clienteAprsIs = new ClienteAprsIs({
     if (t) {
       estacionesOidas.anotar(t.source, t.destination, t.info, 'IS');
       mensajeRecibido(t.source, t.info, 'IS');
+      grupoOido(t.source, t.destination, t.info, 'IS');
     }
   },
   alCambiar: (estado, detalle) => {
@@ -1070,6 +1098,7 @@ function connectKissTcp() {
               estacionesOidas.anotar(source, dest, payload, 'RF');
               mensajeRecibido(source, payload, 'RF');
               monitorDirewolf.anotarRx(source, dest, path === 'VHF' ? '' : path, payload);
+              grupoOido(source, dest, payload, 'RF');
             } else {
               addLog('RX', 'TNC', 'ALL', 'KISS', packetStr, true, '[KISS RF] Trama cruda recibida');
             }
@@ -4784,6 +4813,54 @@ app.post('/api/radio/direwolf', (req, res) => {
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
 });
 
+// Vigilancia de grupo (ARTS) y emergencia remota (EAI)
+app.get('/api/radio/grupo', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const situ = grupoVigilado.situar(estacion);
+  const admin = isAuthorizedRequest(req);
+  res.json({
+    activo: config.grupoActivo === true,
+    ajustes: grupoVigilado.config,
+    txEnabled: TX_ENABLED,
+    miembros: config.grupoActivo === true ? grupoVigilado.miembros.map((m, i) => ({
+      ...m, km: situ[i].km, rumbo: situ[i].rumbo,
+      // Última respuesta de emergencia remota de ese tracker («EAI ON 30min», «EAI OFF»)
+      eai: admin ? (mensajeria.recibidos.find((r) => r.de.replace(/-.*$/, '') === m.indicativo.replace(/-.*$/, '') && /^EAI (ON|OFF)/i.test(r.texto)) ?? null) : null,
+      pong: mensajeria.recibidos.find((r) => r.de.replace(/-.*$/, '') === m.indicativo.replace(/-.*$/, '') && /^pong/i.test(r.texto))?.cuando ?? null,
+    })) : [],
+    cambios: config.grupoActivo === true ? grupoVigilado.cambios.slice(0, 10) : [],
+  });
+});
+
+app.post('/api/radio/grupo', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  if (!isValidCallsign(config.callsign)) return res.status(400).json({ ok: false, error: 'La estación no tiene un indicativo válido.' });
+  const b = req.body || {};
+  if (b.accion === 'sondear') {
+    if (config.grupoActivo !== true) return res.status(400).json({ ok: false, error: 'La vigilancia de grupo está apagada.' });
+    const enviados: string[] = [];
+    for (const destino of grupoVigilado.sondearTodos()) {
+      const r = mensajeria.redactar(destino, 'ping');
+      if (r.ok) { emitirMensajeria(r.emision.info, `Sondeo del grupo a ${destino}`); enviados.push(destino); }
+    }
+    return res.json({ ok: true, enviados, txEnabled: TX_ENABLED });
+  }
+  if (b.accion === 'eai') {
+    const destino = String(b.indicativo ?? '').trim().toUpperCase();
+    if (!grupoVigilado.miembros.some((m) => m.indicativo === destino || m.ultimo === destino)) return res.status(400).json({ ok: false, error: 'Solo a estaciones del grupo.' });
+    const m = mensajeEai(String(b.codigo ?? ''), b.parar === true);
+    if (!m.ok) return res.status(400).json(m);
+    const miembro = grupoVigilado.miembros.find((x) => x.indicativo === destino || x.ultimo === destino)!;
+    const r = mensajeria.redactar(miembro.ultimo ?? miembro.indicativo, m.texto);
+    if (!r.ok) return res.status(400).json(r);
+    emitirMensajeria(r.emision.info, `${b.parar === true ? 'Fin de' : ''} emergencia remota (EAI) a ${destino}`.trim());
+    addLog('SYS', 'EAI', 'LOCAL', 'GRUPO', `${b.parar === true ? 'Parada' : 'Activación'} de la emergencia remota enviada a ${destino}.`, true, 'EAI');
+    return res.json({ ok: true, txEnabled: TX_ENABLED });
+  }
+  res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
 // Equipo de radio (CAT) y rotor
 app.get('/api/radio/equipo', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -5155,6 +5232,11 @@ app.post('/api/config', (req, res) => {
     if (updated.rotorMode !== undefined && ['off', 'rotctld', 'caja'].includes(String(updated.rotorMode))) config.rotorMode = updated.rotorMode;
     if (updated.rotorHost !== undefined) config.rotorHost = String(updated.rotorHost).trim().replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 100);
     if (updated.rotorPort !== undefined) config.rotorPort = puertoValido(updated.rotorPort);
+    if (updated.grupoActivo !== undefined) config.grupoActivo = !!updated.grupoActivo;
+    if (updated.grupoIndicativos !== undefined) config.grupoIndicativos = String(updated.grupoIndicativos).slice(0, 80);
+    if (updated.grupoMinutos !== undefined) config.grupoMinutos = Number(updated.grupoMinutos);
+    if (updated.grupoMaxKm !== undefined) config.grupoMaxKm = Number(updated.grupoMaxKm);
+    if (updated.grupoSondeoS !== undefined) config.grupoSondeoS = Number(updated.grupoSondeoS);
     if (updated.satFavoritos !== undefined) config.satFavoritos = String(updated.satFavoritos).split(/[^0-9]+/).filter(Boolean).slice(0, 16).join(',');
     if (updated.rotorMovil !== undefined) config.rotorMovil = !!updated.rotorMovil;
     if (updated.rotorPin !== undefined && !isMaskedSecret(updated.rotorPin)) config.rotorPin = String(updated.rotorPin).replace(/[^0-9A-Za-z]/g, '').slice(0, 16);

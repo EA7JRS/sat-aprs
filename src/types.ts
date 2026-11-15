@@ -230,6 +230,11 @@ export interface TelemetryConfig {
   rotorPin?: string;
   rotorMovil?: boolean;
   satFavoritos?: string;
+  grupoActivo?: boolean;
+  grupoIndicativos?: string;
+  grupoMinutos?: number;
+  grupoMaxKm?: number;
+  grupoSondeoS?: number;
   adsbPort?: number;
   /** Parte meteorológico de la estación por APRS. */
   wxBeaconEnabled?: boolean;

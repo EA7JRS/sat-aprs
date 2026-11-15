@@ -2,6 +2,15 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.28.0] - 2026-11-15
+### Radio · Principal: grupo de estaciones (ARTS) y emergencia remota (EAI)
+- **Vigilancia de grupo** (`server/radio/grupo.ts`, `GET/POST /api/radio/grupo`), con las mismas reglas que el tracker APRS LoRa+: hasta 5 indicativos (con SSID solo vale ese; sin SSID, cualquiera), **EN ALCANCE** si se ha oído **por radio** dentro del plazo (10 min de serie) y, si se fija, más cerca que la distancia máxima; si no, **FUERA**. Al arrancar se espera un plazo antes de dar a nadie por perdido. Lo oído por APRS-IS se muestra aparte: no es estar en alcance de radio.
+- Cada cambio queda en el registro y en la lista de «Últimos cambios». **Radar** como el del tracker (norte arriba, escala automática) con distancia y rumbo de cada miembro.
+- **Sondeo**: automático (60 a 3600 s) o a mano, con un mensaje «ping» a quien no se oye; los trackers APRS LoRa+ responden «pong» y se indica.
+- **Emergencia remota (EAI)**: «EAI <código>» o «EAI STOP <código>» a un tracker del grupo que la tenga activada con ese código; su respuesta («EAI ON …», «EAI OFF») aparece en el panel y en Mensajería. Con confirmación, solo el administrador y por la cola de emisión.
+
+---
+
 ## [v1.27.0] - 2026-11-15
 ### Radio · Direwolf: solo lo que Direwolf da de verdad
 - **Pantalla nueva** (`src/pages/Direwolf.tsx`, `server/radio/direwolf.ts`, `GET/POST /api/radio/direwolf`): estado del servicio (systemd, y desde cuándo está en marcha), del enlace KISS, del audio y módem y del PTT; recibidas, emitidas, nivel de audio medio y tramas con bits corregidos en la última hora; tráfico por minuto; tramas en directo **explicadas** (posición con distancia y rumbo, mensaje, acuse, boletín, estado, telemetría…), por qué repetidor llegaron y con su nivel de audio, y al tocarlas, enteras en texto y hexadecimal.

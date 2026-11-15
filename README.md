@@ -10,101 +10,69 @@
 [![Licencia GPL v3](https://img.shields.io/badge/Licencia-GPL_v3-blue?style=for-the-badge)](LICENSE)
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
-El **S.A.T. APRS Dashboard** es una estación de trabajo digital unificada para operadores de radioafición (IARU/ITU) y redes de telecomunicaciones de emergencia en entornos de catástrofe y misiones críticas. Emula y visualiza el comportamiento de componentes de software de radio esenciales, permitiendo el monitoreo interactivo de señales de RF, la calibración de hardware de audio en tiempo real y la gestión operativa ante catástrofes.
+**S.A.T.-APRS** (Servicio de Alerta Temprana por APRS) convierte un PC pequeño con Debian (un Intel NUC, por ejemplo) en una **estación APRS de emergencias desatendida, 24/7**, para radioaficionados y grupos de voluntariado de emergencias.
 
-S.A.T.-APRS es un Servicio de Alerta Temprana por radio APRS: una verdadera estación APRS y herramienta de gestión para grupos de voluntariado y gubernamentales dedicados al área de emergencias.
+- Vigila **fuentes oficiales** (IGN, AEMET, NOAA, NASA FIRMS, Copernicus CAMS…) y, cuando algo ocurre dentro del radio que elijas alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
+- Funciona como **estación APRS y meteorológica**: baliza de posición, parte meteorológico, mensajería con acuse, grupo de estaciones (ARTS) y emergencia remota (EAI).
+- Es la **consola de la estación de radio**: equipo por CAT, rotor, cluster DX, satélites con Doppler, Direwolf, aprx y Winlink (Pat), y la salida NMEA 2000 hacia un plotter.
 
-Se trata de un centro avanzado robusto y eficiente completamente autónomo que integra geolocalización y sincronización horaria vía satélite en tiempo real, una estación meteorológica, una pasarela SMS, sistema de correo electrónico Winlink y receptores SDR y/o físicos para AIS, NAVTEX y SafeNet II de Inmarsat.
+Todo con datos reales. Lo que se usa para ensayar (sucesos de prueba) se ve en pantalla pero **nunca sale al aire**.
 
-Además, es una herramienta para grupos de emergencias ante situaciones severas y críticas para la gestión y coordinación supervisada, que se encarga de proporcionar mensajes de difusión tipo boletines informativos y mensajes de alerta integrales sobre condiciones adversas actuales para su información y difusión vía radio.
+S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) (tracker, app Android, Display, Rotor, plotter, pasarela NMEA 2000) y comparte con él fórmulas, órdenes y formatos.
 
-S.A.T.-APRS como estación de radio desatendida operando las 24/7, permite generar paquetes de datos APRS con un campo de información definido por el usuario y transmitirlos a intervalos específicos. Esto posibilita la transmisión de balizas, objetos, datos meteorológicos y telemetría, así como la difusión inteligente de boletines informativos o mensajes de alerta.
+📘 **[Manual de uso](docs/MANUAL.md)** · 🏗️ [Arquitectura](docs/ARQUITECTURA.md) · 📝 [Cambios por versión](CHANGELOG.md)
 
-S.A.T.-APRS tiene la capacidad y objetivo de transmitir alertas e información posterior ante todo tipo de evento, peligros u otros riesgos para salvaguardar la salud y seguridad pública.
-
-S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda responsabilidad debida a un uso y configuración incorrectos por parte del operador de radio como usuario final.
+> El autor no se hace responsable de un uso o una configuración incorrectos por parte del operador. Lo que emite la estación sale con **su** indicativo: lea [Seguridad de emisión](#-seguridad-de-emisión-léalo-antes-de-transmitir) antes de activar la transmisión.
 
 ---
 
-## 📌 Qué hace hoy (v1.32.1)
+## 📌 Qué hace hoy (v1.32.2)
 
-S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
-
-1. **Avisos de emergencia.** Recoge avisos de fuentes oficiales y, si ocurren dentro del radio configurado alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
-2. **Estación APRS y meteorológica.** Con el **perfil de la estación** (indicativo y SSID, passcode, posición o GPS, símbolo, PHG, comentario) emite su baliza de posición.
-3. **Consola web.** Organizada en seis secciones (Inicio, Avisos, Estación, Mapa, Radio y Sistema), con color automático, del sistema, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno). Configura la estación y los servicios de radio del equipo (Direwolf, aprx, Pat, WeeWX) y muestra el estado del GPS y de la hora (gpsd y ntpsec).
+La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
 | Función | Estado |
 | :--- | :--- |
 | Emisión APRS real por APRS-IS y por RF (KISS/AX.25), con cola única y política de emisión | Operativo |
-| Sismos del IGN (respaldo USGS): objeto y boletín por radio y distancia | Operativo |
+| Sismos del IGN (respaldo USGS): objeto y boletín según distancia y magnitud | Operativo |
 | Avisos meteorológicos oficiales de AEMET (Meteoalerta, por zonas): objeto y boletín | Operativo desde la v1.9.0; pendiente de validar en la estación |
-| Perfil de la estación APRS y baliza de posición | Operativo |
-| Parte meteorológico por APRS con datos de WeeWX, wxnow.txt, OWM o AEMET | Operativo desde la v1.14.0 |
-| Posición por gpsd y estado real de ntpsec | Operativo |
-| Fórmulas físicas, náuticas, astronómicas, meteorológicas y de radio (`server/formulas/`) | Operativo |
-| HF y propagación en directo: bandas para enlace local (NVIS) y de larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; pendiente de validar en la estación |
 | Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
-| Medidores de calidad del aire más cercanos, en tiempo real (Sensor.Community) | Operativo desde la v1.20.0; pendiente de validar en la estación |
+| Perfil de la estación APRS y baliza de posición | Operativo |
+| Posición por gpsd y estado real de ntpsec | Operativo |
+| Parte meteorológico por APRS con datos de WeeWX, wxnow.txt, OpenWeatherMap o AEMET | Operativo desde la v1.14.0 |
 | Meteorología de la consola: OpenWeatherMap, AEMET u Open-Meteo (sin clave), nunca simulada | Operativo desde la v1.21.0; pendiente de validar en la estación |
-| Boyas y estaciones costeras más cercanas, en tiempo real (NOAA NDBC) | Operativo desde la v1.21.0; pendiente de validar en la estación |
-| Radio · Principal: cluster DX (con país, rumbo y distancia), mensajería APRS con acuse y envío por DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
-| Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor); un spot sintoniza y gira | Operativo desde la v1.23.0; pendiente de validar en la estación |
-| Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna, con la estación fija o en movimiento y objetivos en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
-| Satélites: descarga de TLE, próximos pasos, transmisores, corrección de Doppler continua en el equipo (con split) y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
-| Conectividad · salida NMEA 2000 (SocketCAN): posición (gpsd), hora, meteorología y avisos de emergencia al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
-| Radio · Direwolf: estado, tramas explicadas, nivel de audio por estación (registro CSV de Direwolf), configuración y prueba de emisión | Operativo desde la v1.27.0; pendiente de validar en la estación |
+| Medidores de calidad del aire más cercanos (Sensor.Community) | Operativo desde la v1.20.0; pendiente de validar en la estación |
+| Boyas y estaciones costeras más cercanas (NOAA NDBC) | Operativo desde la v1.21.0; pendiente de validar en la estación |
+| Mapa con capas: estación, avisos, APRS (radio y APRS-IS), AIS, ADS-B y tráfico de la DGT | Operativo desde la v1.12.0 |
+| HF y propagación: bandas para NVIS y larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; pendiente de validar en la estación |
+| Radio · Principal: cluster DX (país, rumbo y distancia), mensajería APRS con acuse y DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
+| Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor) | Operativo desde la v1.23.0; pendiente de validar en la estación |
+| Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna; estación fija o en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
+| Satélites: TLE, próximos pasos, transmisores, Doppler continuo en el equipo (con split) y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
 | Grupo de estaciones (ARTS) con sondeo y emergencia remota (EAI), como en el tracker APRS LoRa+ | Operativo desde la v1.28.0; pendiente de validar en la estación |
-| Radio · aprx: pasarela a APRS-IS, digipeater e interfaces, a partir de aprx.conf y su registro de radio (rflog) | Operativo desde la v1.31.0; pendiente de validar en la estación |
-| Consola de comandos de Radio (cat, rot, dx, aprs, dapnet, sat, arts, eai, n2k) | Operativo desde la v1.29.0; pendiente de validar en la estación |
+| Consola de comandos de Radio (`cat`, `rot`, `dx`, `aprs`, `dapnet`, `sat`, `arts`, `eai`, `n2k`) | Operativo desde la v1.29.0; pendiente de validar en la estación |
+| Radio · Direwolf: estado, tramas explicadas, nivel de audio por estación, configuración y prueba de emisión | Operativo desde la v1.27.0; pendiente de validar en la estación |
+| Radio · aprx: pasarela a APRS-IS, digipeater e interfaces, desde `aprx.conf` y su registro de radio | Operativo desde la v1.31.0; pendiente de validar en la estación |
 | Radio · Winlink: buzón, redacción, sesiones y pasarelas RMS a través de la API HTTP de Pat | Operativo desde la v1.32.0; sin probar con un Pat real |
+| Conectividad · salida NMEA 2000 (SocketCAN): posición, hora, meteorología y avisos al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
+| aprx desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx), que compila en Debian 13 (`tools/instalar-aprx.sh`) | Operativo desde la v1.32.1 |
+| Pantallas **WeeWX**, **Tramas APRS** y **Coordinación**, y partes de **Sistema → Equipo** y **Configuración** (A-GPS; pestaña «Propagación & Radio» vacía) | **Pendientes de rehacer**: aún tienen partes de demostración (gráficas, actividad de canal o contadores simulados; la mensajería de Tramas APRS no se envía). Para mensajes, use Radio → Principal |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
-| Mapa con capas: estación, avisos (sismos y zonas de AEMET) y tráfico de la DGT | Operativo desde la v1.10.0 |
-| Recepción APRS por radio (KISS) y por APRS-IS, y capa APRS del mapa | Operativo desde la v1.11.0 |
-| AIS (NMEA por UDP/TCP: AIS-catcher, rtl_ais) y ADS-B (SBS de readsb/dump1090) en el mapa | Operativo desde la v1.12.0 |
-
-Los paneles de demostración enseñan cómo quedará cada módulo; lo simulado va marcado y no sale al aire. El detalle de la arquitectura y del plan está en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) y los cambios de cada versión en [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
-## 🛰️ Módulos de la Estación de Trabajo
+## 🧭 La consola, sección a sección
 
-### 1. Terminal Direwolf
-Un TNC (Terminal Node Controller) por software de alto rendimiento para decodificar señales AX.25 sobre AFSK y GMSK:
-- **Osciloscopio**: Renderiza visualizaciones dinámicas de señales analógicas analizadas por el demodulador.
-- **Analizador de Espectro (FFT FFT-DSP)**: Permite observar en tiempo real la firma de frecuencia y las bandas de paso para Bell 202 (VHF), Bell 103 (HF) y GMSK.
-- **Control de Ganancia Automática (AGC)**: Estabiliza los trazos de entrada de audio para evitar la distorsión del osciloscopio y la saturación de los decodificadores analógicos de banda base.
-- **Detector Automático de Baudios DSP**: Analiza los cruces por cero e intervalos espectrales de la portadora para identificar automáticamente si la transmisión entrante es de **300 bps (HF)**, **1200 bps (VHF)** o **9600 bps (UHF)**. Permite el autotune de sincronización rápida mediante un solo clic.
+El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MANUAL.md)**.
 
-### 2. Pasarela Aprx
-Emulación completa del software de enrutamiento IGate y Digipeater APRS de uso estándar en redes terrestres:
-- **Visor Topológico de Enrutamiento**: Visualiza los saltos de paquetes (`WIDE1-1`, `WIDE2-1`, etc.).
-- **Inspección de Tramas**: Diagnóstico y trazabilidad del flujo de tramas AX.25 de telemetría a APRS-IS.
-
-### 3. Winlink con Pat
-La consola maneja el correo por radio a través de la API HTTP de [Pat](https://getpat.io) («pat http»; dirección y servicio en Radio → Winlink → Ajustes):
-- **Buzón**: entrada, salida y enviados de Pat; leer, responder y redactar (queda en salida hasta la próxima sesión).
-- **Sesiones**: con los alias de Pat o una URL de conexión (AX.25, VARA, ARDOP, telnet), con confirmación antes de transmitir.
-- **Pasarelas RMS** cercanas por modo y banda, de la lista de winlink.org que descarga Pat.
-
-### 4. Consola Meteorológica WeeWX y servicios meteorológicos
-Recopilación y retransmisión de datos meteorológicos locales mediante telemetría APRS:
-- **WeeWX Local**: Monitoreo de presión barométrica, humedad, radiación solar e índice UV.
-- **Portal AEMET OpenData**: Integración y descarga de avisos meteorológicos nacionales reales.
-
-### 5. Centro de Coordinación Operativa (CECOP)
-Consola táctica unificada para la gestión de emergencias:
-- **Incendios Forestales**: Monitoreo de perímetros, velocidad de avance, recursos aéreos y terrestres desplegados.
-- **Indicadores Sísmicos IGN**: Captura de actividad tectónica reciente mediante micro-sismógrafos.
-- **Radioavisos Marítimos (NAVAREA)**: Descifrado y reporte de avisos a navegantes, boletines hidrográficos (IHM Armada) y rescates activos de SASEMAR.
-
-### 6. Conectividad · Salida NMEA 2000
-
-- **El NUC como nodo NMEA 2000** por **SocketCAN** (adaptador CAN, 250 kbit/s): reclama una dirección en el bus y pone en él los datos **propios** de la estación para un plotter (Garmin GPSMAP y otros).
-- **Datos emitidos**: posición, rumbo y velocidad del **GPS (gpsd)** (PGN 129025/129026) y la hora (126992); **meteorología** de la estación/Internet — viento (130306), presión (130314) y temperatura (130316); **navegación** si hay objetivo o ruta (129283/129284); y los **avisos de emergencia** como **mensaje de seguridad AIS** (129802), además de por APRS.
-- Lo recibido por RF (**AIS, ADS-B, APRS**) **no** se retransmite: es solo para el mapa.
-- Se configura en **Sistema → Conectividad**. Requiere `can-utils` y la interfaz levantada: `sudo ip link set can0 up type can bitrate 250000`.
+| Sección | Pantallas | Para qué |
+| :--- | :--- | :--- |
+| **Inicio** | Inicio | Avisos activos en tu zona, estado de la estación (posición, hora, baliza, meteo), últimas emisiones y si las fuentes responden. |
+| **Avisos** | En vigor · Salud · Coordinación | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; Plan Meteosalud del Ministerio de Sanidad; coordinación de incidentes. |
+| **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y previsión, calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza). |
+| **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
+| **Radio** | Principal · Direwolf · HF y propagación · aprx · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
+| **Sistema** | Equipo · Configuración · Conectividad · Pruebas y simulación | Estado del equipo, ajustes y archivos `.conf`, salida NMEA 2000 y herramientas de ensayo (nada de ellas se emite). |
 
 ---
 
@@ -133,13 +101,16 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
 | `server/fuentes/` | Fuentes oficiales: sismos (IGN), avisos (AEMET), clima espacial (NOAA), focos de calor (FIRMS) y calidad del aire (CAMS) |
 | `server/estacion/` | Baliza de posición y parte meteorológico de la estación |
+| `server/radio/` | Radio: mensajería APRS, DAPNET, cluster DX y tabla DXCC, Hamlib (equipo y rotor) y caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat (Winlink) |
+| `server/conectividad/` | Salida NMEA 2000 por SocketCAN |
 | `server/formulas/` | Fórmulas comunes con el plotter APRS LoRa+ |
 | `server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts` | Entradas AIS y ADS-B para el mapa |
-| `server/sistema/` | Estado del equipo (ntpsec) |
+| `server/propagacion.ts`, `server/sistema/` | HF y propagación; estado del equipo (ntpsec) |
 | `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
-| `src/` | Consola web: React 19, Vite y Tailwind CSS |
+| `src/` | Consola web: React 19, Vite y Tailwind CSS (`src/pages/` una pantalla por archivo, `src/navigation.ts` las secciones) |
+| `tools/` | `instalar-aprx.sh` (aprx desde el fork) y `canboat/` (comprobación de los PGN de NMEA 2000) |
 | `aprs_sat.py` | Agente en Python, que se retirará cuando todo esté portado al servicio |
-| `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y agente |
+| `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas, radio y agente |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)
 
@@ -149,7 +120,8 @@ S.A.T.-APRS es una estación real: lo que emite llega a la red APRS-IS mundial y
 2. **Sin indicativo válido no se transmite.** Con el indicativo de plantilla (`N0CALL`) o uno mal formado, el sistema no emite ni por Internet ni por radio.
 3. **APRS-IS exige su passcode.** Si el passcode no corresponde al indicativo, no se inyecta nada en APRS-IS (la RF no lo necesita).
 4. **La consola web no transmite por defecto.** Hay que activarla expresamente con `SAT_APRS_TX=on` en `.env`. Con la emisión activada, solo un administrador verificado puede modificar la estación o provocar transmisiones.
-5. **Un solo transmisor.** El agente `aprs_sat.py` es quien emite las balizas y boletines automáticos. Si lo ejecuta, deje la consola con `SAT_APRS_TX=off` para no duplicar el tráfico.
+5. **Un solo transmisor.** La consola y el agente `aprs_sat.py` saben emitir la baliza y los boletines automáticos: si ejecuta los dos, active la emisión solo en uno para no duplicar el tráfico. Lo de Radio (mensajes, grupo ARTS, EAI, prueba de emisión de Direwolf) solo lo hace la consola y necesita `SAT_APRS_TX=on`.
+6. **Confirmación antes de transmitir.** El PTT del equipo (que se suelta solo a los 3 minutos), la emergencia remota EAI y las sesiones de Winlink por radio piden confirmación, también desde la consola de comandos.
 
 Las tramas se emiten con el destino experimental `APZSAT`, la ruta `TCPIP*` hacia APRS-IS y la ruta de radio configurada (por defecto `WIDE1-1,WIDE2-1`) como tramas AX.25 reales por KISS.
 
@@ -163,15 +135,16 @@ Este sistema está diseñado para operar de manera autónoma las 24/7 en servido
 * **Sistema Operativo:** Debian 13.x o Raspberry Pi OS (Trixie) de 64 bits.
 * **Memoria RAM:** Mínimo 4 GB (se recomiendan 8 GB o más).
 * **Conectividad:** Conexión a Internet para la descarga de boletines oficiales (IGN, AEMET/MeteoAlarm, NOAA) y el enlace con APRS-IS.
-* **Hardware de Radio (Opcional):** TNC de audio (SDR, tarjeta de sonido externa, interfaces EasyDigi o transceptores con módem integrado).
+* **Receptor GPS (recomendado):** posición y hora para gpsd y ntpsec.
+* **Hardware de radio (opcional):** interfaz de audio para Direwolf (tarjeta de sonido USB, Digirig, EasyDigi…), equipo con CAT para Hamlib, rotor con `rotctld` o la caja APRS LoRa+ Rotor, receptores RTL-SDR para AIS y ADS-B, adaptador CAN para NMEA 2000.
 
 ---
 
 ## 🛠️ Guía de Instalación desde Cero
 
-La arquitectura se divide en dos componentes independientes:
-1. **Consola Web (React + Express):** el panel de control, accesible en el puerto `3000`.
-2. **Agente S.A.T. Sentinel (`aprs_sat.py`):** un demonio en Python que recopila sensores (GPSD) y fuentes oficiales, y emite las balizas y boletines vía RF y APRS-IS.
+Dos componentes:
+1. **Consola web y servicio (Node.js):** la consola, en el puerto `3000`, y todo el trabajo de la estación: fuentes, cadena de avisos, emisión y radio.
+2. **Agente `aprs_sat.py` (Python, opcional):** el demonio original, que se retirará cuando todo esté en el servicio. Vea la regla 5 de [Seguridad de emisión](#-seguridad-de-emisión-léalo-antes-de-transmitir).
 
 ### 📦 Fase 0: Preparación del Sistema Operativo
 
@@ -189,8 +162,15 @@ sudo apt install -y gpsd gpsd-clients pps-tools ntpsec
 #      (aprx no se instala de Debian: va desde el fork EA7JRS/aprx, en el paso 1.2)
 sudo apt install -y ax25-tools direwolf
 
-# 0.5- WeeWX (estación meteorológica): https://www.weewx.com/docs/5.3/quickstarts/debian/
-# 0.6- AIS-Catcher (receptor marítimo AIS): https://www.aiscatcher.org/quickstart
+# 0.5- Opcionales, según el equipo de la estación:
+#      Hamlib (equipo por CAT y rotor: rigctld, rotctld)
+sudo apt install -y libhamlib-utils
+#      NMEA 2000 por SocketCAN
+sudo apt install -y can-utils
+#      Pat (Winlink): paquete .deb de https://github.com/la5nta/pat/releases ;
+#      luego, como su usuario:  sudo systemctl enable --now pat@<usuario>
+#      WeeWX (estación meteorológica): https://www.weewx.com/docs/5.3/quickstarts/debian/
+#      AIS-catcher (AIS): https://www.aiscatcher.org/quickstart
 ```
 
 ---
@@ -233,9 +213,9 @@ Variables principales de `.env` (todas documentadas en `.env.example`):
 
 > **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. El perfil del operador, sus estaciones y presets se guardan en la propia estación (`sat_perfil.json`) y se ven igual desde cualquier navegador; los sonidos, en cada navegador. Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
 
-#### 1.6- Perfil de la estación
+#### 1.7- Perfil de la estación
 
-En la consola, **Configuración → «Estación APRS»**: titular, indicativo y SSID, passcode de APRS-IS (la consola indica si corresponde al indicativo), posición fija por coordenadas o locator (o tomada del GPS), símbolo, PHG, comentario y ruta. La **baliza de posición** viene apagada: actívela solo si aprx o Direwolf no emiten ya la suya con el mismo indicativo.
+En la consola, **Estación → Perfil**: titular, indicativo y SSID, passcode de APRS-IS (la consola indica si corresponde al indicativo), posición fija por coordenadas o locator (o tomada del GPS), símbolo, PHG, comentario y ruta. La **baliza de posición** viene apagada: actívela solo si aprx o Direwolf no emiten ya la suya con el mismo indicativo.
 
 ---
 
@@ -357,6 +337,8 @@ sudo systemctl start sat-aprs.service sat-aprs-agent.service
 journalctl -u sat-aprs-agent.service -f -n 50
 ```
 
+> **aprx del fork:** para traer la última versión de [EA7JRS/aprx](https://github.com/EA7JRS/aprx), vuelva a ejecutar `sudo sh tools/instalar-aprx.sh`.
+
 > **Clones anteriores al 14-11-2026:** ese día se reescribió el historial del repositorio y `git pull` falla. Con la copia de seguridad hecha: `git fetch origin && git reset --hard origin/main`.
 
 > **Al actualizar desde una versión anterior a la 1.5.0:** `config.ini` y `sat_config.json` han dejado de estar versionados en git, y git los borrará al traer esta versión. Haga la copia de seguridad de arriba y restáurela después (`cp config.ini.bak config.ini`). A partir de entonces las actualizaciones ya no tocan su configuración.
@@ -367,18 +349,19 @@ journalctl -u sat-aprs-agent.service -f -n 50
 
 ```bash
 npm run lint       # comprobación de tipos (TypeScript)
-npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP y fórmulas
+npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP, fórmulas y radio
+                   # (mensajería, Hamlib, satélites, Doppler, ARTS, consola, Direwolf, aprx, Pat)
 npm run test:py    # agente: tramas, filtros de sismos, avisos y seguridad de emisión
 ```
 
 ---
 
 ## 🛠️ Archivos de Configuración de los Servicios de Radio
-La consola genera y valida, desde el panel de configuración, las plantillas de los servicios nativos de Debian (`/etc` o `/etc/ax25/`):
-* **`direwolf.conf`:** módem de software AFSK 1200 baudios / GMSK 9600 baudios. Con `LOGDIR /var/log/direwolf` (carpeta legible por la consola), la pantalla **Radio → Direwolf** muestra el nivel de audio y los bits corregidos de cada trama.
-* **`aprx.conf`:** digipeater / I-Gate APRS.
+La consola genera y valida, en **Sistema → Configuración → «Archivos .conf Debian»**, las plantillas de los servicios nativos de Debian (`/etc` o `/etc/ax25/`):
+* **`direwolf.conf`:** módem de software AFSK 1200 baudios / GMSK 9600 baudios, con `KISSPORT 8001` para la consola. Con `LOGDIR /var/log/direwolf` (carpeta legible por la consola), la pantalla **Radio → Direwolf** muestra el nivel de audio y los bits corregidos de cada trama. Sin `CBEACON`: la baliza la emite la consola, con su política de emisión.
+* **`aprx.conf`:** digipeater / I-Gate APRS. Con `rflog /var/log/aprx/aprx-rf.log` dentro de `<logging>`, la pantalla **Radio → aprx** muestra el tráfico.
 * **`weewx.conf`:** telemetría meteorológica.
-* **`pat` (`config.json`) y `axports`:** puertos de radio para Winlink / AX.25.
+* **`pat` (`config.json`) y `axports`:** puertos de radio para Winlink / AX.25. La pantalla **Radio → Winlink** habla con Pat por su API HTTP (`http_addr`, de serie `localhost:8080`).
 
 ---
 

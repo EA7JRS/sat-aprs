@@ -2,6 +2,20 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.32.2] - 2026-11-15
+### Documentación al día
+- **Manual de uso nuevo** ([`docs/MANUAL.md`](docs/MANUAL.md)):
+  - primeros pasos y qué se emite y cuándo;
+  - cada sección y pantalla de la consola;
+  - referencia completa de la consola de comandos;
+  - casos de uso (estación fija de alerta, estación móvil, paso de la ISS, grupo de montaña, parte por Winlink, spot del cluster);
+  - solución de problemas, y servicios, puertos y archivos.
+- **README** reescrito al estado real: qué hace hoy, la consola sección a sección, carpetas del código (`server/radio/`, `server/conectividad/`, `tools/`), seguridad de emisión (un solo transmisor, confirmaciones), requisitos e instalación de Hamlib, can-utils y Pat. Ya no describe funciones simuladas que se retiraron (osciloscopio y espectro de Direwolf, emulación de aprx).
+- Las pantallas que aún tienen partes de demostración se dicen claramente: WeeWX, Tramas APRS (su mensajería no se envía), Coordinación, contadores de Sistema → Equipo y A-GPS de Configuración. La pestaña «Propagación & Radio» de Configuración está vacía.
+- **ARQUITECTURA.md**: programas con los que convive y estado de cada bloque, actualizados.
+
+---
+
 ## [v1.32.1] - 2026-11-15
 ### aprx desde el fork EA7JRS/aprx
 - **`tools/instalar-aprx.sh`**: compila el paquete `.deb` del fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx) (que compila en Debian 13 con GCC 14 y recupera el `kiss.c` original) y lo instala en lugar del aprx de Debian, respetando `/etc/aprx.conf`. Lo retiene en apt (`apt-mark hold`) para que no vuelva el de la distribución, se asegura de que arranque (`STARTAPRX="yes"`) y avisa si falta el registro de radio (`rflog`) que usa la pantalla Radio · aprx.

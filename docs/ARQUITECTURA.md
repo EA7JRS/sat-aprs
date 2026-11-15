@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS
+© 2026 Manuel - EA7JRS · v1.32.2 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -11,7 +11,7 @@ APRS y meteorológica, y muestra en un mapa todo lo que tiene coordenadas.
 
 | Flujo | Entra | Sale |
 | :--- | :--- | :--- |
-| **1. Avisos de emergencia** | Fuentes oficiales (IGN, AEMET, MeteoAlarm, NOAA, FIRMS, Protección Civil, radiación…) y RF (NAVTEX, Inmarsat) | Objeto APRS con la posición y los datos + boletín de emergencia, por RF y APRS-IS |
+| **1. Avisos de emergencia** | Fuentes oficiales: IGN, AEMET, NOAA, NASA FIRMS y CAMS (previstas: MeteoAlarm, Protección Civil, radiación; y por RF, NAVTEX e Inmarsat) | Objeto APRS con la posición y los datos + boletín de emergencia, por RF y APRS-IS |
 | **2. Estación APRS y meteorológica** | GPS (posición fija o móvil), estación meteorológica propia, datos de Internet (OWM, IQAir, AEMET) | Baliza de posición y parte meteorológico APRS, según el perfil de usuario |
 | **3. Mapa** | AIS, ADS-B, APRS recibido, tráfico de carreteras y cualquier dato con coordenadas | Capas sobre el mapa base de la consola. **No se retransmite.** |
 
@@ -31,14 +31,17 @@ programas: se conecta a ellos por sus interfaces de red.
 | :--- | :--- | :--- |
 | gpsd | Posición GPS, fija o móvil | TCP 2947 (JSON) |
 | ntpsec | Servidor de hora de la red | `ntpq` |
-| Direwolf | Módem/TNC para APRS por RF | KISS sobre TCP |
-| aprx | Digipeater e I-Gate | Archivo de configuración |
-| AX.25 nativo, Pat Winlink | Correo por radio | Configuración; estado |
-| Hamlib (`rigctld`) | Control CAT de los equipos | TCP 4532 (pendiente) |
-| AIS-catcher, readsb | Recepción AIS y ADS-B con los RTL-SDR | TCP/UDP (pendiente) |
-| SDR++, SDRconnect (RSPdx-R2) | Recepción SDR general | Fuente de audio/IQ para decodificadores (pendiente) |
-| WSJT-X | Modos digitales | UDP 2237 (pendiente) |
-| WeeWX | Estación meteorológica | Archivo/HTTP (pendiente) |
+| Direwolf | Módem/TNC para APRS por RF | KISS sobre TCP 8001; registro CSV (`LOGDIR`) para el nivel de audio |
+| aprx (fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx)) | Digipeater e iGate | `aprx.conf` y su registro de radio (`rflog`) |
+| Pat | Winlink | API HTTP de `pat http` (8080) |
+| Hamlib `rigctld` / `rotctld` | Equipo por CAT y rotor | TCP 4532 / 4533, protocolo extendido |
+| Caja APRS LoRa+ Rotor | Rotor | TCP 4534, JSON con PIN |
+| Nodo DX (DXSpider, AR-Cluster…) | Cluster DX | Telnet |
+| DAPNET | Buscapersonas | API HTTPS de hampager.de |
+| AIS-catcher / rtl_ais, readsb / dump1090 | Recepción AIS y ADS-B | UDP 10110 (o TCP) · SBS TCP 30003 |
+| WeeWX | Estación meteorológica | Su base de datos o `wxnow.txt` |
+| SocketCAN | Salida NMEA 2000 a un plotter | `can0`, 250 kbit/s |
+| SDR++, SDRconnect, WSJT-X | Recepción SDR y modos digitales | Pendiente |
 
 ## Fórmulas comunes con APRS LoRa+
 
@@ -131,6 +134,9 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Estación meteorológica: parte APRS con datos propios (WeeWX, wxnow.txt) o de Internet | Hecho (`server/estacion/meteo.ts`) |
 | Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: sin fuente; sus datos de ejemplo se retiraron en la v1.20.0. Inmarsat-C: se conserva la entrada por UDP, sin pantalla |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
-| Configuración de Direwolf/aprx desde la consola | Existe; pendiente de revisar |
+| Configuración de Direwolf/aprx desde la consola | Hecho: generador de `direwolf.conf` (sin `CBEACON`, con `LOGDIR`) y editor de archivos `.conf` |
+| Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |
+| Salida NMEA 2000 (`server/conectividad/`) | Hecho; PGN contrastados con CANboat en la CI; sin probar con un bus real |
+| Pantallas con partes de demostración | Pendiente: WeeWX, Tramas APRS, Coordinación, contadores de Sistema → Equipo, A-GPS de Configuración |
 | Persistencia en SQLite | Pendiente (hoy, archivos JSON) |
 | `server.ts` | Aún contiene el resto de la lógica; se irá vaciando bloque a bloque |

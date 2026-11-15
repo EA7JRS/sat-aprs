@@ -389,3 +389,7 @@ S.A.T.-APRS es un proyecto personal de EA7JRS. Si te resulta útil, puedes invit
 ## 📄 Licencia
 
 [GNU General Public License v3.0 o posterior](LICENSE), como el resto del ecosistema APRS LoRa+. © 2026 Manuel - EA7JRS
+
+## Referencia de formatos NMEA 2000: CANboat
+
+Los PGN que emite la salida NMEA 2000 se contrastan con la base de datos de **[CANboat](https://canboat.github.io/canboat/)** (Apache-2.0), release fijada **v9.2.0**: `tools/canboat/run.sh` baja `canboat.json` y decodifica con él las tramas de `server/conectividad/nmea2000.ts` (129025, 129026, 126992, 130306, 130314, 130316, 129283, 129284, 129802). La CI lo ejecuta en cada subida.

@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - name: Formatos NMEA 2000 contra CANboat (release fijada)
+        run: tools/canboat/run.sh
       - run: npm run build
 
   agent:

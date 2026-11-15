@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.32.1] - 2026-11-15
+### aprx desde el fork EA7JRS/aprx
+- **`tools/instalar-aprx.sh`**: compila el paquete `.deb` del fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx) (que compila en Debian 13 con GCC 14 y recupera el `kiss.c` original) y lo instala en lugar del aprx de Debian, respetando `/etc/aprx.conf`. Lo retiene en apt (`apt-mark hold`) para que no vuelva el de la distribución, se asegura de que arranque (`STARTAPRX="yes"`) y avisa si falta el registro de radio (`rflog`) que usa la pantalla Radio · aprx.
+- README: la instalación ya no toma aprx de Debian; usa el script (paso 1.2).
+
+---
+
 ## [v1.32.0] - 2026-11-15
 ### Radio · Winlink: el correo de Pat, de verdad
 - **Pantalla nueva** (`src/pages/Winlink.tsx`, `server/radio/pat.ts`, `GET/POST /api/radio/winlink`): habla con la **API HTTP de Pat** («pat http», de serie en `http://127.0.0.1:8080`). Estado del servicio y de Pat, enlace (llamando, conectado, con quién), y el buzón real: entrada, salida y enviados.

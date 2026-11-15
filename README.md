@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.32.0)
+## 📌 Qué hace hoy (v1.32.1)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -186,7 +186,8 @@ sudo apt install -y git build-essential net-tools python3 python3-venv sqlite3
 sudo apt install -y gpsd gpsd-clients pps-tools ntpsec
 
 # 0.4- Ecosistema de radioafición y redes AX.25
-sudo apt install -y ax25-tools aprx direwolf
+#      (aprx no se instala de Debian: va desde el fork EA7JRS/aprx, en el paso 1.2)
+sudo apt install -y ax25-tools direwolf
 
 # 0.5- WeeWX (estación meteorológica): https://www.weewx.com/docs/5.3/quickstarts/debian/
 # 0.6- AIS-Catcher (receptor marítimo AIS): https://www.aiscatcher.org/quickstart
@@ -201,18 +202,22 @@ sudo apt install -y ax25-tools aprx direwolf
 sudo git clone https://github.com/EA7JRS/sat-aprs.git /opt/sat-aprs
 cd /opt/sat-aprs
 
-# 1.2- Instalar Node.js 20 LTS o superior
+# 1.2- aprx desde el fork EA7JRS/aprx: compila en Debian 13, sustituye al de
+#      Debian (respeta /etc/aprx.conf), queda retenido en apt y arrancado
+sudo sh tools/instalar-aprx.sh
+
+# 1.3- Instalar Node.js 20 LTS o superior
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# 1.3- Instalar dependencias
+# 1.4- Instalar dependencias
 npm ci
 
-# 1.4- Variables de entorno
+# 1.5- Variables de entorno
 cp .env.example .env
 nano .env        # SAT_ADMIN_TOKEN, SAT_APRS_TX...
 
-# 1.5- Compilar y arrancar
+# 1.6- Compilar y arrancar
 npm run build
 npm run start
 ```

@@ -1,7 +1,7 @@
 {
   "name": "sat-aprs",
   "private": true,
-  "version": "1.32.0",
+  "version": "1.32.1",
   "description": "S.A.T.-APRS: Servicio de Alerta Temprana por APRS",
   "license": "GPL-3.0-or-later",
   "type": "module",

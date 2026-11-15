@@ -10,6 +10,7 @@ import Avisos from './pages/Avisos';
 import Mapa from './pages/Mapa';
 import RadioPrincipal from './pages/RadioPrincipal';
 import Direwolf from './pages/Direwolf';
+import Aprx from './pages/Aprx';
 import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
@@ -28,7 +29,6 @@ import {
   TelemetryStatus,
   WeatherStation,
   WeewxConsole,
-  AprxConsole,
   AlertMonitor,
   TerminalLogs,
   Configurator,
@@ -1327,23 +1327,7 @@ export default function App() {
         ) : activeTab === 'direwolf-pillar' ? (
           <Direwolf />
         ) : activeTab === 'aprx-pillar' ? (
-          /* PILAR DE ENRUTAMIENTO APRX EXCLUSIVO */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AprxConsole 
-              weather={data.weather} 
-              aprsPackets={aprsPackets}
-              setAprsPackets={setAprsPackets}
-              playBuzzerSound={playBuzzerSound}
-              showToast={showToast}
-              callsign={data.config.callsign}
-              systemLogs={data?.logs}
-              onInjectRaw={handleInjectRaw}
-            />
-          </motion.div>
+          <Aprx />
         ) : activeTab === 'conectividad' ? (
           /* CONECTIVIDAD: emisión NMEA 2000 (SocketCAN) */
           <motion.div

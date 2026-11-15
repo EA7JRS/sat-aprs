@@ -10,6 +10,7 @@ import { Tarjeta } from '../components/shell/Etiquetas';
 import { customFetch } from '../utils/customFetch';
 import { useAdminSession } from '../utils/session';
 import { haceCuanto } from '../utils/useAvisos';
+import { Cifra, Estado, duracion, horaMin, horaSeg } from '../components/radio/Piezas';
 
 interface Trama {
   cuando: number; sentido: 'RX' | 'TX'; origen: string; destino: string; ruta: string; info: string;
@@ -35,37 +36,6 @@ interface Datos {
 const boton = 'min-h-[44px] px-4 rounded-lg border border-slate-600 text-slate-100 font-semibold cursor-pointer hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed';
 const botonPrincipal = 'min-h-[44px] px-5 rounded-lg bg-sky-500 text-slate-950 font-bold cursor-pointer hover:bg-sky-400 disabled:opacity-50 disabled:cursor-not-allowed';
 const pastilla = (activa: boolean) => `min-h-[40px] px-3.5 rounded-full border text-sm cursor-pointer ${activa ? 'border-sky-500 bg-sky-950 text-slate-100 font-semibold' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`;
-const dos = (n: number) => String(n).padStart(2, '0');
-const horaSeg = (ms: number) => { const d = new Date(ms); return `${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}:${dos(d.getUTCSeconds())}`; };
-const horaMin = (ms: number) => { const d = new Date(ms); return `${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}`; };
-
-function duracion(desde: number, ahora: number): string {
-  const min = Math.max(0, Math.floor((ahora - desde) / 60000));
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  return h < 48 ? `${h} h ${min % 60} min` : `${Math.floor(h / 24)} d ${h % 24} h`;
-}
-
-function Estado({ titulo, ok, texto, detalle, id }: { titulo: string; ok: boolean | null; texto: string; detalle: React.ReactNode; id: string }) {
-  const color = ok === null ? 'text-slate-400' : ok ? 'text-emerald-400' : 'text-red-400';
-  return (
-    <Tarjeta className="flex-1 basis-56 min-w-0 flex flex-col gap-1" id={id}>
-      <div className="text-xs text-slate-400">{titulo}</div>
-      <div className={`text-[15px] font-semibold ${color}`}>● {texto}</div>
-      <div className="text-[13px] text-slate-400 break-words">{detalle}</div>
-    </Tarjeta>
-  );
-}
-
-function Cifra({ titulo, valor, detalle, color = 'text-slate-100', id }: { titulo: string; valor: string; detalle: string; color?: string; id?: string }) {
-  return (
-    <Tarjeta className="flex-1 basis-40 min-w-0 flex flex-col gap-0.5" id={id}>
-      <div className="text-xs text-slate-400">{titulo}</div>
-      <div className={`font-mono text-3xl leading-tight ${color}`}>{valor}</div>
-      <div className="text-[13px] text-slate-400">{detalle}</div>
-    </Tarjeta>
-  );
-}
 
 const colorNivel = (n: number, f: Datos['franja']) => (n < f.bajo ? 'text-amber-300' : n > f.alto ? 'text-red-400' : 'text-emerald-400');
 const fondoNivel = (n: number, f: Datos['franja']) => (n < f.bajo ? 'bg-amber-300' : n > f.alto ? 'bg-red-400' : 'bg-emerald-400');
@@ -293,7 +263,7 @@ export default function Direwolf() {
               </div>
             )}
             {registro !== null && <pre className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[12px] font-mono text-slate-300 max-h-72 overflow-auto whitespace-pre-wrap" id="dw-registro">{registro}</pre>}
-            <p className="text-[13px] text-slate-400">Para editar el archivo: Sistema → archivos de configuración.</p>
+            <p className="text-[13px] text-slate-400">Para editar el archivo: Sistema → Configuración → «Archivos .conf Debian».</p>
           </Tarjeta>
 
           <Tarjeta aria-label="Prueba de emisión" className="flex flex-col gap-2" id="dw-prueba">

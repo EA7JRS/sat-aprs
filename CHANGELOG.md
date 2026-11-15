@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.31.0] - 2026-11-15
+### Radio · aprx: solo lo que aprx da de verdad
+- **Pantalla nueva** (`src/pages/Aprx.tsx`, `server/radio/aprx.ts`, `GET/POST /api/radio/aprx`): estado del servicio, de la **pasarela a APRS-IS** (si está pasando tramas o las pierde por falta de conexión), del digipeater y de las interfaces; recibidas, pasadas a APRS-IS, descartadas y repetidas en la última hora; tráfico por minuto; cifras **por interfaz**; registro en directo con el resultado de cada trama (a APRS-IS, sin APRS-IS, rechazada, repetida, baliza, de APRS-IS) y qué es.
+- Todo sale de `aprx.conf` y del **registro de radio de aprx** (`rflog`), que la consola sigue según crece, también tras rotarlo. Sin registro, la pantalla explica cómo activarlo y no muestra cifras. El passcode no se muestra.
+- «Ver registro» (`journalctl -u aprx`) y «Reiniciar servicio» (administrador, con confirmación).
+- Fuera la pantalla antigua, con latencias, señal y ruido simulados (`AprxConsole`). El editor de `aprx.conf` sigue en Sistema → Configuración → «Archivos .conf Debian».
+- Las piezas comunes de las pantallas de servicios (estado, cifras, gráfica por minuto) pasan a `src/components/radio/Piezas.tsx`.
+
+---
+
 ## [v1.30.0] - 2026-11-15
 ### Satélites: corrección de Doppler continua
 - **«Seguir Doppler»** en cada transmisor de un satélite (`server/radio/doppler.ts`): el equipo se resintoniza solo durante el paso. La **bajada** se corrige a f·(1 − v/c) y, si el transmisor tiene **subida** distinta y el equipo acepta split (`S 1 VFOB` / `I <frecuencia>` de rigctld), también la subida a f·(1 + v/c). Si el equipo no acepta split se dice y solo se corrige la bajada.

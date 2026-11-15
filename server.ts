@@ -19,6 +19,7 @@ import { Grupo, mensajeEai } from './server/radio/grupo';
 import { EstadoDoppler, decidir as decidirDoppler, modoEquipo } from './server/radio/doppler';
 import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } from './server/radio/consola';
 import { leerPosicionAprs } from './server/aprsPosicion';
+import { ConfAprx, MonitorAprx, SeguidorArchivo, leerConfAprx, leerLineaRf } from './server/radio/aprx';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
@@ -4821,6 +4822,26 @@ const lectorLogDirewolf = new LectorLog((l) => monitorDirewolf.anotarLog(l));
 let confDirewolf: { conf: ConfDirewolf; ruta: string } | null = null;
 let direwolfDesde: number | null = null;
 
+/** Desde cuándo está en marcha un servicio de systemd (ms epoch), o null. */
+function desdeServicio(nombre: string): number | null {
+  if (process.platform !== 'linux') return null;
+  try {
+    const r = execFileSync('systemctl', ['show', nombre, '-p', 'ActiveEnterTimestampMonotonic', '-p', 'ActiveState', '--value'], { encoding: 'utf8', timeout: 3000 }).trim().split('\n');
+    const mono = Number(r[1] ?? r[0]);
+    return r.includes('active') && mono > 0 ? Date.now() - (os.uptime() * 1000 - mono / 1000) : null;
+  } catch { return null; }
+}
+
+/** Reinicia un servicio de la estación (systemctl, o sudo -n si hace falta). Devuelve el error o ''. */
+async function reiniciarServicio(nombre: string): Promise<string> {
+  const intentar = (orden: string, args: string[]) => new Promise<string>((resolver) =>
+    execFile(orden, args, { timeout: 15000 }, (e, _o, err) => resolver(e ? (String(err || e.message).trim() || 'error') : '')));
+  let error = await intentar('systemctl', ['restart', nombre]);
+  if (error) error = await intentar('sudo', ['-n', 'systemctl', 'restart', nombre]);
+  addLog('SYS', nombre.toUpperCase(), 'LOCAL', 'SERVICIO', error ? `No se pudo reiniciar ${nombre}: ${error}` : `${nombre} reiniciado desde la consola.`, !error, error ? 'Error' : 'Reiniciado');
+  return error;
+}
+
 function leerDirewolf() {
   for (const ruta of ['/etc/direwolf.conf', './direwolf.conf']) {
     try {
@@ -4828,15 +4849,7 @@ function leerDirewolf() {
       break;
     } catch { confDirewolf = null; }
   }
-  // Desde cuándo está en marcha el servicio (systemd)
-  if (process.platform === 'linux') {
-    try {
-      const r = execFileSync('systemctl', ['show', 'direwolf', '-p', 'ActiveEnterTimestampMonotonic', '-p', 'ActiveState', '--value'], { encoding: 'utf8', timeout: 3000 }).trim().split('\n');
-      const mono = Number(r[1] ?? r[0]);
-      const activo = r.includes('active');
-      direwolfDesde = activo && mono > 0 ? Date.now() - (os.uptime() * 1000 - mono / 1000) : null;
-    } catch { direwolfDesde = null; }
-  }
+  direwolfDesde = desdeServicio('direwolf');
 }
 leerDirewolf();
 setInterval(leerDirewolf, 30_000);
@@ -4865,7 +4878,7 @@ app.get('/api/radio/direwolf', (_req, res) => {
   });
 });
 
-app.post('/api/radio/direwolf', (req, res) => {
+app.post('/api/radio/direwolf', async (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
   const accion = req.body?.accion;
   if (accion === 'prueba') {
@@ -4874,16 +4887,9 @@ app.post('/api/radio/direwolf', (req, res) => {
     return res.status(r.ok ? 200 : 400).json({ ...r, txEnabled: TX_ENABLED });
   }
   if (accion === 'reiniciar') {
-    const intentar = (orden: string, args: string[]) => new Promise<string>((resolver) =>
-      execFile(orden, args, { timeout: 15000 }, (e, _o, err) => resolver(e ? (String(err || e.message).trim() || 'error') : '')));
-    (async () => {
-      let error = await intentar('systemctl', ['restart', 'direwolf']);
-      if (error) error = await intentar('sudo', ['-n', 'systemctl', 'restart', 'direwolf']);
-      addLog('SYS', 'DIREWOLF', 'LOCAL', 'SERVICIO', error ? `No se pudo reiniciar Direwolf: ${error}` : 'Direwolf reiniciado desde la consola.', !error, error ? 'Error' : 'Reiniciado');
-      setTimeout(leerDirewolf, 3000);
-      res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
-    })();
-    return;
+    const error = await reiniciarServicio('direwolf');
+    setTimeout(leerDirewolf, 3000);
+    return res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
   }
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
 });
@@ -5217,6 +5223,50 @@ app.post('/api/radio/grupo', (req, res) => {
     return res.json({ ok: true, txEnabled: TX_ENABLED });
   }
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
+// ---------------------------------------------------------------------------
+// aprx: su configuración y su registro de radio (rflog)
+// ---------------------------------------------------------------------------
+const monitorAprx = new MonitorAprx();
+let confAprx: { conf: ConfAprx; ruta: string } | null = null;
+let aprxDesde: number | null = null;
+const seguidorAprx = new SeguidorArchivo((linea) => {
+  const propios = [confAprx?.conf.indicativo, ...(confAprx?.conf.interfaces.map((i) => i.indicativo) ?? [])].filter((x): x is string => !!x);
+  const l = leerLineaRf(linea, propios);
+  if (l) monitorAprx.anotar(l);
+});
+
+function leerAprx() {
+  confAprx = null;
+  for (const ruta of ['/etc/aprx.conf', './aprx.conf']) {
+    try { confAprx = { conf: leerConfAprx(fs.readFileSync(ruta, 'utf8')), ruta }; break; } catch { /* siguiente */ }
+  }
+  aprxDesde = desdeServicio('aprx');
+}
+leerAprx();
+setInterval(leerAprx, 30_000);
+setInterval(() => seguidorAprx.leer(confAprx?.conf.registroRf ?? null), 2000);
+
+app.get('/api/radio/aprx', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const c = confAprx?.conf ?? null;
+  res.json({
+    servicio: { estado: nucStats.services.aprx, desde: aprxDesde },
+    conf: c ? { ...c, ruta: confAprx!.ruta } : null,
+    registro: { activado: !!c?.registroRf, error: seguidorAprx.error, ultimaLinea: seguidorAprx.ultimaLinea || null },
+    resumen: monitorAprx.resumen(),
+    tramas: monitorAprx.lineas.slice(0, 60).map((l) => ({ ...l, que: describirTrama(l.origen, l.destino, l.info, estacion) })),
+  });
+});
+
+app.post('/api/radio/aprx', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  if (req.body?.accion !== 'reiniciar') return res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+  const error = await reiniciarServicio('aprx');
+  setTimeout(leerAprx, 3000);
+  res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
 
 // Equipo de radio (CAT) y rotor
@@ -6588,7 +6638,7 @@ app.post('/api/aprs/schedules/:id/trigger', (req, res) => {
 app.get('/api/system/journal', (req, res) => {
   // El diario real del sistema solo se muestra a un administrador verificado
   // Solo servicios conocidos de la estación
-  const servicio = ['direwolf', 'aprx', 'weewx', 'gpsd'].includes(String(req.query.servicio)) ? String(req.query.servicio) : 'sat-aprs';
+  const servicio = ['direwolf', 'aprx', 'weewx', 'gpsd', 'pat'].includes(String(req.query.servicio)) ? String(req.query.servicio) : 'sat-aprs';
   const journalArgs = ['-u', `${servicio}.service`, '-n', servicio === 'sat-aprs' ? '50' : '80', '--no-pager'];
   execFile(isAuthorizedRequest(req) ? 'journalctl' : 'false', isAuthorizedRequest(req) ? journalArgs : [], { timeout: 5000 }, (error, stdout, stderr) => {
     if (error) {

@@ -8,10 +8,8 @@ export { default as AlertMonitor } from './emergency/AlertMonitor';
 export { default as ThreatPollingEngine } from './emergency/ThreatPollingEngine';
 
 // Amateur Radio & Digital TNC Components
-export { default as AprsAdaptor } from './radio/AprsAdaptor';
-export type { AprsPacket } from './radio/AprsAdaptor';
+export type { AprsPacket } from '../utils/aprsPaquete';
 export { default as AprsValidator } from './radio/AprsValidator';
-export { default as WeewxConsole } from './radio/WeewxConsole';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors

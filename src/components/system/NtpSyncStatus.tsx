@@ -71,11 +71,9 @@ export default function NtpSyncStatus({ ntp }: NtpSyncStatusProps) {
       playNtpBeep(2600, 0.07);
     } catch {
       // Fallback
-      setTimeout(() => {
-        setRtt(parseFloat((15 + Math.random() * 8).toFixed(2)));
-        setCustomStatus(null); // vuelve a mostrarse el estado real que da el servidor
-        playNtpBeep(2200, 0.07);
-      }, 700);
+      // Sin respuesta de la consola no hay medida: no se pone una inventada
+      setRtt(null);
+      setCustomStatus(null);
     } finally {
       setTimeout(() => {
         setIsSyncing(false);

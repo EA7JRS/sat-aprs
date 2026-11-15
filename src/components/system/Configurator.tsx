@@ -32,7 +32,7 @@ interface ConfigProps {
   onSaveConfig: (updated: TelemetryConfig) => Promise<boolean>;
   gpsd?: GPSDStatus;
   /** Pestaña con la que se abre (p. ej. «profile» desde Estación → Perfil). */
-  initialTab?: 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'propagation' | 'profile';
+  initialTab?: 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'profile';
 }
 
 // Passcode de APRS-IS: el mismo cálculo que usa el servidor (server/aprs.ts)
@@ -42,7 +42,7 @@ export function calculateAprsPasscode(callsign: string): number {
 
 export default function Configurator({ config, onSaveConfig, gpsd, initialTab }: ConfigProps) {
   // Configurator Tabs
-  type ConfigTab = 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'propagation' | 'profile';
+  type ConfigTab = 'general' | 'direwolf' | 'weewx' | 'keys' | 'notifications' | 'files' | 'profile';
   const [activeTab, setActiveTab] = useState<ConfigTab>(initialTab ?? 'general');
 
   // Guard Silence profile states
@@ -94,9 +94,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
   const [receiverHeight, setReceiverHeight] = useState<number>(1.5); // Default antenna receiver height in meters
   const [horizonType, setHorizonType] = useState<'radio' | 'geometric'>('radio');
   const [terrainType, setTerrainType] = useState<'clear' | 'wooded' | 'urban'>('clear');
-  const [noaaForecast, setNoaaForecast] = useState<any>(null);
-  const [loadingNoaa, setLoadingNoaa] = useState<boolean>(false);
-  const [noaaError, setNoaaError] = useState<string | null>(null);
 
   // Sync station altitude when gpsd alt becomes available
   useEffect(() => {
@@ -105,28 +102,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
     }
   }, [gpsd]);
 
-  // Fetch NOAA 3-day forecast when propagation tab is opened
-  useEffect(() => {
-    if (activeTab === 'propagation') {
-      setLoadingNoaa(true);
-      setNoaaError(null);
-      customFetch('/api/space-weather/forecast-3day')
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-          return res.json();
-        })
-        .then(data => {
-          setNoaaForecast(data);
-        })
-        .catch(err => {
-          console.error("Error loading NOAA forecast in Configurator:", err);
-          setNoaaError(err.message || "Error de enlace con NOAA");
-        })
-        .finally(() => {
-          setLoadingNoaa(false);
-        });
-    }
-  }, [activeTab]);
 
   // Preferencias de Alertas y Notificaciones Sonora/Visual
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
@@ -467,101 +442,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
     setCallsign(n > 0 ? `${b}-${n}` : b);
   };
 
-  // A-GPS State
-  const [isAgpsEnabled, setIsAgpsEnabled] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('agps_enabled');
-      return saved ? JSON.parse(saved) : (config.agpsEnabled !== false);
-    } catch {
-      return config.agpsEnabled !== false;
-    }
-  });
-
-  const [agpsServer, setAgpsServer] = useState<string>(() => {
-    try {
-      return localStorage.getItem('agps_server') || config.agpsServer || 'supl.google.com';
-    } catch {
-      return config.agpsServer || 'supl.google.com';
-    }
-  });
-
-  const [agpsInterval, setAgpsInterval] = useState<string>(() => {
-    try {
-      return localStorage.getItem('agps_interval') || config.agpsInterval || 'daily';
-    } catch {
-      return config.agpsInterval || 'daily';
-    }
-  });
-
-  const [agpsLastSync, setAgpsLastSync] = useState<string>(() => {
-    try {
-      return localStorage.getItem('agps_last_sync') || config.agpsLastSync || 'Nunca';
-    } catch {
-      return config.agpsLastSync || 'Nunca';
-    }
-  });
-
-  const [agpsTtff, setAgpsTtff] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('agps_ttff');
-      return saved ? Number(saved) : (config.agpsTtff || 3.5);
-    } catch {
-      return config.agpsTtff || 3.5;
-    }
-  });
-
-  const [agpsConstellations, setAgpsConstellations] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('agps_constellations');
-      return saved ? JSON.parse(saved) : (config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo']);
-    } catch {
-      return config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo'];
-    }
-  });
-
-  const [suplPort, setSuplPort] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('agps_supl_port');
-      return saved ? Number(saved) : (config.suplPort || 7275);
-    } catch {
-      return config.suplPort || 7275;
-    }
-  });
-
-  const [suplVersion, setSuplVersion] = useState<string>(() => {
-    try {
-      return localStorage.getItem('agps_supl_version') || config.suplVersion || '2.0';
-    } catch {
-      return config.suplVersion || '2.0';
-    }
-  });
-
-  const [agpsInjecting, setAgpsInjecting] = useState<boolean>(false);
-  const [agpsTerminalLogs, setAgpsTerminalLogs] = useState<string[]>([]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_enabled', JSON.stringify(isAgpsEnabled));
-  }, [isAgpsEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_server', agpsServer);
-  }, [agpsServer]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_interval', agpsInterval);
-  }, [agpsInterval]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_constellations', JSON.stringify(agpsConstellations));
-  }, [agpsConstellations]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_supl_port', String(suplPort));
-  }, [suplPort]);
-
-  useEffect(() => {
-    localStorage.setItem('agps_supl_version', suplVersion);
-  }, [suplVersion]);
 
   // Eco Mode state
   const [isEcoMode, setIsEcoMode] = useState<boolean>(() => {
@@ -671,58 +551,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
     }
   };
 
-  const handleInjectAgps = async () => {
-    if (agpsInjecting) return;
-    setAgpsInjecting(true);
-    setAgpsTerminalLogs([]);
 
-    const logSteps = [
-      `[A-GPS] [${new Date().toLocaleTimeString()}] Iniciando protocolo de asistencia SUPL v${suplVersion}...`,
-      `[A-GPS] Conectando con servidor: supl://${agpsServer}:${suplPort}...`,
-      `[A-GPS] Canal TLS seguro establecido con el servidor de órbitas.`,
-      `[A-GPS] Resolviendo efemérides para constelaciones: [${agpsConstellations.join(', ')}]...`,
-      `[A-GPS] Descargando datos orbitales de precisión LTO (Long-Term Orbits) de 3 días...`,
-      `[A-GPS] Recibido payload LTO (${(10.5 + Math.random() * 8.2).toFixed(1)} KB) - 32 satélites decodificados.`,
-      `[A-GPS] Inyectando archivo de asistencia de órbita (LTO) en socket gpsd (localhost:2947)...`,
-      `[A-GPS] ¡Inyección completada! Receptor GNSS pre-posicionado.`,
-      `[A-GPS] TTFF (Time-To-First-Fix) reducido de 750.0 segundos a solo 3.2 segundos.`
-    ];
-
-    let delay = 0;
-    logSteps.forEach((log) => {
-      setTimeout(() => {
-        setAgpsTerminalLogs(prev => [...prev, log]);
-      }, delay);
-      delay += 250 + Math.random() * 100;
-    });
-
-    try {
-      const response = await customFetch('/api/agps/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      
-      setTimeout(() => {
-        if (data.success) {
-          const syncTime = new Date(data.lastSync).toLocaleString('es-ES');
-          setAgpsLastSync(syncTime);
-          setAgpsTtff(data.ttff);
-          localStorage.setItem('agps_last_sync', syncTime);
-          localStorage.setItem('agps_ttff', data.ttff.toString());
-        }
-        setAgpsInjecting(false);
-      }, delay + 200);
-    } catch (err) {
-      console.error("Error triggering A-GPS sync:", err);
-      setTimeout(() => {
-        setAgpsTerminalLogs(prev => [...prev, `[ERROR] No se pudo conectar con la NUC para la inyección de A-GPS.`]);
-        setAgpsInjecting(false);
-      }, delay + 200);
-    }
-  };
 
   // Keep WeeWX CWOP SSID updated when Callsign updates
   useEffect(() => {
@@ -879,14 +708,6 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
       localThresholdTempMinC: Number(localThresholdTempMinC),
       localThresholdRainMm: Number(localThresholdRainMm),
       localWeatherInterval: Number(localWeatherInterval),
-      agpsEnabled: Boolean(isAgpsEnabled),
-      agpsServer: agpsServer.trim(),
-      agpsInterval: agpsInterval,
-      agpsLastSync: agpsLastSync,
-      agpsTtff: Number(agpsTtff),
-      agpsConstellations: agpsConstellations,
-      suplPort: Number(suplPort),
-      suplVersion: suplVersion,
       // Advanced APRS station configuration fields
       aprsSsid: Number(aprsSsid),
       aprsSymbolTable: aprsSymbolTable.trim(),
@@ -1083,7 +904,7 @@ LOGDIR /var/log/direwolf
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <AdminAccess />
           <span className="text-[9px] bg-slate-900 text-amber-500 px-2.5 py-1 border border-slate-800 rounded-md font-mono font-bold tracking-widest uppercase">
             Configuración Debian 13
@@ -1167,17 +988,6 @@ LOGDIR /var/log/direwolf
               Archivos .conf Debian
             </button>
 
-            <button
-              id="tab-config-propagation"
-              type="button"
-              onClick={() => setActiveTab('propagation')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10.5px] font-mono font-bold uppercase transition-all cursor-pointer ${
-                activeTab === 'propagation' ? 'bg-slate-950 text-amber-500 border border-slate-850 shadow-inner' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <Activity size={13} />
-              Propagación & Radio
-            </button>
 
             <button
               id="tab-config-profile"
@@ -1925,277 +1735,6 @@ LOGDIR /var/log/direwolf
                         {preset} msgs
                       </button>
                     ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* A-GPS (Assisted Global Positioning System) Configuration Card */}
-            <div className="bg-slate-900/40 border border-slate-900 p-4 rounded-xl space-y-4 font-sans">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-2.5">
-                <Target size={14} className="text-sky-400" />
-                <div>
-                  <h4 className="text-xs font-black uppercase text-slate-300 font-sans">Asistencia A-GPS (Assisted GNSS & SUPL)</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Acelera drásticamente el tiempo de fijación tridimensional (TTFF) descargando efemérides orbitales de satélites vía IP antes de iniciar la modulación de radio.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Parámetros de Control */}
-                <div className="bg-slate-950/60 border border-slate-900 p-3.5 rounded-xl space-y-3.5 flex flex-col justify-between min-h-[275px]">
-                  <div className="space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase font-bold">Estado A-GPS</span>
-                      <button
-                        type="button"
-                        onClick={() => setIsAgpsEnabled(!isAgpsEnabled)}
-                        className={`px-2.5 py-1 text-[9px] font-mono font-bold rounded border cursor-pointer uppercase transition-all ${
-                          isAgpsEnabled 
-                            ? 'bg-sky-950/50 text-sky-400 border-sky-500/20' 
-                            : 'bg-slate-900 text-slate-550 border-slate-800'
-                        }`}
-                      >
-                        {isAgpsEnabled ? 'Habilitado' : 'Deshabilitado'}
-                      </button>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label htmlFor="select-agps-server" className="text-[9.5px] font-mono text-slate-400 block font-bold">Servidor SUPL:</label>
-                      <select
-                        id="select-agps-server"
-                        value={agpsServer}
-                        onChange={(e) => setAgpsServer(e.target.value)}
-                        disabled={!isAgpsEnabled}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-md p-1.5 text-slate-200 text-xs font-mono focus:border-sky-500/30 focus:outline-none disabled:opacity-50"
-                      >
-                        <option value="supl.google.com">Google SUPL (supl.google.com)</option>
-                        <option value="supl.ign.es">IGN España (supl.ign.es)</option>
-                        <option value="agps.u-blox.com">u-blox AssistNow (agps.u-blox.com)</option>
-                        <option value="glonass-assistance.ru">GLONASS Assist (glonass-assistance.ru)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label htmlFor="select-agps-interval" className="text-[9.5px] font-mono text-slate-400 block font-bold">Intervalo Recarga:</label>
-                      <select
-                        id="select-agps-interval"
-                        value={agpsInterval}
-                        onChange={(e) => setAgpsInterval(e.target.value)}
-                        disabled={!isAgpsEnabled}
-                        className="w-full bg-slate-950 border border-slate-850 rounded-md p-1.5 text-slate-200 text-xs font-mono focus:border-sky-500/30 focus:outline-none disabled:opacity-50"
-                      >
-                        <option value="hourly">Cada hora (Alta movilidad)</option>
-                        <option value="daily">Diario (Recomendado Fijo)</option>
-                        <option value="weekly">Semanal (Mínimo consumo)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1 pt-1.5 border-t border-slate-900/60">
-                      <span className="text-[9.5px] font-mono text-slate-400 block font-bold mb-1">Constelaciones GNSS:</span>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {['GPS', 'GLONASS', 'Galileo', 'BeiDou'].map((c) => {
-                          const isChecked = agpsConstellations.includes(c);
-                          return (
-                            <label key={c} className="flex items-center gap-1.5 text-[9px] font-mono text-slate-300 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                disabled={!isAgpsEnabled}
-                                onChange={() => {
-                                  if (isChecked) {
-                                    if (agpsConstellations.length > 1) {
-                                      setAgpsConstellations(agpsConstellations.filter(x => x !== c));
-                                    }
-                                  } else {
-                                    setAgpsConstellations([...agpsConstellations, c]);
-                                  }
-                                }}
-                                className="rounded bg-slate-950 border-slate-850 text-sky-500 focus:ring-0 w-3 h-3 cursor-pointer disabled:opacity-40"
-                              />
-                              <span>{c}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-900/60">
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] font-mono text-slate-500 block">Puerto:</span>
-                      <input
-                        type="number"
-                        value={suplPort}
-                        disabled={!isAgpsEnabled}
-                        onChange={(e) => setSuplPort(Number(e.target.value) || 7275)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded p-1 text-slate-200 text-[10px] font-mono focus:border-sky-500/30 focus:outline-none disabled:opacity-50"
-                      />
-                    </div>
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] font-mono text-slate-500 block">Protocolo:</span>
-                      <select
-                        value={suplVersion}
-                        disabled={!isAgpsEnabled}
-                        onChange={(e) => setSuplVersion(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 rounded p-1 text-slate-200 text-[10px] font-mono focus:border-sky-500/30 focus:outline-none disabled:opacity-50"
-                      >
-                        <option value="1.0">SUPL v1.0</option>
-                        <option value="2.0">SUPL v2.0</option>
-                        <option value="3.0">SUPL v3.0</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Telemetría del Estado de Fijación */}
-                <div className="bg-slate-950/60 border border-slate-900 p-3.5 rounded-xl space-y-3 font-mono text-[10px] flex flex-col justify-between min-h-[275px]">
-                  <div className="space-y-3">
-                    <div className="text-[10px] text-slate-400 uppercase font-bold border-b border-slate-900 pb-1 flex items-center justify-between">
-                      <span>Métricas GNSS</span>
-                      <span className="text-[8px] bg-sky-950 px-1 rounded text-sky-400">EFEMÉRIDES</span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Última Inyección:</span>
-                        <span className="text-slate-300 font-bold">{agpsLastSync}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Origen de Datos:</span>
-                        <span className="text-sky-400 font-bold truncate max-w-[120px]">{isAgpsEnabled ? agpsServer : 'Ninguno'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Estimación TTFF:</span>
-                        <span className={`font-black ${isAgpsEnabled && agpsLastSync !== 'Nunca' ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {isAgpsEnabled && agpsLastSync !== 'Nunca' ? `${agpsTtff}s (Bloqueo Instantáneo)` : '750.0s (Satélite Directo)'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Precisión de Órbita:</span>
-                        <span className={isAgpsEnabled && agpsLastSync !== 'Nunca' ? 'text-emerald-400 font-bold' : 'text-yellow-500 font-bold'}>
-                          {isAgpsEnabled && agpsLastSync !== 'Nunca' ? '±0.12m (Sub-métrica)' : '±15.4m (Estándar)'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Sistemas Activos:</span>
-                        <span className="text-slate-300 font-bold truncate max-w-[120px]">{isAgpsEnabled ? agpsConstellations.join('+') : 'Ninguno'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-550">Enlace SUPL:</span>
-                        <span className={isAgpsEnabled ? "text-emerald-400 font-bold" : "text-slate-500"}>{isAgpsEnabled ? `supl://${agpsServer}:${suplPort} (v${suplVersion})` : 'Inactivo'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleInjectAgps}
-                    disabled={!isAgpsEnabled || agpsInjecting}
-                    className="w-full h-8 bg-sky-900 hover:bg-sky-850 text-white border border-sky-850 rounded text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed mt-2"
-                  >
-                    <RefreshCw size={11} className={agpsInjecting ? 'animate-spin' : ''} />
-                    <span>{agpsInjecting ? 'Descargando...' : 'Forzar Sincronización A-GPS'}</span>
-                  </button>
-                </div>
-
-                {/* Monitor de Señal Satelital (Asistido) */}
-                <div className="bg-slate-950/60 border border-slate-900 p-3.5 rounded-xl space-y-3 font-mono text-[10px] flex flex-col justify-between h-[275px]">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold border-b border-slate-900 pb-1 flex items-center justify-between">
-                    <span>Monitoreo Señal GNSS</span>
-                    <span className="text-[8px] bg-sky-950 px-1 rounded text-sky-400">SATÉLITES</span>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                    {[
-                      { prn: 'G02', system: 'GPS', elevation: 42 },
-                      { prn: 'G12', system: 'GPS', elevation: 65 },
-                      { prn: 'R05', system: 'GLONASS', elevation: 32 },
-                      { prn: 'R15', system: 'GLONASS', elevation: 54 },
-                      { prn: 'E08', system: 'Galileo', elevation: 78 },
-                      { prn: 'E27', system: 'Galileo', elevation: 22 },
-                      { prn: 'B04', system: 'BeiDou', elevation: 51 },
-                      { prn: 'B19', system: 'BeiDou', elevation: 14 },
-                    ]
-                      .filter(sv => agpsConstellations.includes(sv.system))
-                      .map((sv, index) => {
-                        const isSynced = isAgpsEnabled && agpsLastSync !== 'Nunca';
-                        const snr = isSynced 
-                          ? 38 + Math.floor(sv.elevation / 8) + (index % 3)
-                          : 8 + Math.floor(sv.elevation / 15) + (agpsInjecting ? Math.floor(Math.random() * 5) : 0);
-                          
-                        const percent = Math.min(100, Math.max(0, (snr / 50) * 100));
-                        
-                        let barColor = "bg-slate-800";
-                        let textColor = "text-slate-500";
-                        if (isSynced) {
-                          if (snr >= 42) {
-                            barColor = "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]";
-                            textColor = "text-emerald-400 font-bold";
-                          } else {
-                            barColor = "bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.4)]";
-                            textColor = "text-sky-400 font-bold";
-                          }
-                        } else if (agpsInjecting) {
-                          barColor = "bg-yellow-500/50 animate-pulse";
-                          textColor = "text-yellow-500";
-                        }
-                        
-                        return (
-                          <div key={sv.prn} className="space-y-1">
-                            <div className="flex justify-between items-center text-[9px]">
-                              <span className="font-sans font-bold text-slate-300">
-                                <span className="text-slate-500 text-[8px] mr-0.5">{sv.system.substring(0,3)}:</span>
-                                {sv.prn}
-                              </span>
-                              <span className="text-slate-500">El: {sv.elevation}°</span>
-                              <span className={textColor}>{snr} dB-Hz</span>
-                            </div>
-                            <div className="h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-900/80">
-                              <div 
-                                className={`h-full rounded-full transition-all duration-500 ${barColor}`} 
-                                style={{ width: `${percent}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                  
-                  <div className="border-t border-slate-900/60 pt-1.5 mt-1 text-[8.5px] text-slate-550 flex items-center justify-between font-bold">
-                    <span>SVs Visibles: {isAgpsEnabled && agpsLastSync !== 'Nunca' ? agpsConstellations.length * 2 : 0}</span>
-                    <span className={isAgpsEnabled && agpsLastSync !== 'Nunca' ? 'text-emerald-400' : 'text-amber-500'}>
-                      {isAgpsEnabled && agpsLastSync !== 'Nunca' ? '● EFEMÉRIDES OK' : '○ BUSCANDO EFEMÉRIDES...'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Consola de Inyección en Tiempo Real */}
-                <div className="bg-black border border-slate-900 p-3 rounded-xl flex flex-col gap-2 h-[275px] relative">
-                  <div className="flex items-center justify-between border-b border-slate-950 pb-1">
-                    <span className="text-[8px] font-mono text-slate-550 uppercase tracking-widest block font-bold">Consola de Inyección gpsd</span>
-                    <span className="flex h-1.5 w-1.5 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-sky-500"></span>
-                    </span>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto font-mono text-[8.5px] leading-relaxed text-slate-400 space-y-1 pr-1 select-text scrollbar-thin font-semibold">
-                    {agpsTerminalLogs.length === 0 ? (
-                      <div className="text-slate-600 italic flex items-center justify-center h-full">
-                        Consola lista para inyección A-GPS...
-                      </div>
-                    ) : (
-                      agpsTerminalLogs.map((log, index) => {
-                        let textClass = "text-slate-400";
-                        if (log.includes("[A-GPS] ¡") || log.includes("TTFF")) textClass = "text-emerald-400 font-bold";
-                        else if (log.includes("Conectando")) textClass = "text-sky-300";
-                        return (
-                          <div key={index} className={textClass}>
-                            {log}
-                          </div>
-                        );
-                      })
-                    )}
                   </div>
                 </div>
               </div>

@@ -12,6 +12,9 @@ import RadioPrincipal from './pages/RadioPrincipal';
 import Direwolf from './pages/Direwolf';
 import Aprx from './pages/Aprx';
 import Winlink from './pages/Winlink';
+import TramasAprs from './pages/TramasAprs';
+import Weewx from './pages/Weewx';
+import type { AprsPacket } from './utils/aprsPaquete';
 import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
@@ -29,7 +32,6 @@ import {
   ConsoleHeader,
   TelemetryStatus,
   WeatherStation,
-  WeewxConsole,
   AlertMonitor,
   TerminalLogs,
   Configurator,
@@ -41,8 +43,6 @@ import {
   MeteosaludPortal,
   ThreatPollingEngine,
   CecopDashboard,
-  AprsAdaptor,
-  AprsPacket,
   NtpSyncStatus,
   HelpOverlay,
   PropagacionMonitor,
@@ -393,9 +393,11 @@ export default function App() {
         // Check if direct message (:CALLSIGN :Message)
         else if (payloadStr.startsWith(':')) {
           const match = payloadStr.match(/^:([^:]+):(.*?)$/);
-          if (match) {
+          // Solo los mensajes para esta estación (no los de otros que se oyen, ni los acuses)
+          const paraMi = match && match[1].trim().toUpperCase() === String(data?.config?.callsign || '').toUpperCase();
+          if (match && paraMi && !/^(ack|rej)[A-Za-z0-9]{1,5}/i.test(match[2])) {
             isMessage = true;
-            messageText = match[2];
+            messageText = match[2].replace(/\{[A-Za-z0-9]{1,5}(\}[A-Za-z0-9]{0,2})?$/, '');
             if (
               messageText.toUpperCase().includes('EMERGENCIA') || 
               messageText.toUpperCase().includes('SOS') || 
@@ -607,56 +609,6 @@ export default function App() {
     }
   }, [data?.nucStats?.uptime]);
 
-  // --- SYSTEM AUTOMATIC AGPS RESTART (5 MINUTES INACTIVITY DETECTOR) ---
-  const lastGpsUpdateRef = useRef<number>(Date.now());
-  const lastGpsCoordsRef = useRef<{lat: number; lon: number} | null>(null);
-
-  useEffect(() => {
-    const currentLat = data?.gpsd?.lat;
-    const currentLon = data?.gpsd?.lon;
-    
-    if (currentLat !== undefined && currentLon !== undefined) {
-      const coordsChanged = !lastGpsCoordsRef.current || 
-        lastGpsCoordsRef.current.lat !== currentLat || 
-        lastGpsCoordsRef.current.lon !== currentLon;
-        
-      if (coordsChanged) {
-        lastGpsUpdateRef.current = Date.now();
-        lastGpsCoordsRef.current = { lat: currentLat, lon: currentLon };
-      }
-    }
-  }, [data?.gpsd?.lat, data?.gpsd?.lon]);
-
-  // Periodically check if position hasn't changed or been updated for 5 minutes
-  useEffect(() => {
-    const checkInterval = setInterval(async () => {
-      // 5 minutes is 300,000 milliseconds
-      const elapsed = Date.now() - lastGpsUpdateRef.current;
-      if (elapsed >= 300000) {
-        console.log("[A-GPS AUTO-RESTART] Posición fija/móvil inactiva hace 5 min. Reiniciando servicio de asistencia...");
-        // Reset timer to avoid hammering the endpoint
-        lastGpsUpdateRef.current = Date.now();
-        
-        try {
-          const res = await customFetch('/api/agps/sync?trigger=auto', { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trigger: 'auto' })
-          });
-          
-          if (res.ok) {
-            showToast("⚠️ Servicio A-GPS reiniciado automáticamente tras detectar 5 minutos de inactividad de datos de posición.");
-            // Refresh telemetry to immediately load new logs
-            fetchTelemetry(true);
-          }
-        } catch (err) {
-          console.error("Error auto-restarting A-GPS:", err);
-        }
-      }
-    }, 5000); // Check every 5 seconds
-    
-    return () => clearInterval(checkInterval);
-  }, []);
   // Automatic countdown timer for forced reloads
   useEffect(() => {
     if (!showUpdatePrompt || !forceUpdate) {
@@ -777,23 +729,20 @@ export default function App() {
     }
   };
 
-  // Handler: Antena Gonio-Radar relocation trigger
-  const handleRelocate = async (lat: number, lon: number, locationName: string, alt?: number) => {
+  // Posición fija de la estación desde el navegador (solo sin GPS con fijo; no finge un fijo)
+  const handleRelocate = async (lat: number, lon: number, origen: string, alt?: number) => {
     try {
       const response = await customFetch('/api/gpsd/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          lat, 
-          lon, 
-          alt,
-          mode: alt !== undefined ? 3 : 2, // 3D if altitude is present, else 2D or preserve
-          speedKmh: 0, 
-          forceFallback: false 
-        })
+        body: JSON.stringify({ lat, lon, alt, origen }),
       });
+      const j = await response.json().catch(() => ({}));
       if (response.ok) {
+        showToast(`Posición fija de la estación: ${lat.toFixed(4)}°, ${lon.toFixed(4)}°.`);
         await fetchTelemetry(true);
+      } else {
+        showToast(j.error || 'No se pudo cambiar la posición.');
       }
     } catch (err) {
       console.error(err);
@@ -889,68 +838,26 @@ export default function App() {
     }
   };
 
-  const handleSendReply = () => {
+  // Respuesta real: por la mensajería de la estación (con acuse y reintentos)
+  const handleSendReply = async () => {
     if (!aprsReplyText.trim() || !incomingAprsModal) return;
-    
-    const replyUpper = aprsReplyText.toUpperCase();
-    let replyPriority: 'Crítica' | 'Alta' | 'Informativa' | 'Normal' = 'Normal';
-    let isReplyEmergency = false;
-
-    if (replyUpper.includes('!EMERGENCY!')) {
-      replyPriority = 'Crítica';
-      isReplyEmergency = true;
-    } else if (replyUpper.includes('!PRIORITY!')) {
-      replyPriority = 'Alta';
-    } else if (replyUpper.includes('!SPECIAL!')) {
-      replyPriority = 'Informativa';
-    } else if (replyUpper.includes('!ALERT!') || replyUpper.includes('!TESTALARM!')) {
-      isReplyEmergency = true;
+    try {
+      const r = await customFetch('/api/radio/mensajes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ para: incomingAprsModal.callsign, texto: aprsReplyText }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { showToast(j.error || 'No se pudo enviar la respuesta.'); return; }
+      showToast(j.txEnabled ? `Respuesta a ${incomingAprsModal.callsign} en la cola de emisión.` : 'Respuesta registrada, pero la emisión está desactivada: no sale al aire.');
+      playBuzzerSound(880, 0.1, 'sine');
+    } catch {
+      showToast('Sin conexión con la consola.');
+      return;
     }
-
-    const replyPacket: AprsPacket = {
-      id: `aprs-reply-${Date.now()}`,
-      sourceEventId: 'manual',
-      eventType: 'manual',
-      originalTitle: `RESPUESTA A ${incomingAprsModal.callsign}`,
-      originalDetail: aprsReplyText,
-      timestamp: new Date().toISOString(),
-      latitude: data?.gpsd?.lat || 40.416775,
-      longitude: data?.gpsd?.lon || -3.703790,
-      callsign: data?.config?.callsign || 'EA1URG-10',
-      destination: incomingAprsModal.callsign,
-      path: 'WIDE1-1,WIDE2-1',
-      aprsType: 'MESSAGE',
-      symbol: '>',
-      messageText: aprsReplyText,
-      packetString: `:${incomingAprsModal.callsign.padEnd(9, ' ')}:${aprsReplyText}`,
-      status: 'TRANSMITIDO',
-      transmittedAt: new Date().toISOString(),
-      isEmergency: isReplyEmergency,
-      visualPriority: replyPriority
-    };
-
-    const updated = [replyPacket, ...aprsPackets];
-    setAprsPackets(updated);
-    localStorage.setItem('sat_aprs_packets', JSON.stringify(updated));
-
-    // Sound feedback
-    playBuzzerSound(880, 0.1, 'sine');
-    setTimeout(() => playBuzzerSound(1100, 0.1, 'sine'), 100);
-
-    if (showToast) {
-      showToast(`Mensaje APRS transmitido con éxito a ${incomingAprsModal.callsign}.`);
-    }
-
     setIncomingAprsModal(null);
     setIsReplying(false);
     setAprsReplyText('');
   };
-
-  // Automated Simulation Loop for Incoming APRS Messages, Bulletins and Alerts
-  useEffect(() => {
-    // Simulador desactivado por petición del usuario para mantener la consola libre de tráfico simulado intrusivo
-    return;
-  }, []);
 
   if (!data) {
     return (
@@ -1179,7 +1086,6 @@ export default function App() {
               aemetAlerts={data.aemetAlerts || []}
               config={data.config}
               onInjectRaw={handleInjectRaw} 
-              onRelocate={handleRelocate}
               isEcoMode={isEcoMode}
             />
             <AlertMonitor 
@@ -1187,7 +1093,6 @@ export default function App() {
               noaaAlerts={data.noaaAlerts} 
               tsunamiAlerts={data.tsunamiAlerts || []} 
               minMagnitudeVisualAlert={data.config.minMagnitudAlertaVisual ?? 3.0}
-              onRelocate={handleRelocate}
               aprsPackets={aprsPackets}
               setAprsPackets={setAprsPackets}
               config={data.config}
@@ -1219,34 +1124,7 @@ export default function App() {
             />
           </motion.div>
         ) : activeTab === 'aprs-adaptor' ? (
-          /* PILAR IX: COMPILADOR Y ADAPTADOR APRS (AX.25) */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AprsAdaptor 
-              earthquakes={data.earthquakes || []} 
-              csnStations={data.csnStations || []} 
-              dgtIncidents={data.dgtIncidents || []} 
-              navareas={navareas} 
-              aprsPackets={aprsPackets} 
-              setAprsPackets={setAprsPackets} 
-              playBuzzerSound={playBuzzerSound}
-              showToast={showToast}
-              weather={data.weather}
-              isAprsPopupEnabled={isAprsPopupEnabled}
-              setIsAprsPopupEnabled={(val) => {
-                setIsAprsPopupEnabled(val);
-                localStorage.setItem('is_aprs_popup_enabled', val ? 'true' : 'false');
-              }}
-              aprsPopupFilter={aprsPopupFilter}
-              setAprsPopupFilter={(val) => {
-                setAprsPopupFilter(val);
-                localStorage.setItem('aprs_popup_filter', val);
-              }}
-            />
-          </motion.div>
+          <TramasAprs />
         ) : activeTab === 'pat-pillar' ? (
           /* Radio · Winlink (Pat) */
           <motion.div
@@ -1266,7 +1144,6 @@ export default function App() {
             <DgtTrafficDatabase 
               incidents={data.dgtIncidents || []} 
               gpsd={data.gpsd} 
-              onRelocate={(lat, lon) => handleRelocate(lat, lon, 'Incidencia DGT')} 
             />
           </motion.div>
         ) : activeTab === 'portus' ? (
@@ -1312,18 +1189,7 @@ export default function App() {
             )}
           </motion.div>
         ) : activeTab === 'weewx-pillar' ? (
-          /* PILAR DE CONTROL WEEWX EXCLUSIVO */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <WeewxConsole 
-              weather={data.weather} 
-              iqair={data.iqair} 
-              callsign={data.config.callsign}
-            />
-          </motion.div>
+          <Weewx />
         ) : activeTab === 'direwolf-pillar' ? (
           <Direwolf />
         ) : activeTab === 'aprx-pillar' ? (
@@ -1595,47 +1461,27 @@ export default function App() {
               {/* BUTTON 3: Sync GPSD/GPS */}
               <div className="flex items-center gap-2 group">
                 <span className="bg-slate-950 border border-cyan-500/30 text-cyan-400 text-[9px] font-bold px-2 py-1 rounded shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider font-mono">
-                  Sincronizar GPS / GPSD
+                  Posición fija desde este dispositivo
                 </span>
                 <button
                   onClick={() => {
-                    const fallbackLat = data?.config?.fallbackLat ?? 40.416775;
-                    const fallbackLon = data?.config?.fallbackLon ?? -3.703790;
-                    
-                    if (navigator.geolocation) {
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          const { latitude, longitude, altitude } = position.coords;
-                          const altInMeters = altitude !== null && altitude !== undefined ? Math.round(altitude) : undefined;
-                          
-                          handleRelocate(latitude, longitude, 'GPS Navegador (S.A.T.)', altInMeters);
-                          showToast(`GPS Integrado: Sincronizada antena con el navegador a ${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°${altInMeters !== undefined ? ` (Altitud: ${altInMeters}m)` : ''}`);
-                          playBuzzerSound(1200, 0.15, 'triangle');
-                        },
-                        (error) => {
-                          console.warn('Geolocation failed or denied. Defaulting to GPSD server reference coordinates:', error);
-                          const fallbackLat = data?.config?.fallbackLat ?? 40.416775;
-                          const fallbackLon = data?.config?.fallbackLon ?? -3.703790;
-                          const fallbackAlt = data?.gpsd?.alt ?? 657;
-                          
-                          handleRelocate(fallbackLat, fallbackLon, 'Estación Base (GPSD)', fallbackAlt);
-                          showToast(`Servidor GPSD: Re-centrada antena en coordenadas base de NUC (${fallbackLat.toFixed(4)}°, ${fallbackLon.toFixed(4)}°, ${fallbackAlt}m)`);
-                          playBuzzerSound(1046.5, 0.15, 'triangle');
-                        }
-                      );
-                    } else {
-                      const fallbackLat = data?.config?.fallbackLat ?? 40.416775;
-                      const fallbackLon = data?.config?.fallbackLon ?? -3.703790;
-                      const fallbackAlt = data?.gpsd?.alt ?? 657;
-                      
-                      handleRelocate(fallbackLat, fallbackLon, 'Estación Base (GPSD)', fallbackAlt);
-                      showToast(`Servidor GPSD: Re-centrada antena en coordenadas base de NUC (${fallbackLat.toFixed(4)}°, ${fallbackLon.toFixed(4)}°, ${fallbackAlt}m)`);
-                      playBuzzerSound(1046.5, 0.15, 'triangle');
+                    if (data?.gpsd && data.gpsd.mode >= 2 && !data.gpsd.isFallback) {
+                      showToast('El GPS tiene fijo: la posición de la estación la da el GPS.');
+                      return;
                     }
+                    if (!navigator.geolocation) { showToast('Este navegador no da su posición.'); return; }
+                    navigator.geolocation.getCurrentPosition(
+                      (position) => {
+                        const { latitude, longitude, altitude } = position.coords;
+                        if (!window.confirm(`¿Poner la posición fija de la estación en la de este dispositivo (${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°)? La baliza y el radio de avisos usarán esta posición.`)) return;
+                        handleRelocate(latitude, longitude, 'navegador', altitude !== null && altitude !== undefined ? Math.round(altitude) : undefined);
+                      },
+                      () => showToast('El navegador no ha dado su posición (permiso denegado o sin señal).'),
+                    );
                   }}
                   id="fab-action-recenter-map"
                   className="w-11 h-11 rounded-full bg-slate-950/90 border border-slate-850 text-slate-300 hover:bg-slate-900 hover:border-cyan-500/50 hover:text-cyan-400 flex items-center justify-center cursor-pointer transition-all duration-300 shadow-xl"
-                  title="Sincronizar posicionamiento de antena por GPS Real o Servidor GPSD"
+                  title="Posición fija de la estación desde este dispositivo (sin GPS con fijo)"
                 >
                   <Locate size={18} />
                 </button>
@@ -1951,18 +1797,6 @@ export default function App() {
                   <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-[10px] font-mono text-slate-500">
                     <span>Vía: {incomingAprsModal.path || 'DIRECT (APRS-IS)'}</span>
                     <span>{new Date(incomingAprsModal.timestamp).toLocaleTimeString('es-ES')}</span>
-                  </div>
-                </div>
-
-                {/* Coordenadas o Referencia */}
-                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono bg-slate-950/30 p-2.5 rounded border border-slate-850">
-                  <div className="space-y-0.5">
-                    <span className="text-slate-500 uppercase block text-[8px] font-bold">Latitud</span>
-                    <span className="text-slate-300">{incomingAprsModal.latitude?.toFixed(5)} N</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    <span className="text-slate-500 uppercase block text-[8px] font-bold">Longitud</span>
-                    <span className="text-slate-300">{incomingAprsModal.longitude?.toFixed(5)} W</span>
                   </div>
                 </div>
 

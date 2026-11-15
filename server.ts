@@ -21,6 +21,8 @@ import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } f
 import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfAprx, MonitorAprx, SeguidorArchivo, leerConfAprx, leerLineaRf } from './server/radio/aprx';
 import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
+import { NOMBRE_TIPO, RegistroTramas, analizarTrama } from './server/radio/tramas';
+import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
@@ -272,14 +274,6 @@ let config: TelemetryConfig = {
   meteoGravedadMinima: 'amarillo',
   meteoAntelacionH: 12,
   meteoRepetirMin: 60,
-  agpsEnabled: true,
-  agpsServer: 'supl.google.com',
-  agpsInterval: 'daily',
-  agpsLastSync: 'Nunca',
-  agpsTtff: 3.5,
-  agpsConstellations: ['GPS', 'GLONASS', 'Galileo'],
-  suplPort: 7275,
-  suplVersion: '2.0',
   ignSeismoEnabled: true,
   ignSeismoInterval: 30,
   tsunamiMonitorEnabled: true,
@@ -476,25 +470,29 @@ const loggedAemetAlertIds = new Set<string>();
 // Último rumbo sobre el fondo que ha dado el GPS (grados verdaderos)
 let rumboGps: number | null = null;
 
+// Hasta que gpsd dé un fijo: sin fijo, sin satélites y en la posición de respaldo
 let gpsdState: GPSDStatus = {
   lat: 40.416775,
   lon: -3.703790,
-  alt: 657, // Madrid elevation
-  mode: 3, // 3D Fix
+  alt: 0,
+  mode: 0,
   speedKmh: 0,
-  satellitesUsed: 9,
-  satellitesVisible: 12,
+  satellitesUsed: 0,
+  satellitesVisible: 0,
   time: new Date().toISOString(),
   isFallback: true,
-  device: '/dev/ttyUSB0 (ublox MAX-M8 GNSS receiver)'
+  device: ''
 };
+/** Enlace con gpsd (TCP 2947) y última vez que mandó algo. */
+let gpsdConectado = false;
+let gpsdUltimo = 0;
 
 // Persistent last valid GPS coordinate fallback storage
 let lastValidGps = {
   lat: 40.416775,
   lon: -3.703790,
-  alt: 657,
-  device: '/dev/ttyUSB0 (ublox MAX-M8 GNSS receiver)'
+  alt: 0,
+  device: ''
 };
 
 // Sin posición GPS guardada, la estación arranca en las coordenadas de respaldo
@@ -594,12 +592,14 @@ function connectGpsdTcp() {
   socket.connect(2947, '127.0.0.1', () => {
     console.log(`[GPSD CLIENT] ¡Conectado con éxito a gpsd en 127.0.0.1:2947!`);
     gpsdReconnectDelay = 2000;
+    gpsdConectado = true;
     // Start watch streaming
     socket.write('?WATCH={"enable":true,"json":true};\r\n');
   });
 
   let lineBuffer = '';
   socket.on('data', (data) => {
+    gpsdUltimo = Date.now();
     lineBuffer += data;
     let newlineIndex: number;
     while ((newlineIndex = lineBuffer.indexOf('\n')) !== -1) {
@@ -610,6 +610,7 @@ function connectGpsdTcp() {
         try {
           const obj = JSON.parse(line);
           if (obj.class === 'TPV') {
+            if (typeof obj.device === 'string' && obj.device) gpsdState.device = obj.device;
             const lat = typeof obj.lat === 'number' ? obj.lat : gpsdState.lat;
             const lon = typeof obj.lon === 'number' ? obj.lon : gpsdState.lon;
             const alt = typeof obj.alt === 'number' ? obj.alt : (typeof obj.altHAE === 'number' ? obj.altHAE : gpsdState.alt);
@@ -646,6 +647,8 @@ function connectGpsdTcp() {
   });
 
   socket.on('close', () => {
+    gpsdConectado = false;
+    handleGpsdStateUpdate({ mode: 0, satellitesUsed: 0, satellitesVisible: 0, isFallback: true });
     scheduleGpsdReconnect();
   });
 }
@@ -663,6 +666,8 @@ function scheduleGpsdReconnect() {
 // Estaciones oídas (RF y APRS-IS) y sesión permanente con APRS-IS
 // ---------------------------------------------------------------------------
 const estacionesOidas = new EstacionesOidas();
+// Todas las tramas APRS que entran (radio, APRS-IS) y salen, para Radio → Tramas APRS
+const registroTramas = new RegistroTramas(500);
 let firmaAprsIs = '';
 
 // ---------------------------------------------------------------------------
@@ -961,6 +966,7 @@ const clienteAprsIs = new ClienteAprsIs({
     const t = parseTnc2(linea);
     if (t) {
       estacionesOidas.anotar(t.source, t.destination, t.info, 'IS');
+      registroTramas.anotar('IS', t.source, t.destination, t.path.join(','), t.info);
       mensajeRecibido(t.source, t.info, 'IS');
       grupoOido(t.source, t.destination, t.info, 'IS');
     }
@@ -1166,6 +1172,7 @@ function connectKissTcp() {
               const payload = match[4];
               addLog('RX', source, dest, path, payload, true, '[KISS RF] Recibido por puerto TNC');
               estacionesOidas.anotar(source, dest, payload, 'RF');
+              registroTramas.anotar('RF', source, dest, path === 'VHF' ? '' : path, payload);
               mensajeRecibido(source, payload, 'RF');
               monitorDirewolf.anotarRx(source, dest, path === 'VHF' ? '' : path, payload);
               grupoOido(source, dest, payload, 'RF');
@@ -1336,9 +1343,13 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
     simulated
   });
   if (!decision.packet || (!decision.aprsIs && !decision.rf)) {
+    const t = decision.packet ?? parseTnc2(packetString);
+    if (t) registroTramas.anotar('TX', t.source, t.destination, t.path.join(','), t.info, { noEmitida: decision.reason || 'no emitida' });
     return decision.reason;
   }
   const packet = decision.packet;
+  registroTramas.anotar('TX', packet.source, packet.destination, decision.rf ? (config.aprsPath || DEFAULT_RF_PATH) : 'TCPIP*', packet.info,
+    { noEmitida: null, canales: decision.rf && decision.aprsIs ? 'radio y APRS-IS' : decision.rf ? 'radio' : 'APRS-IS' });
 
   // Las tramas se emiten de una en una, con pausa entre ellas (server/core/emisor.ts)
   colaEmision.encolar(async () => {
@@ -2847,68 +2858,12 @@ let timerIQAir: NodeJS.Timeout;
 let timerNoaa: NodeJS.Timeout;
 let timerTrafficIncidents: NodeJS.Timeout;
 let timerTsunamis: NodeJS.Timeout;
-let timerAgps: NodeJS.Timeout;
 let timerSpaceWeatherAprs: NodeJS.Timeout | null = null;
-
-function checkAndRunAgpsSync() {
-  if (config.agpsEnabled === false) return;
-  
-  const now = new Date();
-  let lastSyncDate: Date | null = null;
-  if (config.agpsLastSync && config.agpsLastSync !== 'Nunca') {
-    const parsed = Date.parse(config.agpsLastSync);
-    if (!isNaN(parsed)) {
-      lastSyncDate = new Date(parsed);
-    }
-  }
-  
-  let needsSync = false;
-  if (!lastSyncDate) {
-    needsSync = true;
-  } else {
-    const diffMs = now.getTime() - lastSyncDate.getTime();
-    const interval = config.agpsInterval || 'daily';
-    if (interval === 'hourly' && diffMs >= 3600000) { // 1 hour
-      needsSync = true;
-    } else if (interval === 'daily' && diffMs >= 86400000) { // 24 hours
-      needsSync = true;
-    } else if (interval === 'weekly' && diffMs >= 604800000) { // 7 days
-      needsSync = true;
-    }
-  }
-
-  if (needsSync) {
-    executeAgpsSync();
-  }
-}
-
-function executeAgpsSync() {
-  const server = config.agpsServer || 'supl.google.com';
-  const port = config.suplPort || 7275;
-  const version = config.suplVersion || '2.0';
-  const constellations = config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo'];
-  
-  console.log(`[A-GPS AUTOMÁTICO] Sincronizando con servidor ${server}:${port} usando SUPL v${version} para constelaciones: ${constellations.join(', ')}...`);
-  addLog('SYS', 'A-GPS', 'LOCAL', 'CRON', `Sincronización A-GPS periódica automática iniciada usando servidor: ${server}:${port} (SUPL v${version}) para constelaciones: ${constellations.join(', ')}.`, true, 'En marcha');
-  
-  config.agpsLastSync = new Date().toISOString();
-  config.agpsTtff = 3.2;
-  console.log(`[A-GPS AUTOMÁTICO] Sincronización finalizada con éxito.`);
-  addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS automática exitosa! Efemérides de órbita inyectadas en gpsd. TTFF: 3.2s. Constelaciones asistidas: ${constellations.join(', ')}.`, true, 'Completado');
-  
-  try {
-    const satConfigPath = path.join(process.cwd(), 'sat_config.json');
-    fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8');
-  } catch (err) {
-    console.error("[SYS CONFIG ERROR] No se pudo escribir sat_config.json en sincronización A-GPS automática:", err);
-  }
-}
 
 function startSchedules() {
   if (timerWeather) clearInterval(timerWeather);
   if (timerEarthquakes) clearInterval(timerEarthquakes);
   if (timerTsunamis) clearInterval(timerTsunamis);
-  if (timerAgps) clearInterval(timerAgps);
 
   const weatherInterval = (config.pollIntervalAemet || 1) * 60000;
   const ignInterval = (config.pollIntervalIgn || 2) * 60000;
@@ -2932,16 +2887,12 @@ function startSchedules() {
   timerTsunamis = setInterval(refreshTsunamis, 150000); // 2.5 min
   refreshTsunamis(); // Run once immediately on boot
 
-  // Activate automatic A-GPS sync schedules (checks every 60 seconds)
-  timerAgps = setInterval(checkAndRunAgpsSync, 60000);
-
   // Activate automatic Space Weather APRS Bulletin timer (checks every 60 seconds)
   if (!timerSpaceWeatherAprs) {
     timerSpaceWeatherAprs = setInterval(() => {
       transmitSpaceWeatherAprsBulletin(false);
     }, 60000);
   }
-  checkAndRunAgpsSync(); // Run once immediately on boot
 
   // Baliza de posición de la estación (perfil de la estación APRS)
   if (timerStationBeacon) clearInterval(timerStationBeacon);
@@ -5256,6 +5207,68 @@ app.post('/api/radio/aprx', async (req, res) => {
   res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
 
+// WeeWX: su configuración y su base de datos (últimas 24 h), de verdad
+let confWeewx: { conf: ConfWeewx; ruta: string } | null = null;
+let weewxDesde: number | null = null;
+let weewxBd: { ruta: string; horas: HoraWeewx[]; error: string | null; leido: number } = { ruta: '', horas: [], error: null, leido: 0 };
+async function leerWeewxCompleto() {
+  confWeewx = null;
+  for (const ruta of ['/etc/weewx/weewx.conf', '/etc/weewx.conf', path.join(os.homedir(), 'weewx-data', 'weewx.conf'), './weewx.conf']) {
+    try { confWeewx = { conf: leerConfWeewx(fs.readFileSync(ruta, 'utf8')), ruta }; break; } catch { /* siguiente */ }
+  }
+  weewxDesde = desdeServicio('weewx');
+  const ruta = String(config.wxWeewxDb || '').trim() || confWeewx?.conf.baseDatos || '';
+  const r = await consultarWeewx(ruta, CONSULTA_HORAS);
+  weewxBd = { ruta, horas: r.error ? [] : leerHorasWeewx(r.salida), error: r.error, leido: Date.now() };
+}
+setImmediate(() => { void leerWeewxCompleto(); });
+setInterval(() => { void leerWeewxCompleto(); }, 60_000);
+
+app.get('/api/estacion/weewx', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const ultima = weewxBd.horas[weewxBd.horas.length - 1];
+  res.json({
+    servicio: { estado: process.platform === 'linux' ? nucStats.services.weewx : null, desde: weewxDesde },
+    conf: confWeewx ? { ...confWeewx.conf, ruta: confWeewx.ruta } : null,
+    bd: { ruta: weewxBd.ruta, error: weewxBd.error, leido: weewxBd.leido, ultimaHora: ultima?.hora ?? null },
+    actual: observacionPropia && observacionPropia.fuente === 'WeeWX' ? observacionPropia : null,
+    horas: weewxBd.horas,
+    resumen: resumenHoras(weewxBd.horas),
+    parte: { activo: !!config.wxBeaconEnabled, intervaloMin: intervaloMeteoMs(config.wxBeaconInterval) / 60000, fuente: estadoParteMeteo().elegida?.fuente ?? null },
+  });
+});
+
+app.post('/api/estacion/weewx', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  if (req.body?.accion === 'releer') { await leerWeewxCompleto(); return res.json({ ok: true }); }
+  if (req.body?.accion !== 'reiniciar') return res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+  const error = await reiniciarServicio('weewx');
+  setTimeout(() => { void leerWeewxCompleto(); }, 5000);
+  res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
+});
+
+// Tramas APRS: lo que entra por radio y por APRS-IS y lo que sale
+app.get('/api/radio/tramas', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  const desde = Number(req.query.desde) || 0;
+  const tramas = registroTramas.tramas.filter((t) => t.n > desde).slice(0, 200)
+    .map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) }));
+  res.json({
+    kiss: { conectado: kissConectado, desde: kissDesde, puerto: config.kissTcpPort },
+    aprsIs: { estado: clienteAprsIs.estado, servidor: `${config.serverIp}:${config.aprscPort}` },
+    txEnabled: TX_ENABLED,
+    resumen: registroTramas.resumen(ahora),
+    tipos: NOMBRE_TIPO,
+    tramas,
+  });
+});
+
+app.post('/api/radio/tramas/analizar', (req, res) => {
+  res.json(analizarTrama(String(req.body?.trama ?? ''), { lat: gpsdState.lat, lon: gpsdState.lon }));
+});
+
 // Winlink (Pat): lo que su API HTTP da de verdad
 const clientePat = new ClientePat(() => String(config.patUrl || 'http://127.0.0.1:8080'));
 let patDesde: number | null = null;
@@ -5469,8 +5482,14 @@ app.get('/api/enlaces', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({
     aprsIs: { estado: clienteAprsIs.estado, detalle: clienteAprsIs.detalle, desde: clienteAprsIs.desde, recibidas: clienteAprsIs.recibidas },
-    kiss: { conectado: !!kissClient && !kissClient.destroyed && !kissClient.connecting && kissClient.writable, puerto: config.kissTcpPort },
+    kiss: { conectado: !!kissClient && !kissClient.destroyed && !kissClient.connecting && kissClient.writable, puerto: config.kissTcpPort, desde: kissDesde },
     estacionesOidas: estacionesOidas.total,
+    gpsd: { conectado: gpsdConectado, ultimo: gpsdUltimo || null, modo: gpsdState.mode, satelites: gpsdState.satellitesUsed, visibles: gpsdState.satellitesVisible, dispositivo: gpsdState.device || null },
+    cat: { activo: config.catEnabled === true, enlace: equipoRadio.estado.enlace, destino: `${config.catHost}:${config.catPort}`, error: equipoRadio.estado.error || null, modelo: equipoRadio.estado.modelo || null },
+    rotor: { activo: config.rotorMode !== 'off' && !!config.rotorMode, modo: config.rotorMode, enlace: rotorAntena.estado.enlace, destino: `${config.rotorHost}:${config.rotorPort}`, error: rotorAntena.estado.error || null },
+    cluster: { activo: config.clusterEnabled === true, estado: clusterDx.estado, destino: clusterDx.destinoActual || `${config.clusterHost}:${config.clusterPort}`, spots: clusterDx.spots.length },
+    pat: { alcanzable: clientePat.estado.alcanzable, url: String(config.patUrl), error: clientePat.estado.error, conectado: clientePat.estado.conectado },
+    nmea2000: servicioN2k.estado(),
     ais: {
       activo: config.aisEnabled !== false,
       udpPuerto: udpAisPuerto, udpEscuchando: !!udpAis, udpError: udpAisError,
@@ -5664,15 +5683,6 @@ app.post('/api/config', (req, res) => {
     if (updated.localThresholdRainMm !== undefined) config.localThresholdRainMm = parseFloat(updated.localThresholdRainMm.toString());
     if (updated.localWeatherInterval !== undefined) config.localWeatherInterval = parseInt(updated.localWeatherInterval.toString());
 
-    // A-GPS configurations
-    if (updated.agpsEnabled !== undefined) config.agpsEnabled = !!updated.agpsEnabled;
-    if (updated.agpsServer !== undefined) config.agpsServer = updated.agpsServer.trim();
-    if (updated.agpsInterval !== undefined) config.agpsInterval = updated.agpsInterval.trim();
-    if (updated.agpsLastSync !== undefined) config.agpsLastSync = updated.agpsLastSync;
-    if (updated.agpsTtff !== undefined) config.agpsTtff = parseFloat(updated.agpsTtff.toString());
-    if (updated.agpsConstellations !== undefined) config.agpsConstellations = updated.agpsConstellations;
-    if (updated.suplPort !== undefined) config.suplPort = parseInt(updated.suplPort.toString()) || 7275;
-    if (updated.suplVersion !== undefined) config.suplVersion = updated.suplVersion.trim();
 
     if (updated.ignSeismoEnabled !== undefined) {
       config.ignSeismoEnabled = !!updated.ignSeismoEnabled;
@@ -5922,69 +5932,31 @@ icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
 });
 
 // Update current station GPS latitude and longitude directly (simulates real mobile tracker override)
+// Posición fija de la estación (la de respaldo, cuando no hay GPS con fijo).
+// No finge un fijo de GPS: la posición queda marcada como fija.
 app.post('/api/gpsd/update', (req, res) => {
-  try {
-    const { lat, lon, alt, mode, speedKmh, forceFallback } = req.body;
-    
-    handleGpsdStateUpdate({ lat, lon, alt, mode, speedKmh, isFallback: forceFallback });
-
-    addLog('SYS', 'GPSD', 'LOCAL', 'OVERRIDE', `Posición de antena fija/móvil modulada: ${gpsdState.lat}, ${gpsdState.lon}${gpsdState.alt !== undefined ? `, Altitud: ${gpsdState.alt}m` : ''} (Modo: ${gpsdState.mode}, Respaldo: ${gpsdState.isFallback})`, true, 'Reajuste');
-
-    // Re-evaluate earthquake ranges instantly!
-    refreshEarthquakes();
-    refreshWeather();
-    refreshIQAir();
-
-    res.json({ success: true, gpsd: gpsdState });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ success: false, error: 'Solo el administrador puede cambiar la posición de la estación.' });
+  const lat = Number(req.body?.lat), lon = Number(req.body?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return res.status(400).json({ success: false, error: 'Posición no válida.' });
   }
+  if (gpsdState.mode >= 2 && !gpsdState.isFallback) {
+    return res.status(409).json({ success: false, error: 'El GPS tiene fijo: la posición de la estación la da el GPS.' });
+  }
+  config.fallbackLat = Number(lat.toFixed(6));
+  config.fallbackLon = Number(lon.toFixed(6));
+  lastValidGps.lat = gpsdState.lat = config.fallbackLat;
+  lastValidGps.lon = gpsdState.lon = config.fallbackLon;
+  const alt = Number(req.body?.alt);
+  if (Number.isFinite(alt)) lastValidGps.alt = gpsdState.alt = Math.round(alt);
+  gpsdState.isFallback = true;
+  guardarConfig();
+  addLog('SYS', 'GPSD', 'LOCAL', 'POSICION', `Posición fija de la estación: ${config.fallbackLat}, ${config.fallbackLon}${req.body?.origen ? ` (${String(req.body.origen).slice(0, 40)})` : ''}.`, true, 'Posición fija');
+  refreshEarthquakes();
+  refreshWeather();
+  res.json({ success: true, gpsd: gpsdState });
 });
 
-// Sincronizar A-GPS manualmente o automáticamente vía API
-app.post('/api/agps/sync', (req, res) => {
-  try {
-    const isAutoRestart = req.body?.trigger === 'auto' || req.query?.trigger === 'auto';
-    const server = config.agpsServer || 'supl.google.com';
-    const port = config.suplPort || 7275;
-    const version = config.suplVersion || '2.0';
-    const constellations = config.agpsConstellations || ['GPS', 'GLONASS', 'Galileo'];
-    
-    if (isAutoRestart) {
-      addLog('SYS', 'A-GPS', 'AUTO_RESTART', 'TIMEOUT', `REINICIO AUTOMÁTICO de A-GPS por inactividad de datos de posición actualizados (intervalo 5 minutos). Sincronizando con ${server}:${port}...`, true, 'Auto-reinicio');
-    } else {
-      addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC_REQ', `Iniciando petición de sincronización A-GPS manual con servidor: ${server}:${port} (SUPL v${version}) para [${constellations.join(', ')}]...`, true, 'En marcha');
-    }
-    
-    // Perform sync
-    config.agpsLastSync = new Date().toISOString();
-    config.agpsTtff = 3.2;
-    
-    addLog('SYS', 'A-GPS', 'LOCAL', 'SYNC', `¡Sincronización A-GPS ${isAutoRestart ? 'automática' : 'manual'} exitosa! Archivo de asistencia orbital LTO inyectado en socket gpsd (localhost:2947). Satélites asistidos: ${constellations.join(', ')}. TTFF reducido a 3.2s.`, true, 'Completado');
-    
-    // Guardar en disco para persistencia si está autorizado o si es auto-reinicio
-    const isAuth = isAuthorizedRequest(req);
-    if (isAuth || isAutoRestart) {
-      try {
-        const satConfigPath = path.join(process.cwd(), 'sat_config.json');
-        fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8');
-      } catch (err) {
-        console.error("[SYS CONFIG ERROR] No se pudo escribir sat_config.json en sincronización A-GPS:", err);
-      }
-    } else {
-      addLog('SYS', 'A-GPS', 'DEMO', 'SYNC', `[DEMO PÚBLICA] Sincronización A-GPS manual completada en memoria. (Se omite la escritura en disco por seguridad).`, true, 'Simulado');
-    }
-    
-    res.json({ 
-      success: true, 
-      lastSync: config.agpsLastSync,
-      ttff: config.agpsTtff,
-      config 
-    });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
 
 // WIRES-X Real-time status tracker (Yaesu official source scraper with 5-min caching)
 interface WiresXStatusCache {

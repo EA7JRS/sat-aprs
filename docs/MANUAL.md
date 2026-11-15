@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.32.2**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.33.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -110,7 +110,7 @@ El **Plan Meteosalud** del Ministerio de Sanidad: temperaturas máximas prevista
 
 ### Coordinación
 
-Herramientas para coordinar incidentes, como perfiles de alerta, plan de frecuencias y destinatarios. **Pendiente de rehacer**: aún tiene partes de demostración, como la actividad de canal y las lecturas de radiación. No se use para decidir.
+Herramientas para coordinar incidentes: perfiles de alerta, plan de frecuencias, destinatarios, unidades y matriz de riesgo. Es un cuaderno de trabajo que se guarda **en este navegador**, no en la estación. Ya no tiene datos aleatorios, pero **está pendiente de rehacer** como el resto de pantallas: úsela como apoyo, no como fuente.
 
 ---
 
@@ -128,7 +128,7 @@ El perfil APRS de la estación:
 | :--- | :--- |
 | Titular, indicativo y SSID | La consola valida el indicativo. |
 | Passcode de APRS-IS | Avisa si no corresponde al indicativo. |
-| Posición | Del GPS (gpsd), por coordenadas o por locator Maidenhead. |
+| Posición | Del GPS (gpsd) o fija: por coordenadas, por locator Maidenhead o con el botón flotante «Posición fija desde este dispositivo». Con el GPS en fijo, manda el GPS. |
 | Símbolo, PHG y comentario | Lo que verán las demás estaciones. |
 | Ruta | De serie `WIDE1-1,WIDE2-1`. |
 | Baliza de posición | Apagada de serie, con su intervalo. En el perfil técnico, más abajo: SmartBeaconing, rutas y Mic-E. |
@@ -136,7 +136,14 @@ El perfil APRS de la estación:
 
 ### WeeWX
 
-**Pendiente de rehacer**: la gráfica de la pantalla todavía tiene datos de demostración. El parte meteorológico por APRS sí usa los datos reales de WeeWX; se configura en el Perfil.
+Lo que da WeeWX de verdad, leído de su configuración (`weewx.conf`) y de su base de datos (SQLite, en solo lectura con `sqlite3`):
+
+- **Estado**: el servicio, si la base de datos se lee y cuándo fue la última lectura, y si el parte meteorológico por APRS está activo y con qué datos.
+- **Lectura actual**: temperatura, humedad, presión con su tendencia de 3 h, viento y dirección, y lluvia de la última hora. Debajo de cada valor, los extremos de las últimas 24 h.
+- **Gráficas de 24 h**: temperatura, presión, humedad y viento medio, con medias por hora. Al pasar el dedo o el ratón se lee cada hora.
+- **Configuración**: tipo de estación, ubicación, intervalo de archivo y base de datos. Desde aquí se puede «Leer de nuevo», «Ver registro» y «Reiniciar servicio».
+
+La base de datos que se lee es la de Estación → Perfil → «Parte meteorológico por APRS» (de serie `/var/lib/weewx/weewx.sdb`), o si no la de `weewx.conf`. Hace falta la orden `sqlite3` (`sudo apt install sqlite3`) y que el usuario de la consola pueda leer el archivo. Si no se puede, la pantalla dice por qué y no muestra gráficas.
 
 ---
 
@@ -274,7 +281,16 @@ Sin `rflog /var/log/aprx/aprx-rf.log` dentro de `<logging>`, la pantalla lo expl
 
 ### 7.5 Tramas APRS
 
-Analizador y validador de tramas APRS (tipo, campos, compresión). **Pendiente de rehacer**: su mensajería y su inyector de señales son de demostración y **no envían nada**. Para mensajes reales use Radio → Principal → Mensajería.
+Todo lo que entra y sale, en una lista:
+
+- **Estado**: radio (KISS de Direwolf), APRS-IS y emisión. Cifras de la última hora por radio, por APRS-IS y emitidas.
+- **En directo**: las últimas tramas, filtradas por vía (radio, APRS-IS, emitidas), por tipo y por indicativo o texto.
+  - Cada trama se explica en castellano: posición a tantos km y rumbo, mensaje para…, boletín, objeto, Mic-E, meteorología, telemetría, estado…
+  - Las emitidas dicen por dónde salieron o **por qué no salieron** (emisión desactivada, sin indicativo válido…).
+  - Se guardan las 500 últimas mientras la consola está en marcha.
+- **Analizador**: al tocar una trama, o al pegar una a mano, la descompone en sus campos (origen, ruta, por dónde llegó, posición, rumbo y velocidad, PHG, altitud, texto y número de mensaje, telemetría…) y avisa de lo que no cumple: un indicativo no válido, una ruta mala, un texto de más de 67 caracteres… **Solo analiza: no emite nada.**
+
+Los mensajes se envían desde Radio → Principal → Mensajería. Cuando llega un mensaje para la estación, sale un aviso en pantalla; su botón «Responder» lo envía de verdad por la mensajería, con acuse y reintentos.
 
 ### 7.6 Winlink
 
@@ -297,7 +313,15 @@ El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `c
 
 ### Equipo
 
-Estado del NUC (CPU, temperatura, memoria, servicios de systemd), GPS y hora, perfiles del operador y avisos sonoros del navegador. **Pendiente de revisar**: algunos contadores de los canales de bajo nivel (sockets, latencia NTP) todavía son de demostración, igual que el registro de la asistencia A-GPS de Configuración → General.
+- **Estado del NUC**: CPU, temperatura, memoria y servicios de systemd.
+- **GPS y hora**: fijo, satélites y dispositivo según gpsd, y el estado de ntpsec.
+- **Enlaces de la estación**: cada enlace real de la consola con su estado, con qué está conectado y qué ha pasado por él:
+  - APRS-IS y Direwolf (KISS);
+  - gpsd;
+  - AIS y ADS-B;
+  - equipo (rigctld), rotor y cluster DX;
+  - Pat y NMEA 2000.
+- **Perfiles del operador, avisos sonoros y diario de systemd.**
 
 ### Configuración
 
@@ -305,13 +329,12 @@ Pestañas:
 
 | Pestaña | Qué se ajusta |
 | :--- | :--- |
-| General & Identidad | Indicativo, passcode, posición de respaldo, radio de cobertura sísmica, servidor APRS-IS, A-GPS y modo eco |
+| General & Identidad | Indicativo, passcode, posición de respaldo, radio de cobertura sísmica, servidor APRS-IS y modo eco |
 | Direwolf TNC Módems | Tarjeta de sonido, módem, PTT, gpsd y puerto KISS; genera `direwolf.conf` sin `CBEACON` y con `LOGDIR` |
 | WeeWX Weather Engine | Controlador, base de datos e intervalos de WeeWX |
 | Claves API & Puertos | Claves de OpenWeatherMap, AEMET, IQAir y WeatherAPI; umbrales meteorológicos |
 | Alertas e Inundación | Alarmas sonoras, tonos y silencio programado de guardia |
 | Archivos .conf Debian | Ver, validar y editar `direwolf.conf`, `aprx.conf`, `weewx.conf`, el `config.json` de Pat y `axports` |
-| Propagación & Radio | Vacía por ahora (pendiente); la propagación está en Radio → HF y propagación |
 | Estación APRS | El mismo perfil que Estación → Perfil |
 
 Las claves y contraseñas guardadas se muestran como `********` y no salen nunca de la consola.
@@ -462,6 +485,7 @@ En Cluster DX, toque la frecuencia del spot: el equipo sintoniza y el rotor gira
 | Equipo o rotor «sin enlace» | `rigctld` o `rotctld` parados, o puerto distinto | Arránquelos y revise host y puerto en su panel |
 | El Doppler se para solo | Se movió el dial del equipo, o se puso el satélite | Vuelva a pulsar «Seguir Doppler» |
 | «Posición fija» | gpsd sin fijo o sin GPS | `cgps` para comprobar el GPS |
+| WeeWX sin gráficas | Falta `sqlite3`, la ruta de la base de datos no es la buena o no se puede leer | Estación → WeeWX dice el motivo; `sudo apt install sqlite3` y revise la ruta en Estación → Perfil |
 | «Hora sin sincronizar» | ntpsec sin fuente válida | `ntpq -p` |
 | No se guardan los cambios | No es administrador, o no hay ninguno configurado (modo demostración) | «Acceder» con el token, o configure `SAT_ADMIN_TOKEN` |
 

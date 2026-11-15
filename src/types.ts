@@ -151,14 +151,6 @@ export interface TelemetryConfig {
   icaTemplateExtremadamente?: string;
   criticalEmail?: string;
   aemetAlertsSubscriptionEnabled?: boolean;
-  agpsEnabled?: boolean;
-  agpsServer?: string;
-  agpsInterval?: string;
-  agpsLastSync?: string;
-  agpsTtff?: number;
-  agpsConstellations?: string[];
-  suplPort?: number;
-  suplVersion?: string;
   ignSeismoEnabled?: boolean;
   ignSeismoInterval?: number;
   tsunamiMonitorEnabled?: boolean;

@@ -2,6 +2,37 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.33.0] - 2026-11-15
+### Fuera lo simulado que quedaba en pantallas
+- **Radio · Tramas APRS, nueva** (`src/pages/TramasAprs.tsx`, `server/radio/tramas.ts`, `GET /api/radio/tramas`, `POST /api/radio/tramas/analizar`):
+  - todo lo que entra por radio (KISS) y por APRS-IS y todo lo que sale, clasificado por tipo y explicado en castellano;
+  - las emitidas dicen por dónde salieron o por qué no;
+  - filtros por vía, tipo e indicativo;
+  - **analizador** de tramas: campos, posición, PHG, altitud, telemetría, terceros, y lo que no cumple. Solo analiza: no emite nada.
+  - Fuera la pantalla antigua (`AprsAdaptor`), cuya mensajería marcaba los mensajes como «TRANSMITIDO» sin enviarlos.
+- **Aviso de mensaje recibido**:
+  - solo salta con los mensajes **para la estación**, no con los de otros que se oyen ni con los acuses;
+  - «Responder» **envía de verdad** por la mensajería, con acuse y reintentos; antes no enviaba nada;
+  - fuera las coordenadas que mostraba, que eran las de la estación y no las del remitente.
+- **Estación · WeeWX, nueva** (`src/pages/Weewx.tsx`, `server/estacion/weewx.ts`, `GET/POST /api/estacion/weewx`):
+  - la lectura actual y las últimas 24 h hora a hora, sacadas de la base de datos de WeeWX con `sqlite3` en solo lectura: temperatura, presión con tendencia, humedad, viento y lluvia, con sus extremos;
+  - gráficas con lectura al pasar el dedo;
+  - lo que dice `weewx.conf`, más «Ver registro» y «Reiniciar servicio».
+  - Fuera la consola antigua (`WeewxConsole`), con historial y valores inventados.
+- **Sistema · Equipo**: el panel de «sockets» con contadores y eventos aleatorios se sustituye por **los enlaces reales** de la estación (`/api/enlaces`, ampliado): APRS-IS, Direwolf, gpsd, AIS, ADS-B, equipo, rotor, cluster, Pat y NMEA 2000. Fuera también los datos de GPS escritos a mano («gpsd v3.25», «9600 bps»).
+- **Fuera el A-GPS simulado**: no había cliente SUPL. Fingía una sincronización «exitosa» al arrancar, cada día y cada 5 minutos sin movimiento. Se retiran la ruta, el temporizador, los ajustes y su tarjeta en Configuración.
+- **gpsd**: al arrancar ya no se dan 9 satélites ni un receptor u-blox inventados. Sin gpsd, el estado queda sin fijo y en la posición fija.
+- **La posición de la estación ya no se puede falsear**:
+  - `POST /api/gpsd/update` solo cambia la **posición fija** (de respaldo); es para el administrador, y si el GPS tiene fijo, se rechaza;
+  - antes, tocar una incidencia de tráfico o un sismo «movía» la estación allí como si fuera un fijo de GPS, y eso cambiaba la baliza y el radio de avisos;
+  - el botón flotante pone la posición fija en la del dispositivo, con confirmación.
+- **Latencia NTP**: si la consola no contesta, no se inventa una medida.
+- **Coordinación**: fuera la actividad de canal aleatoria y el ruido añadido a las lecturas de radiación. Queda pendiente de rehacer.
+- **Configuración**: fuera la pestaña «Propagación & Radio», que estaba vacía.
+- Arreglos de ancho en el móvil en Configuración y Coordinación.
+
+---
+
 ## [v1.32.2] - 2026-11-15
 ### Documentación al día
 - **Manual de uso nuevo** ([`docs/MANUAL.md`](docs/MANUAL.md)):

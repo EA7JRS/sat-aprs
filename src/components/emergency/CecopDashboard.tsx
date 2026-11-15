@@ -48,7 +48,7 @@ import {
   IQAirStatus
 } from '../../types';
 import { NavareaWarning } from '../../types';
-import { AprsPacket } from '../radio/AprsAdaptor';
+import type { AprsPacket } from '../../utils/aprsPaquete';
 
 interface CecopDashboardProps {
   earthquakes: EarthquakeEvent[];
@@ -662,35 +662,8 @@ export default function CecopDashboard({
     if (showToast) showToast('Perfil de Alerta desactivado. Modulación y protocolos en modo manual.');
   };
 
-  // Simular actividad de canal en tiempo real mediante el TNC para frecuencias activas
-  const [channelActivity, setChannelActivity] = useState<Record<string, 'IDLE' | 'RX' | 'TX'>>({});
-
-  useEffect(() => {
-    const updateActivity = () => {
-      const newActivity: Record<string, 'IDLE' | 'RX' | 'TX'> = {};
-      emergencyFrequencies.forEach(freq => {
-        if (!freq.isActive) {
-          newActivity[freq.id] = 'IDLE';
-        } else {
-          // Si está activa, asignar aleatoriamente IDLE, RX o TX con pesos
-          // por ejemplo, 50% IDLE, 35% RX (recibiendo señales o balizas APRS), 15% TX (transmisión local)
-          const rand = Math.random();
-          if (rand < 0.5) {
-            newActivity[freq.id] = 'IDLE';
-          } else if (rand < 0.85) {
-            newActivity[freq.id] = 'RX';
-          } else {
-            newActivity[freq.id] = 'TX';
-          }
-        }
-      });
-      setChannelActivity(newActivity);
-    };
-
-    updateActivity();
-    const interval = setInterval(updateActivity, 2500);
-    return () => clearInterval(interval);
-  }, [emergencyFrequencies]);
+  // Sin medida real de actividad por canal: no se pinta ninguna (antes era aleatoria)
+  const channelActivity: Record<string, 'IDLE' | 'RX' | 'TX'> = {};
 
   // 1. DYNAMIC FEED TO INCIDENTS RECONCILIATION
   // Recompile and transform Pilar I raw feeds into CECOP high-fidelity incident objects
@@ -1136,7 +1109,7 @@ export default function CecopDashboard({
       if (custom) {
         list.push(custom);
       } else {
-        const realReading = st.baseVal + (Math.random() * 5 - 2.5); // Simulated live value around baseVal
+        const realReading = st.baseVal; // el valor que da la fuente; nada aleatorio
         const isHazard = realReading > 115; // Threshold check
         list.push({
           id: st.id,
@@ -2237,7 +2210,7 @@ export default function CecopDashboard({
               Control PEM
             </span>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-[10px] text-slate-500 font-mono">
               Cola de Firma: {aprsPackets.filter(p => p.status === 'PENDIENTE').length} Pendientes
             </span>
@@ -2702,7 +2675,7 @@ export default function CecopDashboard({
                               return (
                                 <div className="flex items-center gap-1 shrink-0 bg-emerald-950/20 border border-emerald-900/10 px-1 py-0.5 rounded text-[7px] font-mono text-emerald-500/85">
                                   <span className="w-1 h-1 rounded-full bg-emerald-500/60" />
-                                  STANDBY
+                                  EN EL PLAN
                                 </div>
                               );
                             })()}

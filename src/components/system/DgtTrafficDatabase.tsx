@@ -11,7 +11,7 @@ import { DgtIncident, GPSDStatus } from '../../types';
 interface DgtTrafficDatabaseProps {
   incidents: DgtIncident[];
   gpsd: GPSDStatus;
-  onRelocate: (lat: number, lon: number) => void;
+  onRelocate?: (lat: number, lon: number) => void;
 }
 
 export default function DgtTrafficDatabase({ incidents, gpsd, onRelocate }: DgtTrafficDatabaseProps) {
@@ -410,12 +410,13 @@ export default function DgtTrafficDatabase({ incidents, gpsd, onRelocate }: DgtT
                       </div>
 
                       {!isLocalRef ? (
-                        <button
-                          onClick={() => onRelocate(inc.latitud, inc.longitud)}
+                        <a
+                          href={`https://www.openstreetmap.org/?mlat=${inc.latitud}&mlon=${inc.longitud}#map=14/${inc.latitud}/${inc.longitud}`}
+                          target="_blank" rel="noopener noreferrer"
                           className="px-2 py-1 bg-slate-900 hover:bg-blue-950 font-sans font-bold text-[9px] text-slate-300 hover:text-blue-400 rounded border border-slate-800 hover:border-blue-500/30 transition-all cursor-pointer select-none"
                         >
-                          Centrar Terminal
-                        </button>
+                          Ver en el mapa
+                        </a>
                       ) : (
                         <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
                           <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"></span>

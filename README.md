@@ -26,7 +26,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 
 ---
 
-## 📌 Qué hace hoy (v1.32.2)
+## 📌 Qué hace hoy (v1.33.0)
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
@@ -55,7 +55,10 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Radio · Winlink: buzón, redacción, sesiones y pasarelas RMS a través de la API HTTP de Pat | Operativo desde la v1.32.0; sin probar con un Pat real |
 | Conectividad · salida NMEA 2000 (SocketCAN): posición, hora, meteorología y avisos al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
 | aprx desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx), que compila en Debian 13 (`tools/instalar-aprx.sh`) | Operativo desde la v1.32.1 |
-| Pantallas **WeeWX**, **Tramas APRS** y **Coordinación**, y partes de **Sistema → Equipo** y **Configuración** (A-GPS; pestaña «Propagación & Radio» vacía) | **Pendientes de rehacer**: aún tienen partes de demostración (gráficas, actividad de canal o contadores simulados; la mensajería de Tramas APRS no se envía). Para mensajes, use Radio → Principal |
+| Radio · Tramas APRS: todo lo que entra (radio y APRS-IS) y sale, explicado, y analizador de tramas | Operativo desde la v1.33.0 |
+| Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real |
+| Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
+| Avisos · Coordinación | Cuaderno de trabajo en el navegador, ya sin datos aleatorios; **pendiente de rehacer** |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 
@@ -69,7 +72,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 | :--- | :--- | :--- |
 | **Inicio** | Inicio | Avisos activos en tu zona, estado de la estación (posición, hora, baliza, meteo), últimas emisiones y si las fuentes responden. |
 | **Avisos** | En vigor · Salud · Coordinación | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; Plan Meteosalud del Ministerio de Sanidad; coordinación de incidentes. |
-| **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y previsión, calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza). |
+| **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza); WeeWX con sus últimas 24 h. |
 | **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
 | **Radio** | Principal · Direwolf · HF y propagación · aprx · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
 | **Sistema** | Equipo · Configuración · Conectividad · Pruebas y simulación | Estado del equipo, ajustes y archivos `.conf`, salida NMEA 2000 y herramientas de ensayo (nada de ellas se emite). |

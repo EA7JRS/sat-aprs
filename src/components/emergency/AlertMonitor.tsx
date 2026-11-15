@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AlertOctagon, Activity, Radio, AlertTriangle, Waves, Clock, ShieldCheck, EyeOff, MapPin, Plus, Trash2, Compass, Map, Sliders, Database, Cloud, Volume2, Eye, RefreshCw, FileText, Power } from 'lucide-react';
 import { EarthquakeEvent, NoaaSpaceAlert, TsunamiAlert } from '../../types';
-import { AprsPacket } from '../radio/AprsAdaptor';
+import type { AprsPacket } from '../../utils/aprsPaquete';
 import SOSConfiguration, { DEFAULT_SOS_SETTINGS, SOSSettingsMap } from './SOSConfiguration';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';

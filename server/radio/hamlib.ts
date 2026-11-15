@@ -232,6 +232,24 @@ export class Equipo {
     return this.mandar(`M ${m} 0`); // 0 = ancho normal del modo
   }
 
+  /** Subida separada (split): activa el split con VFO B como emisor y le pone la frecuencia. */
+  async subida(hz: number): Promise<{ ok: boolean; error?: string }> {
+    if (!Number.isFinite(hz) || hz < 30_000 || hz > 3_000_000_000) return { ok: false, error: 'Frecuencia de subida fuera de rango.' };
+    if (!this.splitPuesto) {
+      const s = await this.mandar('S 1 VFOB');
+      if (!s.ok) return s;
+      this.splitPuesto = true;
+    }
+    return this.mandar(`I ${Math.round(hz)}`);
+  }
+
+  async quitarSplit(): Promise<void> {
+    if (!this.splitPuesto) return;
+    this.splitPuesto = false;
+    await this.mandar('S 0 VFOA');
+  }
+  private splitPuesto = false;
+
   vfo(vfo: string) {
     const v = vfo.toUpperCase();
     if (!['VFOA', 'VFOB'].includes(v)) return Promise.resolve({ ok: false, error: 'VFO no admitido.' });

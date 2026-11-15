@@ -16,6 +16,7 @@ import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
 import { Grupo, mensajeEai } from './server/radio/grupo';
+import { EstadoDoppler, decidir as decidirDoppler, modoEquipo } from './server/radio/doppler';
 import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } from './server/radio/consola';
 import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
@@ -824,6 +825,70 @@ function pasoDe(norad: number, ahora: number): Paso | null {
   pasosGuardados.set(norad, { paso, cuando: ahora, lat: gpsdState.lat, lon: gpsdState.lon });
   return paso;
 }
+
+// Corrección de Doppler continua en el equipo durante un paso
+let doppler: EstadoDoppler | null = null;
+let dopplerFin: { motivo: string; cuando: number; nombre: string } | null = null;
+
+async function iniciarDoppler(norad: number, indice: number): Promise<{ ok: boolean; error?: string }> {
+  if (config.catEnabled !== true || !equipoRadio.estado.enlace) return { ok: false, error: 'Hace falta el equipo por CAT conectado.' };
+  const s = satelites.find((x) => x.norad === norad);
+  if (!s) return { ok: false, error: 'No hay TLE de ese satélite.' };
+  const t = s.transmisores[indice];
+  if (!t || (!t.bajadaHz && !t.subidaHz)) return { ok: false, error: 'Ese transmisor no tiene frecuencias.' };
+  const paso = pasoDe(norad, Date.now());
+  await pararDoppler(null);
+  const modo = modoEquipo(t.modo);
+  if (modo) await equipoRadio.modo(modo);
+  doppler = {
+    norad, nombre: s.nombre, bajadaHz: t.bajadaHz, subidaHz: t.subidaHz !== t.bajadaHz ? t.subidaHz : 0, modo, descripcion: t.descripcion,
+    inicio: Date.now(), fin: paso?.los ?? null, ultimaRx: null, ultimaTx: null, ultimaVez: null, radialKmS: null, split: null,
+  };
+  dopplerFin = null;
+  addLog('SYS', 'DOPPLER', 'LOCAL', 'SAT', `Corrección de Doppler en marcha: ${s.nombre} · ${t.descripcion || t.modo}.`, true, 'Doppler');
+  await pasoDoppler();
+  return { ok: true };
+}
+
+async function pararDoppler(motivo: string | null) {
+  if (!doppler) return;
+  if (motivo) {
+    dopplerFin = { motivo, cuando: Date.now(), nombre: doppler.nombre };
+    addLog('SYS', 'DOPPLER', 'LOCAL', 'SAT', `Corrección de Doppler terminada (${doppler.nombre}): ${motivo}.`, true, 'Doppler');
+  }
+  if (doppler.split) await equipoRadio.quitarSplit().catch(() => {});
+  doppler = null;
+}
+
+async function pasoDoppler() {
+  const d = doppler;
+  if (!d) return;
+  if (config.catEnabled !== true) return pararDoppler('se ha desconectado el equipo');
+  const o = orbitaDe(d.norad);
+  const m = o ? mirar(o, { lat: gpsdState.lat, lon: gpsdState.lon }, gpsdState.alt || 0, Date.now()) : null;
+  if (!m) return pararDoppler('no se puede calcular la órbita');
+  d.radialKmS = m.radialKmS;
+  if (!equipoRadio.estado.enlace) return; // sin lectura del equipo: se espera
+  // La frecuencia del equipo solo vale si se ha leído después del último cambio que se le mandó
+  const leidaDespues = d.ultimaVez === null || equipoRadio.estado.leido > d.ultimaVez + 200;
+  const decision = decidirDoppler(d, m.radialKmS, leidaDespues ? equipoRadio.estado.frecuenciaHz : null, Date.now());
+  if (decision.tipo === 'parar') return pararDoppler(decision.motivo);
+  if (decision.tipo !== 'mandar') return;
+  if (decision.rx !== null) {
+    const r = await equipoRadio.frecuencia(decision.rx);
+    if (r.ok) d.ultimaRx = decision.rx;
+  }
+  if (decision.tx !== null) {
+    const r = await equipoRadio.subida(decision.tx);
+    if (r.ok) { d.ultimaTx = decision.tx; d.split = true; }
+    else if (d.split === null) {
+      d.split = false;
+      addLog('SYS', 'DOPPLER', 'LOCAL', 'SAT', `El equipo no acepta subida separada (split): solo se corrige la bajada. ${r.error ?? ''}`.trim(), false, 'Doppler');
+    }
+  }
+  d.ultimaVez = Date.now();
+}
+setInterval(() => { pasoDoppler().catch(() => {}); }, 2000);
 
 const favoritosSat = (): number[] => String(config.satFavoritos || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
 
@@ -4724,6 +4789,7 @@ app.get('/api/radio/satelites', (req, res) => {
     favoritos: favoritos.map((n) => satelites.find((s) => s.norad === n)).filter((s): s is Satelite => !!s).map((s) => ficha(s, true))
       .sort((a, b) => (a.paso?.aos ?? Infinity) - (b.paso?.aos ?? Infinity)),
     favoritosSinTle: favoritos.filter((n) => !satelites.some((s) => s.norad === n)),
+    doppler, dopplerFin,
     lista: lista.map((s) => ({ ...ficha(s, false), favorito: favoritos.includes(s.norad) })),
   });
 });
@@ -4731,6 +4797,14 @@ app.get('/api/radio/satelites', (req, res) => {
 app.post('/api/radio/satelites', async (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede cambiar los satélites.' });
   const b = req.body || {};
+  if (b.accion === 'doppler') {
+    const r = await iniciarDoppler(Number(b.norad), Number(b.transmisor) || 0);
+    return res.status(r.ok ? 200 : 400).json(r);
+  }
+  if (b.accion === 'doppler-parar') {
+    await pararDoppler('parada a mano');
+    return res.json({ ok: true });
+  }
   if (b.accion === 'actualizar') {
     const ok = await descargarSatelites(true);
     return res.status(ok ? 200 : 502).json({ ok, error: ok ? undefined : `No se pudo descargar: ${satError}` });
@@ -4994,6 +5068,23 @@ async function ejecutarConsola(o: Orden): Promise<{ ok: boolean; lineas: string[
       if (o.accion === 'list' || o.accion === '') {
         const favs = favoritosSat().map((n) => satelites.find((s) => s.norad === n)).filter((s): s is Satelite => !!s);
         return favs.length ? bien(...favs.map(ficha)) : bien('Sin satélites favoritos.');
+      }
+      if (o.accion === 'doppler') {
+        if (o.args[0]?.toLowerCase() === 'stop') { await pararDoppler('parada a mano'); return bien('Corrección de Doppler parada.'); }
+        const indice = o.args.length > 1 && /^\d+$/.test(o.args[o.args.length - 1]) ? Number(o.args[o.args.length - 1]) - 1 : 0;
+        const id = (o.args.length > 1 && /^\d+$/.test(o.args[o.args.length - 1]) ? o.args.slice(0, -1) : o.args).join(' ');
+        const s = buscarSatelite(id);
+        if (!s) return mal(`No hay TLE de «${id}».`);
+        if (!o.args.length) return mal('Uso: sat doppler <NORAD|nombre> [n.º de transmisor] · sat doppler stop');
+        const x = await iniciarDoppler(s.norad, indice);
+        if (!x.ok) return mal((x as { error: string }).error);
+        const d = doppler!;
+        return bien(`Doppler en marcha: ${d.nombre} · ${d.descripcion || ''}`, `↓ ${d.ultimaRx ? (d.ultimaRx / 1e6).toFixed(6) : '—'} MHz${d.subidaHz ? ` · ↑ ${d.ultimaTx ? (d.ultimaTx / 1e6).toFixed(6) : 'sin split'} MHz` : ''}`);
+      }
+      if (o.accion === 'tx') {
+        const s = buscarSatelite(o.resto.trim());
+        if (!s) return mal(`No hay TLE de «${o.resto.trim()}».`);
+        return bien(...(s.transmisores.length ? s.transmisores.map((t, i) => `${i + 1}  ↓ ${t.bajadaHz ? (t.bajadaHz / 1e6).toFixed(4) : '—'}  ↑ ${t.subidaHz ? (t.subidaHz / 1e6).toFixed(4) : '—'}  ${t.modo}  ${t.descripcion}`) : ['Sin transmisores en el archivo.']));
       }
       if (o.accion === 'next') {
         const id = o.resto.trim();

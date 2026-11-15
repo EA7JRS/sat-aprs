@@ -23,6 +23,8 @@ interface Datos {
   disponible: boolean; error: string; total: number; generado: number | null; leido: number | null; edadTleDias: number | null;
   estacion: { lat: number; lon: number; gps: boolean }; grupos: Record<string, string>;
   favoritos: Ficha[]; favoritosSinTle: number[]; lista: Ficha[];
+  doppler: null | { norad: number; nombre: string; bajadaHz: number; subidaHz: number; modo: string | null; descripcion: string; fin: number | null; ultimaRx: number | null; ultimaTx: number | null; ultimaVez: number | null; radialKmS: number | null; split: boolean | null };
+  dopplerFin: null | { motivo: string; cuando: number; nombre: string };
 }
 
 const campo = 'w-full min-h-[44px] bg-slate-950 border border-slate-700 rounded-lg px-3 text-slate-100 text-[15px]';
@@ -71,6 +73,13 @@ export default function Satelites({ admin, config, onGuardar, puedeSeguir, puede
   };
   const seguir = async (norad: number) => { setAviso(await ordenRadio('rotor', { accion: 'seguir', objetivo: { tipo: 'satelite', norad } })); onCambio(); };
   const sintonizar = async (hz: number) => { setAviso(await ordenRadio('equipo', { frecuenciaHz: hz })); onCambio(); };
+  const doppler = async (cuerpo: Record<string, unknown>) => {
+    const r = await customFetch('/api/radio/satelites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    setAviso(r?.ok ? '' : j.error || 'No se pudo.');
+    setVuelta((v) => v + 1);
+    onCambio();
+  };
   const actualizar = async () => {
     setAviso('Descargando…');
     const r = await customFetch('/api/radio/satelites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'actualizar' }) }).catch(() => null);
@@ -164,6 +173,9 @@ export default function Satelites({ admin, config, onGuardar, puedeSeguir, puede
                                   {admin && puedeSintonizar && t.bajadaHz > 0 && (
                                     <button type="button" className={enlaceTexto} onClick={() => sintonizar(arriba && t.bajadaAhoraHz ? t.bajadaAhoraHz : t.bajadaHz)}>Sintonizar</button>
                                   )}
+                                  {admin && puedeSintonizar && (t.bajadaHz > 0 || t.subidaHz > 0) && (
+                                    <button type="button" className={enlaceTexto} onClick={() => doppler({ accion: 'doppler', norad: s.norad, transmisor: i })}>Seguir Doppler</button>
+                                  )}
                                 </div>
                               ))}
                               <div className="flex flex-wrap gap-x-4 text-xs text-slate-400">
@@ -182,6 +194,23 @@ export default function Satelites({ admin, config, onGuardar, puedeSeguir, puede
             </table>
           </div>
         )
+      )}
+      {datos?.doppler && (
+        <div className="rounded-lg border border-emerald-700 bg-slate-950 px-3 py-2 flex flex-wrap items-center justify-between gap-2" id="sat-doppler">
+          <div className="min-w-0">
+            <div className="text-slate-100"><span className="text-slate-400">Doppler: </span>{datos.doppler.nombre}{datos.doppler.descripcion ? ` · ${datos.doppler.descripcion}` : ''}</div>
+            <div className="font-mono text-sm text-emerald-400">
+              {datos.doppler.ultimaRx ? `↓ ${frecuenciaLegible(datos.doppler.ultimaRx)}` : '↓ —'}
+              {datos.doppler.bajadaHz && datos.doppler.ultimaRx ? ` (${datos.doppler.ultimaRx - datos.doppler.bajadaHz >= 0 ? '+' : '−'}${(Math.abs(datos.doppler.ultimaRx - datos.doppler.bajadaHz) / 1000).toFixed(1).replace('.', ',')} kHz)` : ''}
+              {datos.doppler.subidaHz ? (datos.doppler.split === false ? ' · ↑ el equipo no acepta split' : datos.doppler.ultimaTx ? ` · ↑ ${frecuenciaLegible(datos.doppler.ultimaTx)}` : '') : ''}
+            </div>
+            <div className="text-xs text-slate-400">{datos.doppler.ultimaVez ? `resintonizado ${haceCuanto(datos.doppler.ultimaVez, ahora)}` : 'esperando lectura del equipo'}{datos.doppler.fin ? ` · termina al ponerse, ${horaUtc(datos.doppler.fin)} UTC` : ''} · se para si mueves el dial</div>
+          </div>
+          {admin && <button type="button" className={boton} onClick={() => doppler({ accion: 'doppler-parar' })}>Parar Doppler</button>}
+        </div>
+      )}
+      {!datos?.doppler && datos?.dopplerFin && ahora - datos.dopplerFin.cuando < 10 * 60_000 && (
+        <p className="text-sm text-slate-400" id="sat-doppler-fin">Corrección de Doppler de {datos.dopplerFin.nombre} terminada: {datos.dopplerFin.motivo}.</p>
       )}
       {datos && datos.favoritosSinTle.length > 0 && datos.disponible && (
         <p className="text-[13px] text-amber-300">Sin TLE en el archivo para: {datos.favoritosSinTle.join(', ')}.</p>

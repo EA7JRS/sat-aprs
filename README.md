@@ -26,7 +26,7 @@ S.A.T.-APRS es un producto creado y desarrollado por EA7JRS, el autor exime toda
 
 ---
 
-## 📌 Qué hace hoy (v1.29.0)
+## 📌 Qué hace hoy (v1.30.0)
 
 S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) y trabaja en tres frentes:
 
@@ -51,7 +51,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 | Radio · Principal: cluster DX (con país, rumbo y distancia), mensajería APRS con acuse y envío por DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
 | Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor); un spot sintoniza y gira | Operativo desde la v1.23.0; pendiente de validar en la estación |
 | Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna, con la estación fija o en movimiento y objetivos en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
-| Satélites: descarga de TLE, próximos pasos, transmisores con Doppler y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
+| Satélites: descarga de TLE, próximos pasos, transmisores, corrección de Doppler continua en el equipo (con split) y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
 | Conectividad · salida NMEA 2000 (SocketCAN): posición (gpsd), hora, meteorología y avisos de emergencia al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
 | Radio · Direwolf: estado, tramas explicadas, nivel de audio por estación (registro CSV de Direwolf), configuración y prueba de emisión | Operativo desde la v1.27.0; pendiente de validar en la estación |
 | Grupo de estaciones (ARTS) con sondeo y emergencia remota (EAI), como en el tracker APRS LoRa+ | Operativo desde la v1.28.0; pendiente de validar en la estación |

@@ -417,3 +417,38 @@ test('satélites: posición, Doppler y próximo paso', () => {
   assert.equal(conDoppler(145_825_000, 0), 145_825_000);
   assert.equal(orbita({ tle1: 'basura', tle2: 'basura' }), null);
 });
+
+// ── Doppler continuo ────────────────────────────────────────────────────────
+import { bajadaConDoppler, decidir, modoEquipo, subidaConDoppler, toleranciaHz, EstadoDoppler } from '../server/radio/doppler';
+
+test('Doppler: frecuencias, modos y cuándo resintonizar', () => {
+  // ISS acercándose a 7 km/s: la bajada sube unos 3,4 kHz en 2 m y la subida se baja
+  assert.equal(bajadaConDoppler(145_800_000, -7), 145_803_404);
+  assert.equal(subidaConDoppler(145_990_000, -7), 145_986_591);
+  assert.equal(modoEquipo('FM'), 'FM');
+  assert.equal(modoEquipo('AFSK'), 'FM');
+  assert.equal(modoEquipo('GMSK USP'), 'FM');
+  assert.equal(modoEquipo('BPSK'), 'USB');
+  assert.equal(modoEquipo('CW'), 'CW');
+  assert.equal(modoEquipo('LoRa'), null);
+  assert.equal(toleranciaHz('FM'), 1000);
+  assert.equal(toleranciaHz('CW'), 50);
+  const base: EstadoDoppler = {
+    norad: 25544, nombre: 'ISS', bajadaHz: 145_800_000, subidaHz: 145_990_000, modo: 'FM', descripcion: '', inicio: 0, fin: 600_000,
+    ultimaRx: null, ultimaTx: null, ultimaVez: null, radialKmS: null, split: null,
+  };
+  // Primera vez: manda las dos
+  assert.deepEqual(decidir(base, -7, null, 1000), { tipo: 'mandar', rx: 145_803_404, tx: 145_986_591 });
+  // Menos de la tolerancia (FM, 1 kHz): nada
+  const hecho = { ...base, ultimaRx: 145_803_404, ultimaTx: 145_986_591 };
+  assert.deepEqual(decidir(hecho, -6.5, 145_803_404, 2000), { tipo: 'nada' });
+  // Pasa de la tolerancia: solo lo que cambia
+  const d = decidir(hecho, -4, 145_803_404, 3000);
+  assert.equal(d.tipo, 'mandar');
+  // Sin split: solo la bajada
+  assert.deepEqual(decidir({ ...base, split: false }, -7, null, 1000), { tipo: 'mandar', rx: 145_803_404, tx: null });
+  // Operador mueve el dial: se deja
+  assert.deepEqual(decidir(hecho, -7, 145_850_000, 4000), { tipo: 'parar', motivo: 'se ha movido el dial del equipo' });
+  // Fin del paso
+  assert.deepEqual(decidir(hecho, 7, 145_796_596, 700_000), { tipo: 'parar', motivo: 'ha terminado el paso' });
+});

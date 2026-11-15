@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.30.0] - 2026-11-15
+### Satélites: corrección de Doppler continua
+- **«Seguir Doppler»** en cada transmisor de un satélite (`server/radio/doppler.ts`): el equipo se resintoniza solo durante el paso. La **bajada** se corrige a f·(1 − v/c) y, si el transmisor tiene **subida** distinta y el equipo acepta split (`S 1 VFOB` / `I <frecuencia>` de rigctld), también la subida a f·(1 + v/c). Si el equipo no acepta split se dice y solo se corrige la bajada.
+- Pone el modo del equipo según el del transmisor (FM para FM, AFSK, FSK, GMSK…; CW; USB para BPSK) y solo vuelve a mandar la frecuencia cuando el cambio pasa de 1 kHz en FM o de 50 Hz en los demás.
+- Termina sola al ponerse el satélite, o **si se mueve el dial del equipo**; al terminar quita el split. El panel muestra la frecuencia corregida, el desvío y cuándo termina.
+- Consola: `sat tx <satélite>` lista sus transmisores y `sat doppler <satélite> [n]` / `sat doppler stop`.
+- `rigctld`: nuevas órdenes de subida separada en `server/radio/hamlib.ts`.
+
+---
+
 ## [v1.29.0] - 2026-11-15
 ### Radio · Principal: consola de comandos
 - **Consola de comandos** (`server/radio/consola.ts`, `GET/POST /api/radio/consola`): todo lo que hacen los paneles, escrito como «módulo orden argumentos». Módulos `cat` (frecuencia, modo, VFO, PTT), `rot` (posición, parar, aparcar, seguir a una estación, barco, aeronave, satélite, sol o luna), `dx` (spots con país, rumbo y distancia; `dx go <n>` sintoniza y gira; el resto pasa al nodo), `aprs` (mensaje, boletín, baliza, oídas), `dapnet`, `sat` (favoritos y próximo paso), `arts` (lista, sondeo, añadir, quitar, encender), `eai` y `n2k`. `help [módulo]` muestra las órdenes.

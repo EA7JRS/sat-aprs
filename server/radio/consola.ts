@@ -63,6 +63,9 @@ export const AYUDA: Record<string, { titulo: string; ordenes: Array<[string, str
     ordenes: [
       ['sat list', 'favoritos: dónde están y su próximo paso'],
       ['sat next <NORAD|nombre>', 'próximo paso de un satélite'],
+      ['sat tx <NORAD|nombre>', 'sus transmisores, numerados'],
+      ['sat doppler <NORAD|nombre> [n]', 'el equipo sigue el Doppler del transmisor n durante el paso'],
+      ['sat doppler stop', 'deja de corregir'],
     ],
   },
   arts: {

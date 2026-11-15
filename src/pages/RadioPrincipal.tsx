@@ -12,6 +12,7 @@ import { TelemetryConfig } from '../types';
 import { DatosEquipo, PanelEquipo, PanelRotor, ordenRadio } from '../components/radio/EquipoRotor';
 import Satelites from '../components/radio/Satelites';
 import Grupo from '../components/radio/Grupo';
+import ConsolaComandos from '../components/radio/ConsolaComandos';
 
 type Guardar = (cambios: Partial<TelemetryConfig>) => Promise<boolean>;
 
@@ -382,7 +383,7 @@ export default function RadioPrincipal({ config, onGuardar }: { config: Telemetr
           <Mensajes config={config} onGuardar={onGuardar} admin={admin} />
         </div>
       </div>
-      <p className="text-[13px] text-slate-400">Próximo módulo de esta pantalla: consola de comandos.</p>
+      <ConsolaComandos admin={admin} />
     </div>
   );
 }

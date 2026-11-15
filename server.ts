@@ -16,6 +16,7 @@ import { TablaDxcc, URL_CTY } from './server/radio/dxcc';
 import { MAX_DAPNET, enviarDapnet } from './server/radio/dapnet';
 import { Equipo, MODOS, Rotor, sMeter } from './server/radio/hamlib';
 import { Grupo, mensajeEai } from './server/radio/grupo';
+import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } from './server/radio/consola';
 import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
@@ -4811,6 +4812,272 @@ app.post('/api/radio/direwolf', (req, res) => {
     return;
   }
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
+// ---------------------------------------------------------------------------
+// Consola de comandos: lo mismo que los paneles, escrito
+// ---------------------------------------------------------------------------
+/** Guarda la configuración en disco (como POST /api/config). */
+function guardarConfig() {
+  try { fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8'); } catch { /* best-effort */ }
+}
+const rumbo3 = (g: number) => String(Math.round(g) % 360).padStart(3, '0');
+const hhmm = (ms: number) => new Date(ms).toISOString().slice(11, 16);
+const conTx = (lineas: string[]) => (TX_ENABLED ? lineas : [...lineas, 'Aviso: la emisión está desactivada (SAT_APRS_TX), no sale al aire.']);
+
+/** Satélite por número NORAD o nombre: primero los favoritos y, entre los demás, el de número más bajo (ISS → ZARYA). */
+function buscarSatelite(id: string): Satelite | undefined {
+  if (/^\d+$/.test(id)) return satelites.find((x) => x.norad === Number(id));
+  const q = id.toUpperCase();
+  const favs = favoritosSat();
+  return satelites.filter((x) => x.nombre.toUpperCase().includes(q))
+    .sort((a, b) => Number(favs.includes(b.norad)) - Number(favs.includes(a.norad)) || a.norad - b.norad)[0];
+}
+
+async function ejecutarConsola(o: Orden): Promise<{ ok: boolean; lineas: string[] }> {
+  const bien = (...lineas: string[]) => ({ ok: true, lineas });
+  const mal = (texto: string) => ({ ok: false, lineas: [texto] });
+  const r = (x: { ok: boolean; error?: string }, siBien: string) => (x.ok ? bien(siBien) : mal(x.error || 'No se pudo.'));
+  const ahora = Date.now();
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+
+  switch (o.modulo) {
+    case 'help': case 'ayuda': case '?':
+      return bien(...textoAyuda(o.accion || undefined));
+
+    case 'cat': {
+      if (config.catEnabled !== true) return mal('El equipo por CAT no está configurado (Radio · Principal → Equipo → Conexión).');
+      if (o.accion === 'get' || o.accion === '') {
+        await equipoRadio.sondear();
+        const e = equipoRadio.estado;
+        if (!e.enlace) return mal(`rigctld no responde${e.error ? ` (${e.error})` : ''}.`);
+        return bien(`${e.frecuenciaHz === null ? '—' : `${(e.frecuenciaHz / 1e6).toFixed(6)} MHz`} · ${e.modo ?? '—'}${e.anchoHz ? ` ${e.anchoHz} Hz` : ''} · ${e.vfo ?? '—'} · ${e.ptt === null ? '' : e.ptt ? 'TX' : 'RX'}${e.senalDb !== null ? ` · ${sMeter(e.senalDb).texto}` : ''}`);
+      }
+      if (o.accion === 'f') {
+        const hz = frecuenciaHz(o.args[0] ?? '');
+        if (hz === null) return mal('Uso: cat f <frecuencia> (14205, 14.205 o 14205000).');
+        return r(await equipoRadio.frecuencia(hz), `Sintonizado en ${(hz / 1e6).toFixed(6)} MHz.`);
+      }
+      if (o.accion === 'm') return r(await equipoRadio.modo(String(o.args[0] ?? '')), `Modo ${String(o.args[0] ?? '').toUpperCase()}.`);
+      if (o.accion === 'vfo') return r(await equipoRadio.vfo(`VFO${String(o.args[0] ?? '').toUpperCase()}`), `VFO ${String(o.args[0] ?? '').toUpperCase()}.`);
+      if (o.accion === 'ptt' && ['on', 'off'].includes(String(o.args[0]).toLowerCase())) {
+        const on = String(o.args[0]).toLowerCase() === 'on';
+        const x = await equipoRadio.ptt(on);
+        if (x.ok) addLog('SYS', 'CAT', 'LOCAL', 'PTT', on ? 'PTT activado desde la consola de comandos (se suelta solo a los 3 minutos).' : 'PTT soltado desde la consola de comandos.', true, 'Equipo');
+        return r(x, on ? 'PTT activado: el equipo emite (se suelta solo a los 3 min).' : 'PTT soltado.');
+      }
+      return mal('Orden de cat no reconocida. «help cat».');
+    }
+
+    case 'rot': {
+      if (!config.rotorMode || config.rotorMode === 'off') return mal('El rotor no está configurado (Radio · Principal → Rotor → Conexión).');
+      const ctx = contextoRotor();
+      if (o.accion === 'get' || o.accion === '') {
+        const e = rotorAntena.estado;
+        if (!e.enlace) return mal(`El rotor no responde${e.error ? ` (${e.error})` : ''}.`);
+        const verdadero = (a: number | null) => (a === null ? null : config.rotorMovil === true ? (ctx.proa === null ? null : acimutVerdadero(a, ctx.proa)) : a);
+        const az = verdadero(e.az);
+        const obj = verdadero(e.objetivoAz);
+        const seg = seguimientoRotor.objetivo ? seguimientoRotor.ultimo : null;
+        return bien(
+          `Acimut ${az === null ? '—' : `${rumbo3(az)}°`}${e.el !== null ? ` · elevación ${Math.round(e.el)}°` : ''}${obj !== null ? ` · objetivo ${rumbo3(obj)}°` : ''}${e.moviendo ? ' · girando' : ''}${e.fallo && e.fallo !== 'OK' ? ` · ${e.fallo}` : ''}`,
+          ...(seg ? [`Siguiendo a ${seg.nombre}${seg.ok ? ` · ${rumbo3(seg.azVerdadero ?? 0)}°${seg.distanciaKm !== undefined ? ` · ${seg.distanciaKm} km` : ''}` : ` · en espera: ${seg.espera}`}`] : []),
+        );
+      }
+      if (o.accion === 'pos') {
+        const az = Number(o.args[0]);
+        const el = o.args[1] === undefined ? undefined : Number(o.args[1]);
+        if (!Number.isFinite(az)) return mal('Uso: rot pos <acimut> [elevación].');
+        if (ctx.movil && ctx.proa === null) return mal('El rotor va en un móvil y todavía no hay rumbo de la proa.');
+        seguimientoRotor.dejar();
+        return r(await rotorAntena.ir(acimutDeRotor(az, ctx.movil ? ctx.proa : null), el), `Rotor a ${rumbo3(az)}°${el !== undefined ? ` / ${el}°` : ''}.`);
+      }
+      if (o.accion === 'stop') { seguimientoRotor.dejar(); return r(await rotorAntena.detener(), 'Rotor parado.'); }
+      if (o.accion === 'park') { seguimientoRotor.dejar(); return r(await rotorAntena.aparcar(), 'Rotor a reposo.'); }
+      if (o.accion === 'unfollow') { seguimientoRotor.dejar(); return bien('Seguimiento terminado.'); }
+      if (o.accion === 'follow') {
+        const tipo = String(o.args[0] ?? '').toLowerCase();
+        const id = o.args.slice(1).join(' ').trim();
+        let objetivo: Objetivo | null = null;
+        if (['sol', 'luna', 'ultima'].includes(tipo)) objetivo = { tipo: tipo as 'sol' | 'luna' | 'ultima' };
+        else if (['aprs', 'barco', 'avion'].includes(tipo) && id) objetivo = { tipo: tipo as 'aprs' | 'barco' | 'avion', indicativo: id.toUpperCase() };
+        else if (tipo === 'sat' && id) {
+          const s = buscarSatelite(id);
+          if (!s) return mal(satelites.length ? `No hay TLE de «${id}».` : 'No hay elementos orbitales (TLE) descargados.');
+          objetivo = { tipo: 'satelite', norad: s.norad };
+        }
+        if (!objetivo) return mal('Uso: rot follow aprs|barco|avion <id> · rot follow sat <NORAD|nombre> · rot follow sol|luna|ultima.');
+        seguimientoRotor.seguir(objetivo);
+        const paso = rotorAntena.estado.enlace ? seguimientoRotor.paso(contextoRotor()) : null;
+        if (paso) await rotorAntena.ir(paso.az, paso.el);
+        const u = seguimientoRotor.ultimo;
+        return bien(u ? (u.ok ? `Siguiendo a ${u.nombre} · ${rumbo3(u.azVerdadero ?? 0)}°${u.elevacion !== undefined ? ` · elev. ${u.elevacion}°` : ''}${u.distanciaKm !== undefined ? ` · ${u.distanciaKm} km` : ''}` : `Siguiendo a ${u.nombre} · en espera: ${u.espera}`) : 'Siguiendo.');
+      }
+      return mal('Orden de rot no reconocida. «help rot».');
+    }
+
+    case 'dx': {
+      if (!config.clusterHost) return mal('No hay nodo de cluster configurado (Radio · Principal → Cluster DX → Nodo).');
+      const conRumbo = (s: (typeof clusterDx.spots)[number]) => {
+        const e = tablaDxcc.buscar(s.dx);
+        return { s, e, rumbo: e ? gcInitialBearing(estacion, e) : null, km: e ? gcDistanceKm(estacion, e) : null };
+      };
+      if (o.accion === 'spots') {
+        const n = Math.min(30, Math.max(1, Number(o.args[0]) || 10));
+        const lista = clusterDx.spots.slice(0, n);
+        if (!lista.length) return bien('Sin spots todavía.');
+        return bien(...lista.map((s, i) => {
+          const c = conRumbo(s);
+          return `${String(i + 1).padStart(2)} ${s.khz.toFixed(1).padStart(9)}  ${s.dx.padEnd(10)} ${(c.e?.nombre ?? '—').slice(0, 18).padEnd(18)} ${c.rumbo === null ? '   —   ' : `${rumbo3(c.rumbo)}° ${String(Math.round(c.km!)).padStart(5)} km`}  ${s.hora}Z  ${s.comentario}`;
+        }));
+      }
+      if (o.accion === 'go') {
+        const s = clusterDx.spots[Number(o.args[0]) - 1];
+        if (!s) return mal('Uso: dx go <n> (el número de «dx spots»).');
+        const c = conRumbo(s);
+        const lineas: string[] = [];
+        if (config.catEnabled === true) { const x = await equipoRadio.frecuencia(Math.round(s.khz * 1000)); lineas.push(x.ok ? `Equipo en ${s.khz.toFixed(1)} kHz.` : `Equipo: ${x.error}`); }
+        if (config.rotorMode && config.rotorMode !== 'off' && c.rumbo === null) lineas.push('Rotor: no se sabe el país de ese indicativo, no se gira.');
+        if (config.rotorMode && config.rotorMode !== 'off' && c.rumbo !== null) {
+          const ctx = contextoRotor();
+          if (ctx.movil && ctx.proa === null) lineas.push('Rotor: sin rumbo de la proa todavía.');
+          else { seguimientoRotor.dejar(); const x = await rotorAntena.ir(acimutDeRotor(c.rumbo, ctx.movil ? ctx.proa : null)); lineas.push(x.ok ? `Rotor a ${rumbo3(c.rumbo)}° (${c.e!.nombre}).` : `Rotor: ${x.error}`); }
+        }
+        return lineas.length ? bien(`${s.dx} · ${s.khz.toFixed(1)} kHz`, ...lineas) : mal('No hay equipo ni rotor configurados.');
+      }
+      // Lo demás va tal cual al nodo
+      const texto = `${o.accion} ${o.resto}`.trim();
+      return clusterDx.orden(texto) ? bien(`Enviado al nodo: ${texto}. La respuesta llega por la consola del cluster.`) : mal('El cluster no está conectado.');
+    }
+
+    case 'aprs': {
+      if (o.accion === 'heard') {
+        const n = Math.min(30, Math.max(1, Number(o.args[0]) || 10));
+        const lista = estacionesOidas.lista(ahora).filter((e) => e.clase === 'estacion' && e.ultimaRf !== undefined).sort((a, b) => (b.ultimaRf ?? 0) - (a.ultimaRf ?? 0)).slice(0, n);
+        if (!lista.length) return bien('No se ha oído ninguna estación por radio.');
+        return bien(...lista.map((e) => `${e.nombre.padEnd(10)} ${rumbo3(gcInitialBearing(estacion, e))}° ${gcDistanceKm(estacion, e).toFixed(1).padStart(7)} km  ${hhmm(e.ultimaRf!)}Z`));
+      }
+      if (!isValidCallsign(config.callsign)) return mal('La estación no tiene un indicativo válido.');
+      if (o.accion === 'beacon') {
+        const x = transmitStationBeacon();
+        return x.ok ? bien(...conTx([`Baliza en la cola: ${x.packet}`])) : mal(x.error || 'No se pudo.');
+      }
+      if (o.accion === 'msg' || o.accion === 'bln') {
+        const destino = o.accion === 'bln' ? `BLN${String(o.args[0] ?? '').toUpperCase().slice(0, 6)}` : String(o.args[0] ?? '');
+        const texto = o.resto.slice(String(o.args[0] ?? '').length).trim();
+        const x = mensajeria.redactar(destino, texto);
+        if (!x.ok) return mal((x as { error: string }).error);
+        emitirMensajeria(x.emision.info, x.emision.motivo);
+        return bien(...conTx([o.accion === 'bln' ? `Boletín ${destino} en la cola.` : `Mensaje ${x.mensaje.id} para ${x.mensaje.para} en la cola; se repite hasta el acuse.`]));
+      }
+      return mal('Orden de aprs no reconocida. «help aprs».');
+    }
+
+    case 'dapnet': {
+      if (o.accion !== 'send' && o.accion !== 'emerg') return mal('Orden de dapnet no reconocida. «help dapnet».');
+      const para = String(o.args[0] ?? '');
+      const texto = o.resto.slice(para.length).trim();
+      const x = await enviarDapnet(config.dapnetUser || '', config.dapnetPassword || '', { texto, indicativos: para.split(','), grupos: [config.dapnetGroup || ''], emergencia: o.accion === 'emerg' });
+      addLog('SYS', 'DAPNET', 'LOCAL', 'API', x.ok ? `Mensaje DAPNET enviado a ${para} desde la consola.` : `DAPNET: ${x.error}`, x.ok, x.ok ? 'Enviado' : 'Error');
+      return r(x, `Enviado a DAPNET (${para}).`);
+    }
+
+    case 'sat': {
+      if (!satelites.length) return mal('No hay elementos orbitales (TLE) descargados.');
+      const ficha = (s: Satelite) => {
+        const ob = orbitaDe(s.norad);
+        const m = ob ? mirar(ob, estacion, gpsdState.alt || 0, ahora) : null;
+        const p = pasoDe(s.norad, ahora);
+        const now = m && m.el > 0 ? `visible: ${rumbo3(m.az)}° elev. ${Math.round(m.el)}°` : 'bajo el horizonte';
+        return `${s.nombre.slice(0, 20).padEnd(20)} ${now}${p ? ` · paso ${hhmm(p.aos)}–${hhmm(p.los)}Z máx. ${Math.round(p.elMax)}° (${rumbo3(p.azAos)}°→${rumbo3(p.azLos)}°)` : ' · sin paso en 36 h'}`;
+      };
+      if (o.accion === 'list' || o.accion === '') {
+        const favs = favoritosSat().map((n) => satelites.find((s) => s.norad === n)).filter((s): s is Satelite => !!s);
+        return favs.length ? bien(...favs.map(ficha)) : bien('Sin satélites favoritos.');
+      }
+      if (o.accion === 'next') {
+        const id = o.resto.trim();
+        const s = buscarSatelite(id);
+        return s ? bien(ficha(s)) : mal(`No hay TLE de «${id}».`);
+      }
+      return mal('Orden de sat no reconocida. «help sat».');
+    }
+
+    case 'arts': {
+      if (o.accion === 'on' || o.accion === 'off') {
+        config.grupoActivo = o.accion === 'on';
+        guardarConfig();
+        return bien(`Vigilancia de grupo ${o.accion === 'on' ? 'encendida' : 'apagada'}.`);
+      }
+      if (o.accion === 'add' || o.accion === 'del') {
+        const id = String(o.args[0] ?? '').toUpperCase();
+        const actual = String(config.grupoIndicativos || '').toUpperCase().split(/[^A-Z0-9-]+/).filter(Boolean);
+        const nueva = o.accion === 'add' ? [...actual.filter((x) => x !== id), id] : actual.filter((x) => x !== id);
+        if (nueva.length > 5) return mal('El grupo admite hasta 5 indicativos.');
+        config.grupoIndicativos = nueva.join(',');
+        guardarConfig();
+        grupoVigilado.ajustar({ indicativos: config.grupoIndicativos, minutos: config.grupoMinutos, maxKm: config.grupoMaxKm, sondeoS: config.grupoSondeoS });
+        return bien(`Grupo: ${config.grupoIndicativos || '(vacío)'}`);
+      }
+      if (config.grupoActivo !== true) return mal('La vigilancia de grupo está apagada («arts on»).');
+      if (o.accion === 'poll') {
+        const enviados: string[] = [];
+        for (const d of grupoVigilado.sondearTodos()) { const x = mensajeria.redactar(d, 'ping'); if (x.ok) { emitirMensajeria(x.emision.info, `Sondeo del grupo a ${d}`); enviados.push(d); } }
+        return bien(...conTx([`«ping» a ${enviados.join(', ') || 'nadie'}.`]));
+      }
+      if (o.accion === 'list' || o.accion === '') {
+        const situ = grupoVigilado.situar(estacion);
+        if (!grupoVigilado.miembros.length) return bien('El grupo está vacío («arts add <indicativo>»).');
+        return bien(...grupoVigilado.miembros.map((m, i) => `${(m.estado === 'dentro' ? 'EN ALCANCE' : m.estado === 'fuera' ? 'FUERA' : 'ESPERANDO').padEnd(10)} ${(m.ultimo ?? m.indicativo).padEnd(10)} ${situ[i].km !== null ? `${rumbo3(situ[i].rumbo!)}° ${situ[i].km} km · ` : ''}${m.oidoRf ? `radio ${hhmm(m.oidoRf)}Z` : 'sin oírse por radio'}`));
+      }
+      return mal('Orden de arts no reconocida. «help arts».');
+    }
+
+    case 'eai': {
+      const destino = o.accion.toUpperCase();
+      const codigo = String(o.args[0] ?? '');
+      const parar = String(o.args[1] ?? '').toLowerCase() === 'stop';
+      const miembro = grupoVigilado.miembros.find((x) => x.indicativo === destino || x.ultimo === destino);
+      if (!miembro) return mal('Uso: eai <indicativo del grupo> <código> [stop].');
+      const m = mensajeEai(codigo, parar);
+      if (!m.ok) return mal((m as { error: string }).error);
+      const x = mensajeria.redactar(miembro.ultimo ?? miembro.indicativo, m.texto);
+      if (!x.ok) return mal((x as { error: string }).error);
+      emitirMensajeria(x.emision.info, `${parar ? 'Fin de emergencia' : 'Emergencia'} remota (EAI) a ${destino}`);
+      addLog('SYS', 'EAI', 'LOCAL', 'CONSOLA', `${parar ? 'Parada' : 'Activación'} de la emergencia remota enviada a ${destino} desde la consola.`, true, 'EAI');
+      return bien(...conTx([`${parar ? 'Orden de parar' : 'Emergencia remota'} enviada a ${destino}; su respuesta llega a Mensajería.`]));
+    }
+
+    case 'n2k': {
+      if (o.accion === 'on' || o.accion === 'off') {
+        servicioN2k.cfg.activo = o.accion === 'on';
+        (config as unknown as Record<string, unknown>).nmea2000 = servicioN2k.cfg;
+        guardarConfig();
+        servicioN2k.aplicar();
+      }
+      const e = servicioN2k.estado();
+      return bien(`NMEA 2000 ${e.activo ? 'encendido' : 'apagado'} · ${e.interfaz} · dirección ${e.direccion >= 0 ? e.direccion : '—'}${e.error ? ` · error: ${e.error}` : ''}`);
+    }
+  }
+  return mal(`Módulo «${o.modulo}» desconocido. «help» para ver la lista.`);
+}
+
+app.get('/api/radio/consola', (_req, res) => {
+  res.json({ modulos: AYUDA });
+});
+
+app.post('/api/radio/consola', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, lineas: ['Solo el administrador puede usar la consola de comandos.'] });
+  const o = leerOrden(String(req.body?.orden ?? ''));
+  if (!o) return res.json({ ok: true, lineas: [] });
+  // Lo que emite o activa una emergencia pide confirmación en la pantalla; aquí se exige que llegue
+  if (pideConfirmacion(o) && req.body?.confirmado !== true) return res.json({ ok: false, confirmar: true, lineas: ['Esta orden emite o activa una emergencia: hay que confirmarla.'] });
+  try {
+    const r = await ejecutarConsola(o);
+    res.json(r);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, lineas: [`Error: ${e?.message ?? e}`] });
+  }
 });
 
 // Vigilancia de grupo (ARTS) y emergencia remota (EAI)

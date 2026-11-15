@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.29.0] - 2026-11-15
+### Radio · Principal: consola de comandos
+- **Consola de comandos** (`server/radio/consola.ts`, `GET/POST /api/radio/consola`): todo lo que hacen los paneles, escrito como «módulo orden argumentos». Módulos `cat` (frecuencia, modo, VFO, PTT), `rot` (posición, parar, aparcar, seguir a una estación, barco, aeronave, satélite, sol o luna), `dx` (spots con país, rumbo y distancia; `dx go <n>` sintoniza y gira; el resto pasa al nodo), `aprs` (mensaje, boletín, baliza, oídas), `dapnet`, `sat` (favoritos y próximo paso), `arts` (lista, sondeo, añadir, quitar, encender), `eai` y `n2k`. `help [módulo]` muestra las órdenes.
+- Mismos nombres que el rotor, el Display y la app APRS LoRa+ donde existen (`pos`, `stop`, `park`, `follow`, `ping`/`pong`, `EAI`).
+- Usa las mismas funciones que los botones: política de emisión, PTT con corte a los 3 minutos, y **confirmación** obligatoria para el PTT y la emergencia remota (también la exige el servidor). Solo para el administrador.
+- Historial con ↑ ↓, registro de la sesión guardado en el navegador, botones de módulo y la referencia de órdenes, que al tocarlas se copian en la línea.
+- Al buscar un satélite por nombre se prefieren los favoritos y, entre los demás, el de número NORAD más bajo («ISS» → ISS (ZARYA)).
+
+---
+
 ## [v1.28.0] - 2026-11-15
 ### Radio · Principal: grupo de estaciones (ARTS) y emergencia remota (EAI)
 - **Vigilancia de grupo** (`server/radio/grupo.ts`, `GET/POST /api/radio/grupo`), con las mismas reglas que el tracker APRS LoRa+: hasta 5 indicativos (con SSID solo vale ese; sin SSID, cualquiera), **EN ALCANCE** si se ha oído **por radio** dentro del plazo (10 min de serie) y, si se fija, más cerca que la distancia máxima; si no, **FUERA**. Al arrancar se espera un plazo antes de dar a nadie por perdido. Lo oído por APRS-IS se muestra aparte: no es estar en alcance de radio.

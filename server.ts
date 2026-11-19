@@ -65,7 +65,7 @@ import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from
 import { Observacion, elegirObservacion, intervaloMeteoMs, leerArchivoWxnow, leerWeewx, parteMeteoAprs, validarParte } from './server/estacion/meteo';
 import { gcDistanceKm } from './server/formulas/geo';
 import { sunPosition, sunTimes, unixToUtc } from './server/formulas/astro';
-import { Ionosonda, descargarIonosondas, estadoBandas, ionosondaCercana, mejorBanda } from './server/propagacion';
+import { Ionosonda, absorcionRayosX, descargarIonosondas, estadoBandas, ionosondaCercana, mejorBanda } from './server/propagacion';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -3760,18 +3760,8 @@ function calculateLuf(sfi: number, xrayFlux: number, lat: number, lon: number): 
       lufTotal = Math.max(1.0, lufBase * 0.7);
     }
     
-    // Impacto de Rayos X (Solar Flares elevan absorción en capa D)
-    if (xrayFlux !== undefined && xrayFlux !== null) {
-      if (xrayFlux > 1e-4) {       // Clase X
-        lufTotal += 8.0;
-      } else if (xrayFlux > 1e-5) { // Clase M
-        lufTotal += 4.0;
-      } else if (xrayFlux > 1e-6) { // Clase C
-        lufTotal += 1.5;
-      } else if (xrayFlux > 1e-7) { // Clase B
-        lufTotal += 0.5;
-      }
-    }
+    // Rayos X: absorción de la capa D solo de día (D-RAP de SWPC; server/propagacion.ts)
+    lufTotal += absorcionRayosX(xrayFlux, elevationDeg);
     
     return parseFloat(Math.max(0.5, lufTotal).toFixed(2));
   } catch (err) {

@@ -8,7 +8,7 @@ import { Evento } from '../server/core/evento';
 import { Politica, RegistroAvisos, distanciaKm, evaluar } from '../server/core/reglas';
 import { boletinAprs, nombreObjeto, objetoAprs } from '../server/core/aprsAvisos';
 import { ColaEmision } from '../server/core/emisor';
-import { descargarSismos, extraerSismosIgn, extraerSismosRss, normalizarSismo, sismoAEvento } from '../server/fuentes/sismos';
+import { descargarSismos, extraerSismosFdsnTexto, extraerSismosIgn, extraerSismosRss, normalizarSismo, sismoAEvento } from '../server/fuentes/sismos';
 
 const SEVILLA = { lat: 37.3891, lon: -5.9845 };
 const AHORA = Date.UTC(2026, 10, 9, 16, 0, 0);
@@ -158,4 +158,23 @@ test('emisor: una transmisión cada vez, con pausa, y las urgentes primero', asy
   assert.deepEqual(orden, ['a', 'URGENTE', 'b', 'c']); // «a» ya estaba en el aire; un fallo no detiene la cola
   for (let i = 1; i < marcas.length; i++) assert.ok(marcas[i] - marcas[i - 1] >= 25);
   assert.equal(cola.pendientes, 0);
+});
+
+test('sismos de ShakeNet: formato texto de FDSN (muestra escrita según la norma)', () => {
+  const f = extraerSismosFdsnTexto(
+    '#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName|EventType\n' +
+      'rs2026wabc|2026-11-04T16:14:52.100|36.04|-5.47|12.0|RaspberryShake||RaspberryShake|rs2026wabc|ML|4.4|RaspberryShake|Strait of Gibraltar|earthquake\n' +
+      'rs2026wabd|2026-11-04T10:00:00|37.1|-3.9|1|RaspberryShake||||ML|2.1||Granada quarry|quarry blast\r\n',
+  );
+  assert.equal(f.length, 1);
+  const s = normalizarSismo(f[0], 'ShakeNet')!;
+  assert.equal(s.id, 'rs2026wabc');
+  assert.equal(s.time, '2026-11-04T16:14:52.100Z');
+  assert.deepEqual([s.latitude, s.longitude, s.depthKm, s.magnitud, s.magType], [36.04, -5.47, 12, 4.4, 'ML']);
+  assert.equal(s.localizacion, 'Strait of Gibraltar');
+  assert.equal(s.datosCompletos, true);
+  assert.equal(sismoAEvento(s).fuente, 'ShakeNet');
+  // sin cabecera, el orden de la norma
+  assert.equal(extraerSismosFdsnTexto('rs1|2026-11-04T16:14:52|36.0|-5.5|10|||||ML|3.9||Gibraltar|earthquake').length, 1);
+  assert.equal(extraerSismosFdsnTexto('<html>error</html>').length, 0);
 });

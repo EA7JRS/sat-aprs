@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { estadoBandas, ionosondaCercana, leerIonosondas, mejorBanda } from '../server/propagacion';
+import { absorcionRayosX, estadoBandas, ionosondaCercana, leerIonosondas, mejorBanda } from '../server/propagacion';
 
 const T = Date.parse('2026-11-14T13:00:00Z');
 const SEVILLA = { lat: 37.3891, lon: -5.9845 };
@@ -53,4 +53,13 @@ test('ionosondas: la más cercana, reciente y fiable', () => {
   assert.equal(ionosondaCercana(l, { lat: 41.4, lon: 2.2 }, T)!.codigo, 'EB040');
   assert.equal(ionosondaCercana(l, { lat: -34, lon: 151 }, T), null);   // ninguna a menos de 1500 km
   assert.equal(ionosondaCercana(l, SEVILLA, T + 6 * 3600_000), null);   // todas viejas
+});
+
+test('rayos X: absorción de la capa D solo de día, con cos(cenit)^0,75 (D-RAP)', () => {
+  assert.equal(absorcionRayosX(3.1e-6, 90), 1.5);              // C3.1 con el sol en el cenit
+  assert.equal(absorcionRayosX(2e-4, 90), 8);                  // clase X
+  assert.ok(Math.abs(absorcionRayosX(3.1e-6, 30) - 1.5 * Math.pow(0.5, 0.75)) < 1e-12);
+  assert.equal(absorcionRayosX(3.1e-6, -20), 0);               // de noche no hay capa D
+  assert.equal(absorcionRayosX(5e-8, 90), 0);                  // clase A
+  assert.equal(absorcionRayosX(undefined, 90), 0);
 });

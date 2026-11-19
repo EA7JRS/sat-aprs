@@ -31,6 +31,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { PropagationData } from '../../types';
+import { absorcionRayosX } from '../../../server/propagacion';
 
 // Band propagation condition helper (standard HamClock feature)
 function getBandStatusText(band: string, sfi: number, kp: number) {
@@ -704,16 +705,10 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
     const mufNight = Math.max(4.5, mufBase * 0.85);
 
     const lufBase = 1.5 + (sfi - 65) * 0.005;
-    // Add xray impact to LUF if available in noaa.xrayFlux
+    // Rayos X: absorción de la capa D solo de día (D-RAP de SWPC); la columna de día es con el sol en el cenit
     const xrayFlux = noaa.xrayFlux || 1e-7;
-    let xrayAbs = 0;
-    if (xrayFlux > 1e-4) xrayAbs = 8.0;
-    else if (xrayFlux > 1e-5) xrayAbs = 4.0;
-    else if (xrayFlux > 1e-6) xrayAbs = 1.5;
-    else if (xrayFlux > 1e-7) xrayAbs = 0.5;
-
-    const lufDay = lufBase + (2.0 + (sfi - 70) * 0.015) + xrayAbs;
-    const lufNight = Math.max(0.5, lufBase * 0.7) + (xrayAbs * 0.1); // minor impact at night
+    const lufDay = lufBase + (2.0 + (sfi - 70) * 0.015) + absorcionRayosX(xrayFlux, 90);
+    const lufNight = Math.max(0.5, lufBase * 0.7);
 
     const isStorm = hpValue >= 4.5;
     const isMinorStorm = hpValue >= 3.5 && hpValue < 4.5;

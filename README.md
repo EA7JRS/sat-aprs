@@ -26,14 +26,14 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 
 ---
 
-## 📌 Qué hace hoy (v1.34.0)
+## 📌 Qué hace hoy (v1.35.0)
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
 | Función | Estado |
 | :--- | :--- |
 | Emisión APRS real por APRS-IS y por RF (KISS/AX.25), con cola única y política de emisión | Operativo |
-| Sismos del IGN (respaldo USGS): objeto y boletín según distancia y magnitud | Operativo |
+| Sismos del IGN (respaldo USGS y ShakeNet de Raspberry Shake): objeto y boletín según distancia y magnitud | Operativo |
 | Avisos meteorológicos oficiales de AEMET (Meteoalerta, por zonas): objeto y boletín | Operativo desde la v1.9.0; pendiente de validar en la estación |
 | Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
 | Perfil de la estación APRS y baliza de posición | Operativo |

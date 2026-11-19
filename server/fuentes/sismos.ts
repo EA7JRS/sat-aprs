@@ -4,7 +4,8 @@
 // S.A.T.-APRS · Fuente oficial de sismos.
 //
 // Descarga los terremotos recientes del Instituto Geográfico Nacional (IGN),
-// con su feed RSS y el USGS como respaldos, y los entrega normalizados. Este
+// con su feed RSS, el USGS y ShakeNet (Raspberry Shake) como respaldos, y los
+// entrega normalizados. Este
 // módulo solo recoge datos: no decide qué se transmite ni conoce APRS.
 
 import { Evento, Gravedad } from '../core/evento';
@@ -33,6 +34,10 @@ export type RegistroFuente = (origen: string, texto: string, ok: boolean) => voi
 const URL_IGN = 'https://www.ign.es/web/resources/sismologia/tproximos/todos_visualizadores.js';
 const URL_IGN_RSS = 'https://www.ign.es/ign/sismologia/sismos/sismos.xml';
 const URL_USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minlatitude=27&maxlatitude=44&minlongitude=-18&maxlongitude=5&limit=200&minmagnitude=1.0';
+
+// ShakeNet: servicio FDSN de QuakeLink (Raspberry Shake), mismo recuadro, formato texto de FDSN. Son localizaciones
+// automáticas de la red de estaciones Raspberry Shake: va la última. Condiciones de uso no publicadas.
+const URL_SHAKENET = 'https://quakelink.raspberryshake.org/fdsnws/event/1/query?format=text&orderby=time&minlatitude=27&maxlatitude=44&minlongitude=-18&maxlongitude=5&limit=200&minmagnitude=1.0';
 
 async function descargarIgn(): Promise<any[]> {
   const res = await fetch(URL_IGN, {
@@ -107,6 +112,67 @@ async function descargarUsgs(): Promise<any[]> {
   return Array.isArray(geo?.features) ? geo.features : [];
 }
 
+async function descargarShakeNet(): Promise<any[]> {
+  const desde = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 19);
+  const res = await fetch(`${URL_SHAKENET}&starttime=${desde}`, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return extraerSismosFdsnTexto(await res.text());
+}
+
+/**
+ * Formato texto de FDSN-WS 1.2 («#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|
+ * MagType|Magnitude|MagAuthor|EventLocationName|EventType»), columnas por el nombre de la cabecera y, sin ella, en el orden
+ * de la norma. Fuera lo que no es un terremoto (voladuras, canteras). Devuelve elementos con la forma GeoJSON de las demás fuentes.
+ */
+export function extraerSismosFdsnTexto(texto: string): any[] {
+  let col: Record<string, number> | null = null;
+  const features: any[] = [];
+  for (const bruta of texto.split('\n')) {
+    const linea = bruta.replace(/\r$/, '');
+    if (!linea.trim()) continue;
+    const f = linea.split('|').map((x) => x.trim());
+    if (linea.startsWith('#')) {
+      const c: Record<string, number> = {};
+      f.forEach((n0, i) => {
+        const n = n0.replace(/^#/, '').toLowerCase();
+        if (n.includes('eventid')) c.id = i;
+        else if (n.includes('time')) c.time ??= i;
+        else if (n.includes('latitude')) c.lat = i;
+        else if (n.includes('longitude')) c.lon = i;
+        else if (n.includes('depth')) c.dep = i;
+        else if (n.includes('magtype')) c.magType = i;
+        else if (n.includes('magauthor')) { /* nada */ }
+        else if (n.includes('magnitude')) c.mag = i;
+        else if (n.includes('locationname')) c.loc = i;
+        else if (n.includes('eventtype')) c.type = i;
+      });
+      col = c.time !== undefined && c.lat !== undefined && c.lon !== undefined && c.mag !== undefined ? c : null;
+      continue;
+    }
+    const c = col ?? { id: 0, time: 1, lat: 2, lon: 3, dep: 4, magType: 9, mag: 10, loc: 12, type: 13 };
+    const at = (k: string) => (c[k] !== undefined ? f[c[k]] ?? '' : '');
+    const lat = parseFloat(at('lat'));
+    const lon = parseFloat(at('lon'));
+    const mag = parseFloat(at('mag'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(mag)) continue;
+    if (at('type') && !/earthquake/i.test(at('type'))) continue;
+    const hora = at('time');
+    if (!/^\d{4}-\d{2}-\d{2}/.test(hora)) continue;
+    const dep = parseFloat(at('dep'));
+    features.push({
+      id: at('id') || undefined,
+      properties: {
+        mag,
+        magType: at('magType') || undefined,
+        loc: at('loc') || undefined,
+        time: /Z|[+-]\d\d:?\d\d$/.test(hora) ? hora : `${hora}Z`, // FDSN da la hora en UTC sin zona
+      },
+      geometry: { coordinates: [lon, lat, Number.isFinite(dep) ? dep : 0] },
+    });
+  }
+  return features;
+}
+
 function horaIso(props: any): string | null {
   const fecha = props.fecha || props.fechalocal;
   if (typeof fecha === 'string' && fecha.trim().length >= 8) {
@@ -138,7 +204,7 @@ export function normalizarSismo(f: any, fuente: string): Sismo | null {
   const hora = horaIso(props);
 
   let lugar = String(props.loc || props.place || 'Peninsula Iberica');
-  const de = lugar.match(/\bof\s+(.+)$/); // USGS: «12 km NE of Granada, Spain»
+  const de = lugar.match(/^\s*\d+(?:\.\d+)?\s*km\s+[NSEW]{1,3}\s+of\s+(.+)$/i); // USGS: «12 km NE of Granada, Spain»
   if (de) lugar = de[1].trim();
 
   return {
@@ -161,6 +227,7 @@ export async function descargarSismos(registro: RegistroFuente = () => {}): Prom
     ['IGN', descargarIgn],
     ['IGN-RSS', descargarIgnRss],
     ['USGS', descargarUsgs],
+    ['ShakeNet', descargarShakeNet],
   ];
   for (const [nombre, descargar] of fuentes) {
     try {

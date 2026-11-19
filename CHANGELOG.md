@@ -2,6 +2,14 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.35.0] - 2026-11-20
+### HF y sismos
+- **Rayos X en la LUF, solo de día**: la absorción de la capa D por una fulguración (clase X 8 MHz, M 4, C 1,5, B 0,5 con el sol en el cenit) crece con cos(cenit)^0,75 y es cero de noche, como el modelo D-RAP de SWPC (`absorcionRayosX` en `server/propagacion.ts`). Antes, `server.ts` la sumaba entera también de noche y el monitor de propagación ponía una décima. Es la misma fórmula que usan el tracker APRS LoRa+ y su app.
+- **ShakeNet (Raspberry Shake) como cuarta fuente de sismos**, tras IGN, IGN-RSS y USGS: servicio FDSN de QuakeLink en formato texto, mismo recuadro de la Península, últimos 7 días (`extraerSismosFdsnTexto`). Son localizaciones automáticas de la red Raspberry Shake; sus condiciones de uso no están publicadas.
+- Sismos del USGS: la regla que deja solo el lugar («12 km NE of Granada, Spain» → «Granada, Spain») ya no recorta nombres como «Strait of Gibraltar».
+
+---
+
 ## [v1.34.0] - 2026-11-15
 ### Fuera lo innecesario
 - **Fuera la pantalla Avisos · Coordinación** (`CecopDashboard`, unas 3800 líneas). Era un cuaderno que se guardaba solo en el navegador, con matriz de riesgo, cola de firma, unidades y actividad de canal sin fuente detrás. Lo útil ya está en su sitio: los avisos en «En vigor», el grupo ARTS, la mensajería y el equipo en Radio · Principal.

@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · v1.34.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.35.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -123,7 +123,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Protocolo APRS/AX.25/KISS y política de emisión | Hecho (`server/aprs.ts`) |
 | Autenticación local | Hecho (`server/auth.ts`) |
 | Cadena de avisos y cola de emisión | Hecho (`server/core/`) |
-| Sismos (IGN, respaldo USGS) | Hecho: primera fuente sobre la cadena |
+| Sismos (IGN, respaldo USGS y ShakeNet) | Hecho: primera fuente sobre la cadena |
 | Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
 | Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
 | Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |

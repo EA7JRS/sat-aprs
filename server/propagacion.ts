@@ -66,6 +66,21 @@ export function mejorBanda(bandas: BandaHf[], enlace: 'nvis' | 'dx'): string | n
 }
 
 // ---------------------------------------------------------------------------
+// Absorción de la capa D por los rayos X (fulguraciones)
+// ---------------------------------------------------------------------------
+/**
+ * MHz que suben la LUF por el flujo de rayos X (GOES, 0,1-0,8 nm, W/m²) con el sol a `elevDeg` grados.
+ * Clase X 8, M 4, C 1,5, B 0,5 con el sol en el cenit. La absorción solo existe en el lado de día y crece con
+ * cos(cenit)^0,75, como el modelo D-RAP de SWPC; de noche, cero (sin sol no hay capa D).
+ */
+export function absorcionRayosX(xrayFlux: number | undefined | null, elevDeg: number): number {
+  if (!ok(xrayFlux ?? undefined) || !(elevDeg > 0)) return 0;
+  const f = xrayFlux as number;
+  const clase = f > 1e-4 ? 8 : f > 1e-5 ? 4 : f > 1e-6 ? 1.5 : f > 1e-7 ? 0.5 : 0;
+  return clase * Math.pow(Math.sin((elevDeg * Math.PI) / 180), 0.75);
+}
+
+// ---------------------------------------------------------------------------
 // Ionosondas (red GIRO, a través del servicio de KC2G)
 // ---------------------------------------------------------------------------
 export const URL_IONOSONDAS = 'https://prop.kc2g.com/api/stations.json';

@@ -86,7 +86,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 
 ---
 
-## 🛠️ Especificaciones Técnicas y Parámetros del Aire
+## 🛠️ Especificaciones Técnicas y Parámetros de los modos 
 
 | Parámetro | AFSK 300 bps (HF) | AFSK 1200 bps (VHF) | GMSK 9600 bps (UHF) | LoRa ~300 bps (UHF) |
 | :--- | :--- | :--- | :--- | :--- |

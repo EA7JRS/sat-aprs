@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.36.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.45.1**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -529,6 +529,12 @@ En Cluster DX, toque la frecuencia del spot: el equipo sintoniza y el rotor gira
 | WeeWX sin gráficas | Falta `sqlite3`, la ruta de la base de datos no es la buena o no se puede leer | Estación → WeeWX dice el motivo; `sudo apt install sqlite3` y revise la ruta en Estación → Perfil |
 | «Hora sin sincronizar» | ntpsec sin fuente válida | `ntpq -p` |
 | No se guardan los cambios | No es administrador, o no hay ninguno configurado (modo demostración) | «Acceder» con el token, o configure `SAT_ADMIN_TOKEN` |
+| No sé dónde va el token | El acceso de administrador está en la barra superior | «Entrar como administrador» y pegue el valor de `SAT_ADMIN_TOKEN` de `/opt/sat-aprs/.env` |
+| El actualizador dice «el puerto 3000 lo ocupa otro proceso» | Queda en marcha un servicio de la versión antigua (`sat-aprs-web`, pm2…) | `sudo sh tools/instalar.sh` retira los antiguos; o `sudo systemctl disable --now <nombre>` y `sudo sh tools/actualizar.sh --aqui` |
+| «sudo: a password is required» al guardar un `.conf` o reiniciar un servicio | Falta el permiso del usuario de servicio | `sudo sh tools/instalar.sh` instala `/etc/sudoers.d/sat-aprs` |
+| APRS-IS «desconectado» con un servidor local (aprsc) | El servidor local está parado | `systemctl status aprsc`; la consola dice el motivo y reintenta cada minuto como mucho |
+| WeeWX: «en modo simulador» | `station_type = Simulator` en `weewx.conf` | Sus valores son inventados y la consola no los usa. Con una estación real: `weectl station reconfigure` |
+| Tras actualizar, la consola no arranca | Fallo de arranque de la versión nueva | El actualizador enseña el registro y la orden exacta para volver a la versión anterior; la configuración está en `copias/<fecha>/` |
 
 El diario de cada servicio se ve desde su pantalla («Ver registro») o con `journalctl -u <servicio>`.
 

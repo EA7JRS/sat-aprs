@@ -1,6 +1,15 @@
-# Changelog - APRS S.A.T. EMCOM System
+# Changelog - S.A.T.-APRS+
 
-Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
+Historial de versiones de la consola S.A.T.-APRS+.
+
+## [v1.45.1] - 2026-11-20
+### Documentación al día tras la primera prueba en el equipo real
+- README y arquitectura: la tabla de estado dice qué se comprobó el 20-11-2026 en el NUC contra los servicios reales (IGN, AEMET, NOAA, FIRMS, CAMS, GIRO, Sensor.Community, CelesTrak, tsunami.gov, NHC, EMSC, EFFIS, EONET y Pat) y qué sigue sin probar: MeteoAlarm, EURDEP, NWS, WeatherAPI, y todo lo que necesita radio, GPS, SDR, bus NMEA 2000 o una estación meteorológica.
+- Manual: versión al día y seis casos nuevos en «Solución de problemas», salidos de esa prueba (token, puerto ocupado por la versión antigua, permiso de `sudo`, APRS-IS con servidor local, WeeWX en simulador, vuelta atrás tras actualizar).
+- Dos textos de la consola que hablaban de «simular una estación» con WeeWX, corregidos: los datos de Internet se presentan como lo que son.
+- Primera release publicada en GitHub.
+
+---
 
 ## [v1.45.0] - 2026-11-20
 ### El proyecto pasa a llamarse S.A.T.-APRS+

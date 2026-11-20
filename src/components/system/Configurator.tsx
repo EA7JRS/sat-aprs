@@ -1902,7 +1902,7 @@ LOGDIR /var/log/direwolf
                     <option value="weewx.drivers.fousb">Fine Offset USB (PCE-FWS20 / WH1080)</option>
                     <option value="weewx.drivers.vantage">Davis Vantage Pro2 / Vantage Vue</option>
                     <option value="weewx.drivers.rtldavis">RTL-SDR Davis SDR Raw RF receiver</option>
-                    <option value="weewx.drivers.simulator">Software Simulator (Pruebas de S.A.T.-APRS+)</option>
+                    <option value="weewx.drivers.simulator">Simulator (valores inventados: la consola no lo toma como estación)</option>
                   </select>
                 </div>
 

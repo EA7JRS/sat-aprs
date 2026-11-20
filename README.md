@@ -26,45 +26,47 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.44.0)
+## 📌 Qué hace hoy (v1.45.1)
+
+El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
 | Función | Estado |
 | :--- | :--- |
 | Emisión APRS real por APRS-IS y por RF (KISS/AX.25), con cola única y política de emisión | Operativo |
-| Sismos del IGN (respaldo USGS y ShakeNet de Raspberry Shake): objeto y boletín según distancia y magnitud | Operativo |
-| Avisos meteorológicos oficiales de AEMET (Meteoalerta, por zonas): objeto y boletín | Operativo desde la v1.9.0; pendiente de validar en la estación |
-| Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; pendiente de validar en la estación |
+| Sismos del IGN (respaldo USGS y ShakeNet de Raspberry Shake): objeto y boletín según distancia y magnitud | Operativo; IGN comprobado en la estación de pruebas (20-11-2026) |
+| Avisos meteorológicos oficiales de AEMET (Meteoalerta, por zonas): objeto y boletín | Operativo desde la v1.9.0; comprobado contra el servicio real en la estación de pruebas (20-11-2026) |
+| Clima espacial (NOAA), focos de calor por satélite (NASA FIRMS) y calidad del aire (CAMS): avisos por APRS | Operativo desde la v1.15.0; comprobado contra el servicio real en la estación de pruebas (20-11-2026) |
 | Perfil de la estación APRS y baliza de posición | Operativo |
 | Posición por gpsd y estado real de ntpsec | Operativo |
 | Parte meteorológico por APRS con datos de WeeWX, wxnow.txt, OpenWeatherMap o AEMET | Operativo desde la v1.14.0 |
 | Meteorología de la consola: OpenWeatherMap, AEMET u Open-Meteo (sin clave), nunca simulada | Operativo desde la v1.21.0; pendiente de validar en la estación |
-| Medidores de calidad del aire más cercanos (Sensor.Community) | Operativo desde la v1.20.0; pendiente de validar en la estación |
+| Medidores de calidad del aire más cercanos (Sensor.Community) | Operativo desde la v1.20.0; comprobado contra el servicio real en la estación de pruebas (20-11-2026) |
 | Boyas y estaciones costeras más cercanas (NOAA NDBC) | Operativo desde la v1.21.0; pendiente de validar en la estación |
 | Mapa con capas: estación, avisos, APRS (radio y APRS-IS), AIS, ADS-B y tráfico de la DGT | Operativo desde la v1.12.0 |
-| HF y propagación: bandas para NVIS y larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; pendiente de validar en la estación |
+| HF y propagación: bandas para NVIS y larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; ionosondas (GIRO) e índices comprobados en la estación de pruebas (20-11-2026) |
 | Radio · Principal: cluster DX (país, rumbo y distancia), mensajería APRS con acuse y DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
 | Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor) | Operativo desde la v1.23.0; pendiente de validar en la estación |
 | Rotor: seguimiento de estaciones APRS, barcos, aeronaves, Sol y Luna; estación fija o en movimiento | Operativo desde la v1.24.0; pendiente de validar en la estación |
-| Satélites: TLE, próximos pasos, transmisores, Doppler continuo en el equipo (con split) y seguimiento con el rotor | Operativo desde la v1.25.0; pendiente de validar en la estación |
+| Satélites: TLE, próximos pasos, transmisores, Doppler continuo en el equipo (con split) y seguimiento con el rotor | Operativo desde la v1.25.0; TLE de CelesTrak comprobados en la estación de pruebas (20-11-2026); Doppler y rotor, sin probar con equipo |
 | Grupo de estaciones (ARTS) con sondeo y emergencia remota (EAI), como en el tracker APRS LoRa+ | Operativo desde la v1.28.0; pendiente de validar en la estación |
 | Consola de comandos de Radio (`cat`, `rot`, `dx`, `aprs`, `dapnet`, `sat`, `arts`, `eai`, `n2k`) | Operativo desde la v1.29.0; pendiente de validar en la estación |
 | Radio · Direwolf: estado, tramas explicadas, nivel de audio por estación, configuración y prueba de emisión | Operativo desde la v1.27.0; pendiente de validar en la estación |
 | Radio · aprx: pasarela a APRS-IS, digipeater e interfaces, desde `aprx.conf` y su registro de radio | Operativo desde la v1.31.0; pendiente de validar en la estación |
-| Radio · Winlink: buzón, redacción, sesiones y pasarelas RMS a través de la API HTTP de Pat | Operativo desde la v1.32.0; sin probar con un Pat real |
+| Radio · Winlink: buzón, redacción, sesiones y pasarelas RMS a través de la API HTTP de Pat | Operativo desde la v1.32.0; enlazado con Pat 1.0.0 en la estación de pruebas (20-11-2026); sin sesión por radio todavía |
 | Conectividad · salida NMEA 2000 (SocketCAN): posición, hora, meteorología y avisos al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
 | aprx desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx), que compila en Debian 13 (`tools/instalar-aprx.sh`) | Operativo desde la v1.32.1 |
 | Radio · Tramas APRS: todo lo que entra (radio y APRS-IS) y sale, explicado, y analizador de tramas | Operativo desde la v1.33.0 |
-| Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real |
+| Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real (un WeeWX en modo `Simulator` no cuenta como estación, v1.44.7) |
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
 | Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
 | Radio · NAVTEX e Inmarsat: NAVTEX con RTL-SDR o SDRplay (`tools/navtex/`) e Inmarsat-C EGC desde InmarScope por UDP; sus avisos, por APRS | Operativo desde la v1.39.0; la cadena NAVTEX probada con una grabación real, sin probar aún con el SDR en la estación |
-| Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; sin probar aún contra las fuentes reales |
-| Tsunamis de tsunami.gov (PTWC y NTWC), avisos del NWS de EE. UU. (tornados, tormentas severas…) y sucesos de NASA EONET: las fuentes de la app Android APRS LoRa+ | Operativo desde la v1.40.0; sin probar aún contra las fuentes reales. El NWS solo cubre EE. UU. |
-| Sismos de fuera de España (EMSC), con el nivel por magnitud y distancia de la app Android | Operativo desde la v1.42.0; sin probar aún contra la fuente real |
-| Peligro de incendio (índice FWI) y áreas quemadas de EFFIS (Copernicus) | Operativo desde la v1.41.0; el lector, probado con respuestas reales de EFFIS; sin probar aún en la estación |
+| Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; NHC comprobado en la estación de pruebas (20-11-2026); MeteoAlarm (faltan zonas) y EURDEP, sin probar aún contra la fuente real |
+| Tsunamis de tsunami.gov (PTWC y NTWC), avisos del NWS de EE. UU. (tornados, tormentas severas…) y sucesos de NASA EONET: las fuentes de la app Android APRS LoRa+ | Operativo desde la v1.40.0; tsunami.gov y EONET comprobados en la estación de pruebas (20-11-2026); el NWS solo cubre EE. UU. y no se ha podido probar desde España |
+| Sismos de fuera de España (EMSC), con el nivel por magnitud y distancia de la app Android | Operativo desde la v1.42.0; comprobado contra el servicio real en la estación de pruebas (20-11-2026) |
+| Peligro de incendio (índice FWI) y áreas quemadas de EFFIS (Copernicus) | Operativo desde la v1.41.0; comprobado contra EFFIS en la estación de pruebas (20-11-2026): FWI del punto y áreas quemadas |
 | Tornados en España, Protección Civil | Sin fuente pública: no se conoce un feed de avisos de tornado para Europa ni de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 
 ---
@@ -325,8 +327,11 @@ sudo sh tools/instalar.sh --desde /opt/sat-aprs.antiguo
 
 ```bash
 npm run lint       # comprobación de tipos (TypeScript)
-npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP, fórmulas y radio
-                   # (mensajería, Hamlib, satélites, Doppler, ARTS, consola, Direwolf, aprx, Pat)
+npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP, fórmulas, radio
+                   # (mensajería, Hamlib, satélites, Doppler, ARTS, consola, Direwolf, aprx, Pat),
+                   # fuentes de avisos (MeteoAlarm, NHC, EURDEP, tsunami.gov, NWS, EONET, EFFIS, EMSC),
+                   # NAVTEX, Inmarsat-C e historial
+tools/canboat/run.sh   # PGN de NMEA 2000 contrastados con CANboat
 ```
 
 ---

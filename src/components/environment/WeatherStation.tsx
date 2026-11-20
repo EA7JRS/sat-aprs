@@ -534,8 +534,8 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
               </div>
 
               <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-slate-400 leading-normal">
-                <span className="text-amber-500 font-bold block mb-0.5 font-sans">Origen API unificado:</span>
-                <span>WeeWX unifica los datos de <strong>OpenWeatherMap</strong> y <strong>IQAir</strong> para simular una estación física local robusta en el nodo Debian 13 del S.A.T.-APRS+</span>
+                <span className="text-amber-500 font-bold block mb-0.5 font-sans">Origen de los datos:</span>
+                <span>Datos de Internet (<strong>OpenWeatherMap</strong> e <strong>IQAir</strong>), no medidos por la estación. Las medidas propias, cuando hay una estación real, están en Estación → WeeWX.</span>
               </div>
             </div>
 

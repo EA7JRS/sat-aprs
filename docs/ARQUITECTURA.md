@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · v1.36.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.45.1 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS+ es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -126,12 +126,12 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Cadena de avisos y cola de emisión | Hecho (`server/core/`) |
 | Sismos (IGN, respaldo USGS y ShakeNet) | Hecho: primera fuente sobre la cadena |
 | Hora de la estación (ntpsec + gpsd/PPS) | Hecho: estado real leído con `ntpq` (`server/sistema/ntp.ts`) |
-| Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
-| Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |
-| MeteoAlarm, ciclones tropicales (NHC), radiación (EURDEP) | Hecho en la v1.38.0 (`server/fuentes/meteoalarm.ts`, `ciclones.ts`, `radiacion.ts`); sin probar aún contra las fuentes reales |
-| Tsunamis (tsunami.gov), NWS de EE. UU. y NASA EONET | Hecho en la v1.40.0, con los lectores de la app Android (`server/fuentes/tsunami.ts`, `nws.ts`, `eonet.ts`); sin probar aún contra las fuentes reales |
-| Sismos de fuera de España (EMSC) | Hecho en la v1.42.0 (`server/fuentes/emsc.ts`) |
-| Peligro de incendio y áreas quemadas (EFFIS) | Hecho en la v1.41.0 (`server/fuentes/effis.ts`): WMS `mf010.fwi` como GeoTIFF float32 y WFS `nrt.ba.poly` |
+| Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); comprobado contra AEMET en la estación de pruebas (20-11-2026) |
+| Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); comprobado contra las tres en la estación de pruebas (20-11-2026) |
+| MeteoAlarm, ciclones tropicales (NHC), radiación (EURDEP) | Hecho en la v1.38.0 (`server/fuentes/meteoalarm.ts`, `ciclones.ts`, `radiacion.ts`); NHC comprobado en la estación de pruebas (20-11-2026); MeteoAlarm y EURDEP, sin probar aún contra la fuente real |
+| Tsunamis (tsunami.gov), NWS de EE. UU. y NASA EONET | Hecho en la v1.40.0, con los lectores de la app Android (`server/fuentes/tsunami.ts`, `nws.ts`, `eonet.ts`); tsunami.gov y EONET comprobados en la estación de pruebas (20-11-2026); el NWS, sin probar (solo cubre EE. UU.) |
+| Sismos de fuera de España (EMSC) | Hecho en la v1.42.0 (`server/fuentes/emsc.ts`); comprobado contra EMSC en la estación de pruebas (20-11-2026) |
+| Peligro de incendio y áreas quemadas (EFFIS) | Hecho en la v1.41.0 (`server/fuentes/effis.ts`): WMS `mf010.fwi` como GeoTIFF float32 y WFS `nrt.ba.poly`; comprobado contra EFFIS en la estación de pruebas (20-11-2026) |
 | Índice de Riesgo de Incendio Forestal de Andalucía (REDIAM) | Anotado: WMS `REDIAM_Indice_Riesgo_Incendios_Diario` (capas `indice_riesgo_dia_1..3`, cinco clases de 0 a 4, a tres días, uso libre citando la fuente). Fuera de campaña el servicio no da el valor en un punto; retomarlo cuando publique, con una respuesta real delante |
 | Kairós (ISCIII) y Meteosalud (Sanidad) | Sin datos legibles: son paneles web. La pantalla Salud enlaza a los dos y no muestra niveles propios |
 | Tornados en España, Protección Civil | Sin fuente pública: el NWS solo cubre EE. UU. y no se conoce un feed de Protección Civil (ES-Alert llega por difusión celular a los móviles) |

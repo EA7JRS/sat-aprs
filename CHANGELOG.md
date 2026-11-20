@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.5] - 2026-11-20
+### APRS-IS: motivo del fallo y reconexión más rápida
+- Si el servidor APRS-IS rechazaba la conexión y estaba puesto como `localhost`, la consola mostraba «desconectado» sin motivo (Node da un error agregado sin mensaje al fallar IPv6 e IPv4). Ahora dice el motivo (`connect ECONNREFUSED …`).
+- La espera entre reintentos crecía hasta 5 minutos; ahora, hasta 1. Con el servidor de vuelta, la consola reconecta en un minuto como mucho.
+
+---
+
 ## [v1.44.4] - 2026-11-20
 - El acceso de administrador de la barra superior se lee: botón «Entrar como administrador» de tamaño normal, en vez de un rótulo de 9 px que decía «Modo demostración · Acceder».
 

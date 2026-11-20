@@ -5,7 +5,7 @@
 //
 // Una sola sesión para recibir (con filtro de servidor) y para emitir. Tener
 // una única sesión importa: los servidores APRS-IS cierran la sesión anterior
-// cuando el mismo indicativo abre otra. Se reconecta sola, con espera creciente.
+// cuando el mismo indicativo abre otra. Se reconecta sola, con espera creciente (de 5 s a 1 min).
 
 import net from 'net';
 
@@ -112,9 +112,10 @@ export class ClienteAprsIs {
       if (!this.opciones) return;
       this.cambiar('desconectado', motivo);
       this.temporizador = setTimeout(() => this.conectar(), this.espera);
-      this.espera = Math.min(this.espera * 2, 300_000);
+      this.espera = Math.min(this.espera * 2, 60_000);
     };
-    s.on('error', (e) => cerrar(e.message));
+    // Con «localhost» Node prueba ::1 y 127.0.0.1 y, si fallan las dos, da un AggregateError sin mensaje
+    s.on('error', (e: NodeJS.ErrnoException & { errors?: Error[] }) => cerrar(e.message || e.errors?.[0]?.message || e.code || 'no se pudo conectar'));
     s.on('close', () => cerrar('conexión cerrada'));
 
     if (this.vigilante) clearInterval(this.vigilante);

@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.35.1**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.36.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -99,6 +99,8 @@ Al abrir un aviso:
   | Focos de calor (FIRMS) | 50 km | nivel naranja | — |
   | Clima espacial (NOAA) | — | escala R, S o G 2 | — |
   | Calidad del aire (CAMS) | — | nivel naranja | — |
+  | Umbrales de la estación | en la estación | viento 20 kn, calor 35 °C, frío 5 °C, lluvia 10 mm/h | un aviso por tipo y día; se activa en Sistema → Configuración → Claves API |
+  | Pronóstico (WeatherAPI) | en la estación | sus avisos oficiales; viento 25 kn, helada 0 °C, lluvia 20 mm al día | hasta 3 días; necesita la clave de WeatherAPI |
 
 - **«Emitir ahora»** pone el aviso en la cola de emisión sin esperar a la repetición. Con la emisión apagada se registra, pero no sale.
 
@@ -517,6 +519,6 @@ Archivos de la consola, en su carpeta de instalación:
 | `sat_config.json` | Ajustes de la consola (los guarda la propia consola) |
 | `sat_perfil.json` | Perfil del operador, estaciones y presets |
 | `sat_avisos.json` | Avisos ya emitidos y cuándo se repiten |
-| `config.ini` | Configuración del agente `aprs_sat.py` |
+| `config.ini` | Del agente antiguo, ya retirado: se importa una vez si no hay `sat_config.json` |
 
 Ninguno de ellos está en git: las actualizaciones no los tocan.

@@ -35,7 +35,6 @@ import {
   TerminalLogs,
   Configurator,
   AlarmThresholds,
-  ScriptExporter,
   DgtTrafficDatabase,
   NotificationPanel,
   SyncScheduler,
@@ -1205,67 +1204,13 @@ export default function App() {
                     }
                   }}
                 />
-              
-              {/* Architecture block chart */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs">
-                <div className="text-emerald-400 font-bold uppercase mb-2.5">Gráfico de Bloques de Telecomunicaciones</div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg text-slate-300 space-y-2 relative leading-loose">
-                  <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded border border-slate-900">
-                    <span className="text-emerald-500 font-black">GPS Receiver USB</span>
-                    <span className="text-slate-500">➔</span>
-                    <span className="bg-emerald-950 px-1 py-0.2 rounded text-[10px] text-emerald-300">gpsd (Port 2947)</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded border border-slate-900">
-                    <span className="text-blue-500 font-black">GNSS / PPS hardware</span>
-                    <span className="text-slate-500">➔</span>
-                    <span className="bg-blue-950 px-1 py-0.2 rounded text-[10px] text-blue-300">ntpsec (Stratum 1)</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded border border-slate-900">
-                    <span className="text-yellow-500 font-black">OWM Meteorological Cloud</span>
-                    <span className="text-slate-500">➔</span>
-                    <span className="bg-yellow-950 px-1 py-0.2 rounded text-[10px] text-yellow-300">OpenWeatherAPI JSON</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded border border-slate-900">
-                    <span className="text-emerald-500 font-black">IQAir Air Quality Cloud</span>
-                    <span className="text-slate-500">➔</span>
-                    <span className="bg-emerald-950 px-1 py-0.2 rounded text-[10px] text-emerald-300">AirVisual API v2 JSON</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded border border-slate-900">
-                    <span className="text-red-500 font-black">IGN Sismológico Nacional</span>
-                    <span className="text-slate-500">➔</span>
-                    <span className="bg-red-950 px-1 py-0.2 rounded text-[10px] text-red-300">FDSN GeoJSON</span>
-                  </div>
-                  
-                  <div className="border-t border-slate-800 my-2 pt-2 text-center text-[10px] text-slate-400">
-                    ⬇ Integrado localmente en centralizador ⬇
-                  </div>
-
-                  <div className="bg-slate-950 p-2 rounded border border-emerald-500/30 text-center font-bold text-emerald-400">
-                    aprs_sat.py [TNC Controller Loop]
-                  </div>
-
-                  <div className="text-center text-slate-500 text-[10px]">
-                    ↙ Dual redundant transmission channels ↘
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="bg-[#021c10] border border-emerald-500/30 p-1.5 rounded text-emerald-300 text-[10px]">
-                      <strong>direwolf TNC (Port 8001)</strong><br />KISS TCP ➔ 144.800MHz RF
-                    </div>
-                    <div className="bg-[#121c2c] border border-blue-500/30 p-1.5 rounded text-blue-300 text-[10px]">
-                      <strong>APRS-IS IP Gateway</strong><br />Port 14580 ➔ Global net
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
-            {/* Script codes and local OS integrations details */}
+            {/* Programación de envíos, sondeos y umbrales */}
             <div className="lg:col-span-7 flex flex-col gap-4">
               <SyncScheduler config={data.config} onSaveConfig={handleSaveConfig} />
               <AprsScheduler onScheduleTriggered={() => fetchTelemetry(true)} />
               <AlarmThresholds config={data.config} onSaveConfig={handleSaveConfig} />
-              <ScriptExporter onInjectRaw={handleInjectRaw} />
             </div>
           </motion.div>
         )}

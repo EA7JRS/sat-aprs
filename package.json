@@ -1,7 +1,7 @@
 {
   "name": "sat-aprs",
   "private": true,
-  "version": "1.35.1",
+  "version": "1.36.0",
   "description": "S.A.T.-APRS: Servicio de Alerta Temprana por APRS",
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -14,8 +14,7 @@
     "start": "NODE_ENV=production node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "test:py": "python3 -m unittest discover -s tests -v"
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

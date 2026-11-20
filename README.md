@@ -26,7 +26,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 
 ---
 
-## 📌 Qué hace hoy (v1.35.1)
+## 📌 Qué hace hoy (v1.36.0)
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
@@ -59,6 +59,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real |
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
+| Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
 | Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
 
@@ -112,8 +113,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
 | `src/` | Consola web: React 19, Vite y Tailwind CSS (`src/pages/` una pantalla por archivo, `src/navigation.ts` las secciones) |
 | `tools/` | `instalar-aprx.sh` (aprx desde el fork) y `canboat/` (comprobación de los PGN de NMEA 2000) |
-| `aprs_sat.py` | Agente en Python, que se retirará cuando todo esté portado al servicio |
-| `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas, radio y agente |
+| `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y radio |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)
 
@@ -123,7 +123,7 @@ S.A.T.-APRS es una estación real: lo que emite llega a la red APRS-IS mundial y
 2. **Sin indicativo válido no se transmite.** Con el indicativo de plantilla (`N0CALL`) o uno mal formado, el sistema no emite ni por Internet ni por radio.
 3. **APRS-IS exige su passcode.** Si el passcode no corresponde al indicativo, no se inyecta nada en APRS-IS (la RF no lo necesita).
 4. **La consola web no transmite por defecto.** Hay que activarla expresamente con `SAT_APRS_TX=on` en `.env`. Con la emisión activada, solo un administrador verificado puede modificar la estación o provocar transmisiones.
-5. **Un solo transmisor.** La consola y el agente `aprs_sat.py` saben emitir la baliza y los boletines automáticos: si ejecuta los dos, active la emisión solo en uno para no duplicar el tráfico. Lo de Radio (mensajes, grupo ARTS, EAI, prueba de emisión de Direwolf) solo lo hace la consola y necesita `SAT_APRS_TX=on`.
+5. **Un solo transmisor.** Todo lo que se emite sale de la consola, por una única cola con su política de emisión. Si aprx o Direwolf emiten ya la baliza con el mismo indicativo, deje apagada la de la consola.
 6. **Confirmación antes de transmitir.** El PTT del equipo (que se suelta solo a los 3 minutos), la emergencia remota EAI y las sesiones de Winlink por radio piden confirmación, también desde la consola de comandos.
 
 Las tramas se emiten con el destino experimental `APZSAT`, la ruta `TCPIP*` hacia APRS-IS y la ruta de radio configurada (por defecto `WIDE1-1,WIDE2-1`) como tramas AX.25 reales por KISS.
@@ -145,9 +145,7 @@ Este sistema está diseñado para operar de manera autónoma las 24/7 en servido
 
 ## 🛠️ Guía de Instalación desde Cero
 
-Dos componentes:
-1. **Consola web y servicio (Node.js):** la consola, en el puerto `3000`, y todo el trabajo de la estación: fuentes, cadena de avisos, emisión y radio.
-2. **Agente `aprs_sat.py` (Python, opcional):** el demonio original, que se retirará cuando todo esté en el servicio. Vea la regla 5 de [Seguridad de emisión](#-seguridad-de-emisión-léalo-antes-de-transmitir).
+Un solo servicio en Node.js: la consola web, en el puerto `3000`, y todo el trabajo de la estación (fuentes, cadena de avisos, emisión y radio). Se apoya en los programas nativos de Debian (Direwolf, aprx, gpsd, Hamlib, Pat, WeeWX…), a los que se conecta por TCP/UDP. El antiguo agente en Python (`aprs_sat.py`) se retiró en la v1.36.0: lo que hacía está en el servicio.
 
 ### 📦 Fase 0: Preparación del Sistema Operativo
 
@@ -156,7 +154,7 @@ Dos componentes:
 sudo apt update && sudo apt full-upgrade -y
 
 # 0.2- Utilidades esenciales
-sudo apt install -y git build-essential net-tools python3 python3-venv sqlite3
+sudo apt install -y git build-essential net-tools sqlite3
 
 # 0.3- Sincronización horaria de precisión y posicionamiento (receptor GPS)
 sudo apt install -y gpsd gpsd-clients pps-tools ntpsec
@@ -222,44 +220,13 @@ En la consola, **Estación → Perfil**: titular, indicativo y SSID, passcode de
 
 ---
 
-### 🐍 Fase 2: Configuración del Agente (Python)
+### ⚙️ Fase 2: Servicio del sistema
 
-El agente solo usa la biblioteca estándar de Python 3: no hay dependencias que instalar.
+> **Desde el agente antiguo (`aprs_sat.py`):** si aún no hay `sat_config.json`, la consola importa una vez su `config.ini` (indicativo, passcode, servidor, posición de respaldo, claves y umbrales). Después, todo se ajusta en la consola. Desactive el servicio antiguo: `sudo systemctl disable --now sat-aprs-agent.service`.
 
-```bash
-# 2.1- Crear su configuración a partir de la plantilla
-cp config.ini.example config.ini
-nano config.ini
-```
+#### 2.1- Unidad de systemd
 
-Lo imprescindible en `config.ini`:
-
-```ini
-[APRS]
-callsign = EA7XXX-13        ; su indicativo con SSID
-passcode = 12345            ; el passcode de APRS-IS de SU indicativo
-rfPath = WIDE1-1,WIDE2-1
-
-[Fallback]
-latitude = 37.3891          ; posición de la estación sin GPS
-longitude = -5.9845
-
-[Alerts]
-minMagnitude = 3.0          ; magnitud mínima de los sismos anunciados
-meteoAreaFilter = Sevilla,Cadiz   ; zonas de los avisos meteorológicos oficiales
-```
-
-```bash
-# 2.2- Comprobar qué emitiría, sin transmitir nada
-python3 aprs_sat.py --dry-run --once
-
-# 2.3- Probar toda la cadena con datos simulados (tampoco transmite)
-python3 aprs_sat.py --simulate --once
-```
-
-#### 2.4- Servicios del sistema (systemd)
-
-Dos unidades, una por componente (sustituya `/opt/sat-aprs` y el usuario si procede):
+Sustituya `/opt/sat-aprs` y el usuario si procede:
 
 ```bash
 sudo nano /etc/systemd/system/sat-aprs.service
@@ -284,36 +251,13 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo nano /etc/systemd/system/sat-aprs-agent.service
-```
-```ini
-[Unit]
-Description=S.A.T.-APRS Agente Sentinel
-After=network-online.target gpsd.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=satapr
-Environment=PYTHONUNBUFFERED=1
-WorkingDirectory=/opt/sat-aprs
-ExecStart=/usr/bin/python3 aprs_sat.py
-Restart=always
-RestartSec=10
-SyslogIdentifier=sat-aprs-agent
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
 # Usuario de servicio sin privilegios, dueño de la instalación
 sudo useradd --system --home /opt/sat-aprs --shell /usr/sbin/nologin satapr
 sudo chown -R satapr: /opt/sat-aprs
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now sat-aprs.service sat-aprs-agent.service
-sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service sat-aprs-agent.service
+sudo systemctl enable --now sat-aprs.service
+sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service
 ```
 
 > Se recomienda no ejecutar los servicios como `root`. Si quiere que la consola edite los archivos de `/etc` (Direwolf, aprx, WeeWX), conceda al usuario de servicio solo las órdenes `sudo` necesarias (`tee`, `cat`, `test`, `truncate`, `journalctl`) en `/etc/sudoers.d/`.
@@ -324,11 +268,10 @@ sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service sat-aprs-agent.
 
 ```bash
 cd /opt/sat-aprs
-sudo systemctl stop sat-aprs.service sat-aprs-agent.service
+sudo systemctl stop sat-aprs.service
 
 # Copia de seguridad de su configuración local
 cp .env .env.bak
-cp config.ini config.ini.bak 2>/dev/null
 cp sat_config.json sat_config.json.bak 2>/dev/null
 
 git pull --ff-only     # si falla, vea la nota sobre el 14-11-2026
@@ -336,15 +279,17 @@ git pull --ff-only     # si falla, vea la nota sobre el 14-11-2026
 npm ci
 npm run build
 
-sudo systemctl start sat-aprs.service sat-aprs-agent.service
-journalctl -u sat-aprs-agent.service -f -n 50
+sudo systemctl start sat-aprs.service
+journalctl -u sat-aprs.service -f -n 50
 ```
 
 > **aprx del fork:** para traer la última versión de [EA7JRS/aprx](https://github.com/EA7JRS/aprx), vuelva a ejecutar `sudo sh tools/instalar-aprx.sh`.
 
 > **Clones anteriores al 14-11-2026:** ese día se reescribió el historial del repositorio y `git pull` falla. Con la copia de seguridad hecha: `git fetch origin && git reset --hard origin/main`.
 
-> **Al actualizar desde una versión anterior a la 1.5.0:** `config.ini` y `sat_config.json` han dejado de estar versionados en git, y git los borrará al traer esta versión. Haga la copia de seguridad de arriba y restáurela después (`cp config.ini.bak config.ini`). A partir de entonces las actualizaciones ya no tocan su configuración.
+> **Al actualizar desde una versión anterior a la 1.36.0:** el agente Python se ha retirado. Pare y desactive su servicio (`sudo systemctl disable --now sat-aprs-agent.service`) y borre su unidad (`sudo rm /etc/systemd/system/sat-aprs-agent.service`). Si aún no tenía `sat_config.json`, la consola importa su `config.ini` la primera vez.
+
+> **Al actualizar desde una versión anterior a la 1.5.0:** `config.ini` y `sat_config.json` han dejado de estar versionados en git, y git los borrará al traer esta versión. Haga la copia de seguridad de arriba y restáurela después. A partir de entonces las actualizaciones ya no tocan su configuración.
 
 ---
 
@@ -354,7 +299,6 @@ journalctl -u sat-aprs-agent.service -f -n 50
 npm run lint       # comprobación de tipos (TypeScript)
 npm test           # protocolo APRS, emisión, autenticación, avisos, baliza, NTP, fórmulas y radio
                    # (mensajería, Hamlib, satélites, Doppler, ARTS, consola, Direwolf, aprx, Pat)
-npm run test:py    # agente: tramas, filtros de sismos, avisos y seguridad de emisión
 ```
 
 ---

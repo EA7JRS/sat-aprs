@@ -49,6 +49,7 @@ import { boletinAprs, objetoAprs } from './server/core/aprsAvisos';
 import { ServicioN2k } from './server/conectividad/nmea2000Servicio';
 import { ColaEmision } from './server/core/emisor';
 import { descargarSismos, sismoAEvento } from './server/fuentes/sismos';
+import { descargarWeatherApi, eventosPronosticoWeatherApi, eventosUmbralesLocales } from './server/fuentes/umbrales';
 import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './server/fuentes/aemetAvisos';
 import { distanciaAZonaKm } from './server/core/zona';
 import { NivelEscala, descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
@@ -182,7 +183,7 @@ app.get('/api/auth/status', (req: AuthedRequest, res) => {
   });
 });
 
-// Parse initial callsign and passcode from config.ini or aprs_sat.py for single-source-of-truth.
+// config.ini (del antiguo agente aprs_sat.py): solo se importa una vez, si no hay sat_config.json.
 // N0CALL es el indicativo «sin configurar»: con él nunca se transmite.
 let initialCallsign = 'N0CALL';
 let initialPasscode = '';
@@ -283,12 +284,13 @@ let config: TelemetryConfig = {
   thresholdTempMinC: 0.0,
   thresholdRainMm: 20.0,
   forecastDays: 3,
-  localWeatherSource: 'simulated',
+  // Avisos por umbrales de la estación y por el pronóstico de WeatherAPI (antes en el agente)
+  avisosUmbralesLocales: false,
+  avisosPronostico: false,
   localThresholdWindKts: 20.0,
   localThresholdTempMaxC: 35.0,
   localThresholdTempMinC: 5.0,
   localThresholdRainMm: 10.0,
-  localWeatherInterval: 300,
   terminalLogsRetention: 150,
   // Advanced APRS station defaults
   aprsSsid: 10, // -10 is standard for IGates and fixed internet-linked stations
@@ -392,10 +394,12 @@ try {
   console.warn("[SYS CONFIG] No se pudo cargar sat_config.json o el archivo está corrupto. Usando valores por defecto:", e);
 }
 
-// Sincronizar de forma prioritaria con config.ini si existe en el arranque
+// Instalaciones antiguas: si aún no hay sat_config.json, se importa una vez la
+// configuración de config.ini (la del agente aprs_sat.py, ya retirado).
+const importarConfigIni = !fs.existsSync(satConfigPath);
 try {
   const iniPath = path.join(process.cwd(), 'config.ini');
-  if (fs.existsSync(iniPath)) {
+  if (importarConfigIni && fs.existsSync(iniPath)) {
     const iniData = parseConfigIni(iniPath);
     if (iniData.APRS) {
       if (iniData.APRS.callsign) {
@@ -425,12 +429,10 @@ try {
       if (iniData.WEATHERAPI.forecastDays) config.forecastDays = parseInt(iniData.WEATHERAPI.forecastDays) || config.forecastDays;
     }
     if (iniData.LOCALWEATHER) {
-      if (iniData.LOCALWEATHER.source) config.localWeatherSource = iniData.LOCALWEATHER.source.trim();
       if (iniData.LOCALWEATHER.thresholdWindKts) config.localThresholdWindKts = parseFloat(iniData.LOCALWEATHER.thresholdWindKts) || config.localThresholdWindKts;
       if (iniData.LOCALWEATHER.thresholdTempMaxC) config.localThresholdTempMaxC = parseFloat(iniData.LOCALWEATHER.thresholdTempMaxC) || config.localThresholdTempMaxC;
       if (iniData.LOCALWEATHER.thresholdTempMinC) config.localThresholdTempMinC = parseFloat(iniData.LOCALWEATHER.thresholdTempMinC) || config.localThresholdTempMinC;
       if (iniData.LOCALWEATHER.thresholdRainMm) config.localThresholdRainMm = parseFloat(iniData.LOCALWEATHER.thresholdRainMm) || config.localThresholdRainMm;
-      if (iniData.LOCALWEATHER.interval) config.localWeatherInterval = parseInt(iniData.LOCALWEATHER.interval) || config.localWeatherInterval;
     }
     if (iniData.FALLBACK) {
       if (iniData.FALLBACK.latitude) config.fallbackLat = parseFloat(iniData.FALLBACK.latitude) || config.fallbackLat;
@@ -439,24 +441,11 @@ try {
     if (iniData.ALERTS && iniData.ALERTS.filterRadiusKm) {
       config.filterRadiusKm = parseInt(iniData.ALERTS.filterRadiusKm) || config.filterRadiusKm;
     }
-    console.log(`[SYS CONFIG] Sincronización prioritaria con config.ini completada: callsign=${config.callsign}`);
-  } else {
-    // Si config.ini no existe, intentar leer aprs_sat.py como último recurso
-    const scriptPath = path.join(process.cwd(), 'aprs_sat.py');
-    if (fs.existsSync(scriptPath)) {
-      const content = fs.readFileSync(scriptPath, 'utf8');
-      const callsignMatch = content.match(/CALLSIGN\s*=\s*["']([^"']+)["']/);
-      const passcodeMatch = content.match(/APRS_PASSCODE\s*=\s*["']([^"']*)["']/);
-      if (callsignMatch && callsignMatch[1]) {
-        config.callsign = callsignMatch[1].toUpperCase().trim();
-      }
-      if (passcodeMatch) {
-        config.aprsPasscode = passcodeMatch[1].trim();
-      }
-    }
+    console.log(`[SYS CONFIG] Importada la configuración de config.ini (agente antiguo): callsign=${config.callsign}`);
+    try { fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8'); } catch { /* se guardará en el próximo cambio */ }
   }
 } catch (e) {
-  console.warn("[SYS CONFIG] Fallo al sincronizar prioritariamente con config.ini:", e);
+  console.warn("[SYS CONFIG] No se pudo importar config.ini:", e);
 }
 
 let initialSyncedCallsign = config.callsign;
@@ -4433,6 +4422,43 @@ async function descargarAireAvisos() {
   difundirAvisos(eventosAire, politicaAire());
 }
 
+// Umbrales de la estación y pronóstico de WeatherAPI (lo que hacía el agente aprs_sat.py)
+let eventosUmbrales: Evento[] = [];
+let eventosPronostico: Evento[] = [];
+function politicaUmbrales(): Politica {
+  return { radioKm: null, gravedadMinima: 'info', vigenciaMs: 6 * 3600_000, repetirCadaMs: 6 * 3600_000, boletin: true };
+}
+function politicaPronostico(): Politica {
+  return { radioKm: null, gravedadMinima: politicaMeteo().gravedadMinima, vigenciaMs: 24 * 3600_000, antelacionMs: 72 * 3600_000, repetirCadaMs: 6 * 3600_000, boletin: true };
+}
+function evaluarUmbralesLocales() {
+  if (config.systemPower === false || config.avisosUmbralesLocales !== true) { eventosUmbrales = []; return; }
+  // La propia si es reciente; si no, la de Internet (la misma elección que el parte meteorológico)
+  const obs = elegirObservacion('auto', observacionPropia, observacionInternet, Date.now());
+  const nuevos = eventosUmbralesLocales(obs, {
+    vientoKn: Number(config.localThresholdWindKts ?? 20), tempMaxC: Number(config.localThresholdTempMaxC ?? 35),
+    tempMinC: Number(config.localThresholdTempMinC ?? 5), lluvia1hMm: Number(config.localThresholdRainMm ?? 10),
+  }, { lat: gpsdState.lat, lon: gpsdState.lon });
+  // Lo que ya saltó hoy se conserva aunque la medida baje, hasta que caduque
+  const ahora = Date.now();
+  const vigentes = eventosUmbrales.filter((e) => (e.fin ?? 0) > ahora && !nuevos.some((n) => n.id === e.id));
+  eventosUmbrales = [...nuevos, ...vigentes];
+  difundirAvisos(eventosUmbrales, politicaUmbrales());
+}
+async function descargarPronosticoAvisos() {
+  if (config.systemPower === false || config.avisosPronostico !== true || !config.weatherApiKey) { eventosPronostico = []; return; }
+  try {
+    const j = await descargarWeatherApi(String(config.weatherApiKey), gpsdState.lat, gpsdState.lon, Number(config.forecastDays ?? 3));
+    eventosPronostico = eventosPronosticoWeatherApi(j, {
+      vientoKn: Number(config.thresholdWindKts ?? 25), tempMinC: Number(config.thresholdTempMinC ?? 0), lluviaMm: Number(config.thresholdRainMm ?? 20),
+    }, { lat: gpsdState.lat, lon: gpsdState.lon });
+    anotarFuente('pronostico', 'Pronóstico · WeatherAPI', true, `${eventosPronostico.length} avisos del pronóstico`);
+  } catch (e: any) {
+    anotarFuente('pronostico', 'Pronóstico · WeatherAPI', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosPronostico, politicaPronostico());
+}
+
 function programarOtrasFuentes() {
   const seguro = (f: () => Promise<void>) => () => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
   setInterval(seguro(descargarClimaEspacialAvisos), 5 * 60_000);
@@ -4441,11 +4467,17 @@ function programarOtrasFuentes() {
   setTimeout(seguro(descargarClimaEspacialAvisos), 8000);
   setTimeout(seguro(descargarFuegoAvisos), 12000);
   setTimeout(seguro(descargarAireAvisos), 16000);
+  setInterval(seguro(descargarPronosticoAvisos), 30 * 60_000);
+  setTimeout(seguro(descargarPronosticoAvisos), 20000);
+  setInterval(evaluarUmbralesLocales, 5 * 60_000);
+  setTimeout(evaluarUmbralesLocales, 25000);
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
   setInterval(() => {
     difundirAvisos(eventosEspacio, politicaEspacio());
     difundirAvisos(eventosFuego, politicaFuego());
     difundirAvisos(eventosAire, politicaAire());
+    difundirAvisos(eventosUmbrales, politicaUmbrales());
+    difundirAvisos(eventosPronostico, politicaPronostico());
   }, 60_000);
 }
 
@@ -4525,8 +4557,10 @@ app.post('/api/aemet/warnings/clear', (req, res) => {
 // ---------------------------------------------------------------------------
 // Avisos: lista única de todo lo que pasa por la cadena, con su decisión
 // ---------------------------------------------------------------------------
-function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo: boolean }> {
+function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo: boolean; grupo?: string }> {
   return [
+    { eventos: eventosUmbrales, politica: politicaUmbrales(), activo: config.avisosUmbralesLocales === true, grupo: 'umbrales' },
+    { eventos: eventosPronostico, politica: politicaPronostico(), activo: config.avisosPronostico === true, grupo: 'pronostico' },
     { eventos: eventosSismos, politica: politicaSismos(), activo: config.ignSeismoEnabled !== false },
     { eventos: eventosMeteo, politica: politicaMeteo(), activo: !!config.aemetAlertsSubscriptionEnabled },
     { eventos: eventosFuego, politica: politicaFuego(), activo: config.fuegoEnabled !== false },
@@ -4539,14 +4573,14 @@ app.get('/api/avisos', (_req, res) => {
   const ahora = Date.now();
   const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
   const avisos: any[] = [];
-  for (const { eventos, politica, activo } of gruposDeAvisos()) {
+  for (const { eventos, politica, activo, grupo } of gruposDeAvisos()) {
     for (const e of eventos) {
       const fin = e.fin ?? e.inicio + politica.vigenciaMs;
       if (fin < ahora) continue; // lo caducado no se lista
       const d = evaluar(e, politica, estacion, ahora);
       const apunte = registroAvisos.consulta(e.id);
       avisos.push({
-        id: e.id, tipo: e.tipo, gravedad: e.gravedad, titulo: e.titulo, detalle: e.detalle || '',
+        id: e.id, tipo: e.tipo, grupo: grupo ?? e.tipo, gravedad: e.gravedad, titulo: e.titulo, detalle: e.detalle || '',
         fuente: e.fuente, inicio: e.inicio, fin, lat: e.lat, lon: e.lon,
         deZona: !!e.zona,
         distanciaKm: d.distanciaKm !== undefined && Number.isFinite(d.distanciaKm) ? Math.round(d.distanciaKm) : null,
@@ -5666,12 +5700,12 @@ app.post('/api/config', (req, res) => {
     if (updated.forecastDays !== undefined) config.forecastDays = parseInt(updated.forecastDays.toString());
 
     // Local Weather settings
-    if (updated.localWeatherSource !== undefined) config.localWeatherSource = updated.localWeatherSource.trim();
+    if (updated.avisosUmbralesLocales !== undefined) config.avisosUmbralesLocales = !!updated.avisosUmbralesLocales;
+    if (updated.avisosPronostico !== undefined) config.avisosPronostico = !!updated.avisosPronostico;
     if (updated.localThresholdWindKts !== undefined) config.localThresholdWindKts = parseFloat(updated.localThresholdWindKts.toString());
     if (updated.localThresholdTempMaxC !== undefined) config.localThresholdTempMaxC = parseFloat(updated.localThresholdTempMaxC.toString());
     if (updated.localThresholdTempMinC !== undefined) config.localThresholdTempMinC = parseFloat(updated.localThresholdTempMinC.toString());
     if (updated.localThresholdRainMm !== undefined) config.localThresholdRainMm = parseFloat(updated.localThresholdRainMm.toString());
-    if (updated.localWeatherInterval !== undefined) config.localWeatherInterval = parseInt(updated.localWeatherInterval.toString());
 
 
     if (updated.ignSeismoEnabled !== undefined) {
@@ -5804,102 +5838,8 @@ app.post('/api/config', (req, res) => {
         const satConfigPath = path.join(process.cwd(), 'sat_config.json');
         fs.writeFileSync(satConfigPath, JSON.stringify(config, null, 2), 'utf8');
 
-        // Sincronizar también con el archivo config.ini
-        const iniPath = path.join(process.cwd(), 'config.ini');
-        // Claves que solo usa el agente Python: se conservan tal como estén en el archivo
-        let previousIni: any = {};
-        try {
-          if (fs.existsSync(iniPath)) previousIni = parseConfigIni(iniPath);
-        } catch {
-          previousIni = {};
-        }
-        const keepIni = (section: string, key: string, fallback: string): string => {
-          const found = Object.entries(previousIni[section] || {}).find(([k]) => k.toLowerCase() === key.toLowerCase());
-          return found && String(found[1]).trim() !== '' ? String(found[1]).trim() : fallback;
-        };
-        const iniContent = `# S.A.T-APRS - Archivo de Configuración Externa de la Estación
-# Gestiona parámetros clave de hardware, radio, red de satélites y APIs críticas.
-
-[GPSD]
-host = localhost
-port = 2947
-
-[OpenWeatherMap]
-# Clave API para integrar reportes climáticos WX sobre APRS
-apiKey = ${config.owmApiKey || ''}
-
-[WeatherAPI]
-# Clave API para integrar pronósticos meteorológicos avanzados de 24-72h (WeatherAPI.com)
-apiKey = ${config.weatherApiKey || ''}
-# Umbral de viento fuerte en nudos (Ej: Alertas > 25.0 kts)
-thresholdWindKts = ${config.thresholdWindKts !== undefined ? config.thresholdWindKts : 25.0}
-# Umbral de temperatura mínima en °C para heladas (Ej: Alertas <= 0.0 °C)
-thresholdTempMinC = ${config.thresholdTempMinC !== undefined ? config.thresholdTempMinC : 0.0}
-# Umbral de lluvia acumulada diaria en mm para tormentas (Ej: Alertas >= 20.0 mm)
-thresholdRainMm = ${config.thresholdRainMm !== undefined ? config.thresholdRainMm : 20.0}
-# Período de proyección de pronóstico en días (1 a 3 días, 24-72h)
-forecastDays = ${config.forecastDays !== undefined ? config.forecastDays : 3}
-
-[LocalWeather]
-# Fuente de datos del clima local (simulated, http://... o local_weather.json)
-source = ${config.localWeatherSource || 'simulated'}
-# Umbrales personalizados para alertas locales
-thresholdWindKts = ${config.localThresholdWindKts !== undefined ? config.localThresholdWindKts : 20.0}
-thresholdTempMaxC = ${config.localThresholdTempMaxC !== undefined ? config.localThresholdTempMaxC : 35.0}
-thresholdTempMinC = ${config.localThresholdTempMinC !== undefined ? config.localThresholdTempMinC : 5.0}
-thresholdRainMm = ${config.localThresholdRainMm !== undefined ? config.localThresholdRainMm : 10.0}
-interval = ${config.localWeatherInterval !== undefined ? config.localWeatherInterval : 300}
-
-[Fallback]
-# Coordenadas geográficas por defecto si el receptor GPS local pierde fijación
-latitude = ${config.fallbackLat}
-longitude = ${config.fallbackLon}
-altitude = 657.0
-
-[Alerts]
-# Radio de filtrado geodésico Haversine (en km) para la inyección de alertas de sismos
-filterRadiusKm = ${config.filterRadiusKm}.0
-# Magnitud mínima para anunciar un sismo por APRS
-minMagnitude = ${config.minMagnitudBaliza !== undefined ? config.minMagnitudBaliza : 3.0}
-# Antigüedad máxima (horas) de un sismo para anunciarlo
-maxQuakeAgeHours = ${keepIni('ALERTS', 'maxQuakeAgeHours', '24.0')}
-# Zonas (separadas por comas) de los avisos meteorológicos oficiales. Ej: Sevilla,Cadiz
-meteoAreaFilter = ${keepIni('ALERTS', 'meteoAreaFilter', '')}
-
-[APRS]
-# Indicativo oficial con SSID (ej. CALLSING-13)
-callsign = ${config.callsign}
-# Código de acceso para APRS-IS
-passcode = ${config.aprsPasscode || ''}
-# Servidor de internet principal
-serverIp = ${config.serverIp}
-# Puerto oficial APRS-IS
-serverPort = ${config.aprscPort}
-# Host del TNC o Direwolf local
-kissTcpHost = localhost
-# Puerto KISS TCP del Direwolf
-kissTcpPort = ${config.kissTcpPort}
-# Canales de emisión del agente y ruta de radio
-aprsIsEnabled = ${keepIni('APRS', 'aprsIsEnabled', 'true')}
-rfEnabled = ${keepIni('APRS', 'rfEnabled', 'true')}
-rfPath = ${config.aprsPath || keepIni('APRS', 'rfPath', DEFAULT_RF_PATH)}
-# Intervalo de transmisión de telemetría de calidad del aire en minutos
-pollIntervalIca = ${config.pollIntervalIca !== undefined ? config.pollIntervalIca : 30}
-# Activar o desactivar manualmente la transmisión de calidad del aire
-enableAprsIca = ${config.enableAprsIca !== false}
-# Filtrar transmisión de cambio de estado a partir de Regular
-enableAprsIcaFilterRegular = ${config.enableAprsIcaFilterRegular !== false}
-enableForecastBulletin = ${config.enableForecastBulletin === true}
-icaTemplateBuena = ${config.icaTemplateBuena || ''}
-icaTemplateRegular = ${config.icaTemplateRegular || ''}
-icaTemplateDesfavorable = ${config.icaTemplateDesfavorable || ''}
-icaTemplateMuyDesfavorable = ${config.icaTemplateMuyDesfavorable || ''}
-icaTemplateExtremadamente = ${config.icaTemplateExtremadamente || ''}
-`;
-        fs.writeFileSync(iniPath, iniContent, 'utf8');
-        console.log(`[SYS CONFIG] Sincronizado config.ini con éxito tras actualizar en la UI.`);
       } catch (err) {
-        console.error("[SYS CONFIG ERROR] No se pudo escribir sat_config.json o config.ini:", err);
+        console.error("[SYS CONFIG ERROR] No se pudo escribir sat_config.json:", err);
       }
     } else {
       addLog('SYS', 'CONFIG', 'DEMO', 'SYSCONF', '[DEMO PÚBLICA] Configuración integral guardada temporalmente en memoria (Bypass de escritura en disco activo por seguridad).', true, 'Simulado en memoria');

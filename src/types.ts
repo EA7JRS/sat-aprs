@@ -160,12 +160,13 @@ export interface TelemetryConfig {
   thresholdTempMinC?: number;
   thresholdRainMm?: number;
   forecastDays?: number;
-  localWeatherSource?: string;
+  /** Avisos por umbrales de la estación y por el pronóstico de WeatherAPI. */
+  avisosUmbralesLocales?: boolean;
+  avisosPronostico?: boolean;
   localThresholdWindKts?: number;
   localThresholdTempMaxC?: number;
   localThresholdTempMinC?: number;
   localThresholdRainMm?: number;
-  localWeatherInterval?: number;
   terminalLogsRetention?: number;
   // Advanced APRS station configuration options
   aprsSsid?: number;

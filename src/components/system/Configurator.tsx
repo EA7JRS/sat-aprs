@@ -393,12 +393,12 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
   const [enableAprsIca, setEnableAprsIca] = useState(config.enableAprsIca !== undefined ? config.enableAprsIca : true);
   
   // Local Weather PWS/API configs
-  const [localWeatherSource, setLocalWeatherSource] = useState(config.localWeatherSource || 'simulated');
+  const [avisosUmbralesLocales, setAvisosUmbralesLocales] = useState(config.avisosUmbralesLocales === true);
+  const [avisosPronostico, setAvisosPronostico] = useState(config.avisosPronostico === true);
   const [localThresholdWindKts, setLocalThresholdWindKts] = useState(config.localThresholdWindKts !== undefined ? config.localThresholdWindKts : 20.0);
   const [localThresholdTempMaxC, setLocalThresholdTempMaxC] = useState(config.localThresholdTempMaxC !== undefined ? config.localThresholdTempMaxC : 35.0);
   const [localThresholdTempMinC, setLocalThresholdTempMinC] = useState(config.localThresholdTempMinC !== undefined ? config.localThresholdTempMinC : 5.0);
   const [localThresholdRainMm, setLocalThresholdRainMm] = useState(config.localThresholdRainMm !== undefined ? config.localThresholdRainMm : 10.0);
-  const [localWeatherInterval, setLocalWeatherInterval] = useState(config.localWeatherInterval !== undefined ? config.localWeatherInterval : 300);
   
   // Tab 4: Extras
   const [aisCatcherPort, setAisCatcherPort] = useState(config.aisCatcherPort || 5015);
@@ -703,12 +703,12 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
       thresholdTempMinC: Number(thresholdTempMinC),
       thresholdRainMm: Number(thresholdRainMm),
       forecastDays: Number(forecastDays),
-      localWeatherSource: localWeatherSource.trim(),
+      avisosUmbralesLocales,
+      avisosPronostico,
       localThresholdWindKts: Number(localThresholdWindKts),
       localThresholdTempMaxC: Number(localThresholdTempMaxC),
       localThresholdTempMinC: Number(localThresholdTempMinC),
       localThresholdRainMm: Number(localThresholdRainMm),
-      localWeatherInterval: Number(localWeatherInterval),
       // Advanced APRS station configuration fields
       aprsSsid: Number(aprsSsid),
       aprsSymbolTable: aprsSymbolTable.trim(),
@@ -2077,6 +2077,11 @@ LOGDIR /var/log/direwolf
                 </div>
               </div>
 
+              <label className="flex items-start gap-2.5 text-slate-200 text-[12px] cursor-pointer" htmlFor="check-avisos-pronostico">
+                <input type="checkbox" id="check-avisos-pronostico" checked={avisosPronostico} onChange={(e) => setAvisosPronostico(e.target.checked)} className="mt-0.5 w-4 h-4" />
+                <span>Avisar por APRS con el pronóstico de WeatherAPI <span className="text-slate-400">(sus avisos oficiales y los días que pasen estos umbrales; necesita la clave)</span></span>
+              </label>
+
               <div className="border-t border-slate-950 pt-3">
                 <span className="text-[8.5px] text-slate-400 uppercase font-bold tracking-wider block mb-2 font-sans">Umbrales de Alerta Personalizables (Inyección de Boletines APRS)</span>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2127,33 +2132,10 @@ LOGDIR /var/log/direwolf
                   Estación Meteorológica Local y Alertas de Umbral Personalizadas
                 </span>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label htmlFor="input-local-weather-source" className="text-slate-400 text-[10px]">Fuente de Datos Clima Local:</label>
-                    <input
-                      type="text"
-                      id="input-local-weather-source"
-                      placeholder="Ej: simulated, http://localhost:3000/api/weather o local_weather.json"
-                      value={localWeatherSource}
-                      onChange={(e) => setLocalWeatherSource(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
-                    />
-                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Define si usar simulación ('simulated'), API local ('http://...') o archivo JSON.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="input-local-weather-interval" className="text-slate-400 text-[10px]">Intervalo de Muestreo (Segundos):</label>
-                    <input
-                      type="number"
-                      id="input-local-weather-interval"
-                      value={localWeatherInterval}
-                      onChange={(e) => setLocalWeatherInterval(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-slate-100 text-xs focus:border-zinc-500/40 focus:outline-none"
-                    />
-                    <p className="text-[8px] text-slate-500 font-mono mt-0.5">Tiempo entre consultas y evaluaciones de alertas de la estación local.</p>
-                  </div>
-                </div>
-
+                <label className="flex items-start gap-2.5 text-slate-200 text-[12px] cursor-pointer" htmlFor="check-avisos-umbrales">
+                  <input type="checkbox" id="check-avisos-umbrales" checked={avisosUmbralesLocales} onChange={(e) => setAvisosUmbralesLocales(e.target.checked)} className="mt-0.5 w-4 h-4" />
+                  <span>Avisar por APRS cuando la observación pase estos umbrales <span className="text-slate-400">(estación propia o, sin ella, la de Internet; un aviso por tipo y día, en la cadena de avisos)</span></span>
+                </label>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-3">
                   <div className="space-y-1.5">
                     <label htmlFor="input-local-threshold-wind" className="text-slate-400 text-[10px]">Viento Local Máx (Nudos):</label>

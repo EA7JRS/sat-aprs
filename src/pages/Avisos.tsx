@@ -70,6 +70,18 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
   calidad_aire: { titulo: 'la calidad del aire', campos: [
     { clave: 'aireGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
   ] },
+  umbrales: { titulo: 'los umbrales de la estación', campos: [
+    { clave: 'localThresholdWindKts', rotulo: 'Viento', unidad: 'kn', porDefecto: 20 },
+    { clave: 'localThresholdTempMaxC', rotulo: 'Temperatura alta', unidad: '°C', porDefecto: 35 },
+    { clave: 'localThresholdTempMinC', rotulo: 'Temperatura baja', unidad: '°C', porDefecto: 5 },
+    { clave: 'localThresholdRainMm', rotulo: 'Lluvia', unidad: 'mm/h', porDefecto: 10 },
+  ] },
+  pronostico: { titulo: 'el pronóstico de WeatherAPI', campos: [
+    { clave: 'thresholdWindKts', rotulo: 'Viento previsto', unidad: 'kn', porDefecto: 25 },
+    { clave: 'thresholdTempMinC', rotulo: 'Helada', unidad: '°C', porDefecto: 0 },
+    { clave: 'thresholdRainMm', rotulo: 'Lluvia en el día', unidad: 'mm', porDefecto: 20 },
+    { clave: 'forecastDays', rotulo: 'Días', unidad: '1-3', porDefecto: 3 },
+  ] },
 };
 
 const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -80,7 +92,7 @@ function Reglas({ a, config, onGuardar, onGuardado }: { a: Aviso; config: Teleme
   const [editando, setEditando] = useState(false);
   const [v, setV] = useState<Record<string, string>>({});
   const [estado, setEstado] = useState<string | null>(null);
-  const regla = REGLAS[a.tipo];
+  const regla = REGLAS[a.grupo ?? a.tipo];
   const actual = (c: CampoRegla) => String((config as any)[c.clave] ?? c.porDefecto);
 
   const abrir = () => {

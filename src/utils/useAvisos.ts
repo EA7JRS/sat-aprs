@@ -9,6 +9,8 @@ import { customFetch } from './customFetch';
 export type Gravedad = 'info' | 'amarillo' | 'naranja' | 'rojo';
 
 export interface Aviso {
+  /** Grupo de reglas: el tipo, o «umbrales» / «pronostico» para los avisos de la estación. */
+  grupo?: string;
   id: string;
   tipo: string;
   gravedad: Gravedad;

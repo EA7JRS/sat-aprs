@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · v1.35.1 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.36.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -81,8 +81,9 @@ Todo corre en un único servicio Node.js escrito en TypeScript:
   probados (Direwolf, aprx, AIS-catcher, readsb, gpsd), a los que el servicio
   se conecta por TCP/UDP.
 
-El agente `aprs_sat.py` se retirará cuando sus funciones estén portadas (ver
-el estado más abajo). Mientras tanto, solo uno de los dos debe transmitir.
+El agente en Python `aprs_sat.py` se retiró en la v1.36.0. Sus avisos por
+umbrales de la estación y por el pronóstico de WeatherAPI están en la cadena
+de avisos (`server/fuentes/umbrales.ts`); el resto ya lo hacía el servicio.
 
 ## La cadena de avisos
 

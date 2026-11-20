@@ -22,7 +22,6 @@ export { default as NtpSyncStatus } from './system/NtpSyncStatus';
 export { default as SyncScheduler } from './system/SyncScheduler';
 export { default as AlarmThresholds } from './system/AlarmThresholds';
 export { default as Configurator } from './system/Configurator';
-export { default as ScriptExporter } from './system/ScriptExporter';
 export { default as HelpOverlay } from './system/HelpOverlay';
 export { default as DgtTrafficDatabase } from './system/DgtTrafficDatabase';
 export { default as UserProfileManager } from './system/UserProfileManager';

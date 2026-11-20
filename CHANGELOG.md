@@ -2,6 +2,20 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.36.0] - 2026-11-20
+### Fuera el agente Python: un solo servicio
+- **Retirado `aprs_sat.py`**, junto con `aprs_proto.py`, `weather_services.py`, `config.ini.example`, sus pruebas, el trabajo de Python de la CI y `npm run test:py`. Todo lo que se emite sale de la consola, por una única cola con su política de emisión.
+- **Lo que solo hacía el agente, ahora en la cadena de avisos** (`server/fuentes/umbrales.ts`), con las mismas reglas, el mismo registro y la misma pantalla de Avisos:
+  - **Umbrales de la estación**: viento (o racha), calor, frío y lluvia por hora. Usa la observación real: la propia si es reciente, si no la de Internet; sin observación reciente no hay aviso. Un aviso por tipo y día, con objeto en la estación y boletín `BLN3METEO`.
+  - **Pronóstico de WeatherAPI** (con clave): sus avisos oficiales (Extreme → rojo, Severe → naranja, Moderate → amarillo) y los días que pasan los umbrales de viento, helada y lluvia, hasta 3 días.
+  - Los dos vienen **apagados** y se encienden en Sistema → Configuración → Claves API. Sus umbrales se cambian también desde el aviso, en Avisos (`grupo` «umbrales» o «pronostico» en `/api/avisos`).
+  - Fuera los campos de la «fuente de datos del clima local» y su intervalo, que solo usaba el agente (admitía «simulated»).
+- **`config.ini`**: ya no se escribe al guardar. Si no hay `sat_config.json`, se importa una vez al arrancar, para las instalaciones que vienen del agente. Antes mandaba sobre la configuración de la consola en cada arranque.
+- **Sistema → Configuración**: fuera el exportador del script del agente y el gráfico de bloques que lo ponía en el centro.
+- README, manual y arquitectura al día: un único servicio de systemd, y cómo retirar el del agente al actualizar.
+
+---
+
 ## [v1.35.1] - 2026-11-20
 ### Dos restos
 - **Reglas de notificación sin valores supuestos**: sin datos meteorológicos, la temperatura, el viento, la lluvia, la humedad y la presión quedan «sin dato» y su regla no salta. Antes tomaban 22,5 °C, 4 nudos, 0 mm, 50 % y 1016,2 hPa. Lo mismo con la radiación, que no tiene fuente.

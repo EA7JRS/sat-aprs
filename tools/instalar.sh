@@ -15,7 +15,8 @@
 #      emitidos, el perfil, la última posición y el historial (y config.ini solo
 #      si no hay sat_config.json, para que la consola lo importe una vez);
 #   3. instala Node.js 22 si falta o es anterior a la 22.13;
-#   4. crea el usuario de servicio y la unidad de systemd;
+#   4. crea el usuario de servicio, sus permisos de sudo, el token de administrador
+#      si falta y la unidad de systemd;
 #   5. instala dependencias, compila, arranca y comprueba (tools/actualizar.sh --aqui).
 # No borra la carpeta antigua: al final dice cómo hacerlo cuando todo funcione.
 # No toca Direwolf, aprx, gpsd ni sus archivos de /etc.
@@ -28,7 +29,7 @@ DESDE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --desde) shift; DESDE="${1:?falta la carpeta antigua}" ;;
-    -h|--help|--ayuda) sed -n '5,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help|--ayuda) sed -n '5,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opción desconocida: $1 (pruebe --ayuda)" >&2; exit 2 ;;
   esac
   shift
@@ -76,6 +77,14 @@ if [ ! -f .env ]; then
   cp .env.example .env
   echo "Creado .env desde .env.example (emisión apagada). Edítelo: nano $DIR/.env"
 fi
+# Sin token de administrador la consola no guarda cambios: se crea uno si falta
+TOKEN_NUEVO=""
+if ! grep -Eq '^SAT_ADMIN_TOKEN="?[^"[:space:]]{16,}' .env; then
+  TOKEN_NUEVO="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  sed -i '/^SAT_ADMIN_TOKEN=/d' .env
+  printf 'SAT_ADMIN_TOKEN="%s"\n' "$TOKEN_NUEVO" >> .env
+  echo "Creado el token de administrador en .env (se muestra al final)."
+fi
 chmod 600 .env
 
 paso "3. Node.js"
@@ -122,6 +131,14 @@ else
   install -m 0644 "$NUEVA" "$UNIDAD"; rm -f "$NUEVA"
   echo "Escrita $UNIDAD (usuario $USUARIO, carpeta $DIR)."
 fi
+# Permisos justos para leer y escribir la configuración de radio y reiniciar sus servicios
+if [ -d /etc/sudoers.d ] && command -v visudo >/dev/null 2>&1 && [ "$USUARIO" != root ]; then
+  SUDOERS="$(mktemp)"
+  sed "s/^USUARIO /$USUARIO /" "$DIR/tools/sudoers-sat-aprs" > "$SUDOERS"
+  if visudo -cf "$SUDOERS" >/dev/null 2>&1; then install -m 0440 -o root -g root "$SUDOERS" "${SAT_SUDOERS:-/etc/sudoers.d/sat-aprs}"; echo "Permisos de $USUARIO en /etc/sudoers.d/sat-aprs."
+  else echo "Atención: no se instalaron los permisos de sudo (el archivo no pasó la comprobación)." >&2; fi
+  rm -f "$SUDOERS"
+fi
 systemctl daemon-reload
 systemctl enable "$SERVICIO" >/dev/null 2>&1 || true
 
@@ -132,4 +149,8 @@ paso "Siguientes pasos"
 echo "· Actualizar más adelante:      sudo sh $DIR/tools/actualizar.sh"
 echo "· aprx del fork (si no está):   sudo sh $DIR/tools/instalar-aprx.sh"
 echo "· NAVTEX con SDR (opcional):    sudo sh $DIR/tools/navtex/instalar.sh"
+if [ -n "$TOKEN_NUEVO" ]; then
+  echo "· Token de administrador (guárdelo; se pide en Sistema → Acceso de administrador):"
+  echo "    $TOKEN_NUEVO"
+fi
 if [ -n "$DESDE" ]; then echo "· Cuando todo funcione, borre la carpeta antigua:  sudo rm -rf $DESDE"; fi

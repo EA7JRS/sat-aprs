@@ -266,7 +266,7 @@ sudo systemctl enable --now sat-aprs.service
 sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service
 ```
 
-> Se recomienda no ejecutar los servicios como `root`. Si quiere que la consola edite los archivos de `/etc` (Direwolf, aprx, WeeWX), conceda al usuario de servicio solo las órdenes `sudo` necesarias (`tee`, `cat`, `test`, `truncate`, `journalctl`) en `/etc/sudoers.d/`.
+> Se recomienda no ejecutar los servicios como `root`. Para que la consola lea y edite los archivos de `/etc` (Direwolf, aprx, WeeWX) y reinicie esos servicios, `tools/instalar.sh` instala `/etc/sudoers.d/sat-aprs` desde `tools/sudoers-sat-aprs`: solo esas órdenes, con sus rutas exactas.
 
 ---
 

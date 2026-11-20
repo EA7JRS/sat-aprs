@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.2] - 2026-11-20
+### Instalación: permisos y token de administrador
+- `tools/instalar.sh` instala `/etc/sudoers.d/sat-aprs` (de `tools/sudoers-sat-aprs`, comprobado con `visudo`): lo justo para que el usuario de servicio lea y escriba `direwolf.conf`, `aprx.conf`, `axports` y `weewx.conf`, reinicie esos servicios y vacíe sus registros. Sin esto, la consola como `satapr` daba «sudo: a password is required».
+- Si `.env` no tiene `SAT_ADMIN_TOKEN`, crea uno y lo muestra al final: sin él la consola no guarda cambios.
+
+---
+
 ## [v1.44.1] - 2026-11-20
 ### Instalación: el servicio web antiguo
 - `tools/instalar.sh` retira también `sat-aprs-web.service` y `sat-aprs-py.service`, nombres de instalaciones anteriores. En la primera prueba real, el servicio web antiguo seguía ocupando el puerto 3000 y el nuevo no podía arrancar.

@@ -1,0 +1,20 @@
+# S.A.T.-APRS · Permisos del usuario de servicio (lo instala tools/instalar.sh
+# en /etc/sudoers.d/sat-aprs, cambiando USUARIO por el usuario real).
+#
+# Lo justo para que la consola lea y escriba la configuración de los servicios
+# de radio, los reinicie y vacíe sus registros. Nada más: ni shell ni órdenes
+# con argumentos libres.
+
+# Leer y comprobar los archivos de configuración
+USUARIO ALL=(root) NOPASSWD: /usr/bin/cat /etc/direwolf.conf, /usr/bin/cat /etc/aprx.conf, /usr/bin/cat /etc/ax25/axports, /usr/bin/cat /etc/weewx/weewx.conf, /usr/bin/cat /etc/weewx.conf
+USUARIO ALL=(root) NOPASSWD: /usr/bin/test -f /etc/direwolf.conf, /usr/bin/test -f /etc/aprx.conf, /usr/bin/test -f /etc/ax25/axports, /usr/bin/test -f /etc/weewx/weewx.conf, /usr/bin/test -f /etc/weewx.conf
+
+# Escribirlos desde Sistema → Configuración (solo con sesión de administrador)
+USUARIO ALL=(root) NOPASSWD: /usr/bin/tee /etc/direwolf.conf, /usr/bin/tee /etc/aprx.conf, /usr/bin/tee /etc/ax25/axports, /usr/bin/tee /etc/weewx/weewx.conf, /usr/bin/tee /etc/weewx.conf
+
+# Reiniciar los servicios de la estación
+USUARIO ALL=(root) NOPASSWD: /usr/bin/systemctl restart direwolf, /usr/bin/systemctl restart aprx, /usr/bin/systemctl restart weewx, /usr/bin/systemctl restart pat
+
+# Vaciar registros desde Sistema → Equipo
+USUARIO ALL=(root) NOPASSWD: /usr/bin/truncate -s 0 /var/log/aprx/aprx-rf.log, /usr/bin/truncate -s 0 /var/log/aprx/aprx-rf.log.1, /usr/bin/truncate -s 0 /var/log/aprx.log, /usr/bin/truncate -s 0 /var/log/weewx.log
+USUARIO ALL=(root) NOPASSWD: /usr/bin/journalctl --rotate, /usr/bin/journalctl --vacuum-time=1s

@@ -2,6 +2,12 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.3] - 2026-11-20
+### Pat ya no se busca en /root
+- La comprobación de archivos de configuración buscaba el `config.json` de Pat en `/root/.config/pat/`, de cuando la consola corría como root, y dejaba «sudo: a password is required» en el registro al arrancar. Ahora lo busca en la carpeta del usuario del servicio (`pat@usuario` → `/home/usuario/.config/pat/config.json`) y solo usa `sudo` para los archivos de `/etc`.
+
+---
+
 ## [v1.44.2] - 2026-11-20
 ### Instalación: permisos y token de administrador
 - `tools/instalar.sh` instala `/etc/sudoers.d/sat-aprs` (de `tools/sudoers-sat-aprs`, comprobado con `visudo`): lo justo para que el usuario de servicio lea y escriba `direwolf.conf`, `aprx.conf`, `axports` y `weewx.conf`, reinicie esos servicios y vacíe sus registros. Sin esto, la consola como `satapr` daba «sudo: a password is required».

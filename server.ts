@@ -5720,6 +5720,11 @@ app.post('/api/radio/tramas/analizar', (req, res) => {
 const clientePat = new ClientePat(() => String(config.patUrl || 'http://127.0.0.1:8080'));
 let patDesde: number | null = null;
 let patNuevos = new Set<string>();
+/** Dónde está el config.json de Pat: en la carpeta del usuario del servicio `pat@usuario`. */
+function rutasConfPat(): string[] {
+  const usuario = /^pat@([A-Za-z0-9_.-]{1,32})$/.exec(String(config.patServicio ?? ''))?.[1];
+  return [...(usuario ? [`/home/${usuario}/.config/pat/config.json`] : []), './pat-config.json'];
+}
 function servicioPat() { return /^pat(@[A-Za-z0-9_.-]{1,32})?$/.test(String(config.patServicio)) ? String(config.patServicio) : 'pat'; }
 async function sondearPat() {
   const antes = new Set(clientePat.estado.buzones.in.map((m) => m.mid));
@@ -6613,7 +6618,7 @@ ap0     EA1URG-13  9600   255     7       Puerto APRS VHF (144.800 MHz)
   const direwolfContent = getFileContent(['/etc/direwolf.conf', './direwolf.conf'], defaultDirewolf);
   const aprxContent = getFileContent(['/etc/aprx.conf', './aprx.conf'], defaultAprx);
   const weewxContent = getFileContent(['/etc/weewx/weewx.conf', '/etc/weewx.conf', './weewx.conf'], defaultWeewx);
-  const patContent = getFileContent(['/root/.config/pat/config.json', './pat-config.json'], defaultPat);
+  const patContent = getFileContent(rutasConfPat(), defaultPat);
   const axportsContent = getFileContent(['/etc/ax25/axports', './axports'], defaultAxports);
 
   res.json({
@@ -6651,7 +6656,9 @@ function performConfigsVerification() {
       for (const p of paths) {
         if (p.startsWith('/')) {
           try {
-            execFileSync('sudo', ['-n', 'test', '-f', p], { timeout: 5000 });
+            // Solo los archivos de /etc tienen permiso de sudo (tools/sudoers-sat-aprs); sin ruido en el registro
+            if (!p.startsWith('/etc/')) continue;
+            execFileSync('sudo', ['-n', 'test', '-f', p], { timeout: 5000, stdio: ['ignore', 'ignore', 'ignore'] });
             exists = true;
             foundPath = p;
             break;
@@ -6723,7 +6730,7 @@ function performConfigsVerification() {
     direwolf: checkFile(['/etc/direwolf.conf', './direwolf.conf'], 'direwolf'),
     aprx: checkFile(['/etc/aprx.conf', './aprx.conf'], 'aprx'),
     weewx: checkFile(['/etc/weewx/weewx.conf', '/etc/weewx.conf', './weewx.conf'], 'weewx'),
-    pat: checkFile(['/root/.config/pat/config.json', './pat-config.json'], 'pat')
+    pat: checkFile(rutasConfPat(), 'pat')
   };
 
   // Log results using addLog
@@ -6789,7 +6796,7 @@ app.post('/api/files/configs', (req, res) => {
   } else if (type === 'weewx') {
     paths = ['/etc/weewx/weewx.conf', '/etc/weewx.conf', './weewx.conf'];
   } else if (type === 'pat') {
-    paths = ['/root/.config/pat/config.json', './pat-config.json'];
+    paths = rutasConfPat();
   } else if (type === 'axports') {
     paths = ['/etc/ax25/axports', './axports'];
   } else {

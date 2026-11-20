@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.1] - 2026-11-20
+### Instalación: el servicio web antiguo
+- `tools/instalar.sh` retira también `sat-aprs-web.service` y `sat-aprs-py.service`, nombres de instalaciones anteriores. En la primera prueba real, el servicio web antiguo seguía ocupando el puerto 3000 y el nuevo no podía arrancar.
+- `tools/actualizar.sh` ya no da por bueno que «alguien» conteste en el puerto: comprueba que quien escucha es el servicio de la consola y, si es otro proceso, lo dice y lo señala.
+
+---
+
 ## [v1.44.0] - 2026-11-20
 ### Instalar y actualizar con una orden, por SSH
 - **`tools/actualizar.sh`**: `sudo sh tools/actualizar.sh` hace copia de la configuración y del historial (`copias/<fecha>/`, las diez últimas), trae la versión nueva, instala dependencias y compila con la consola en marcha, reinicia el servicio y comprueba que responde. Si la compilación falla, vuelve a la versión anterior sin parar la consola. `--comprobar` solo dice si hay versión nueva; `--forzar` y `--aqui` recompilan y reinician.

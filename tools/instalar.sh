@@ -10,7 +10,7 @@
 #                                                      además trae la configuración de la carpeta antigua
 #
 # Qué hace:
-#   1. para la consola y retira el agente Python antiguo (sat-aprs-agent.service);
+#   1. para la consola y retira los servicios antiguos (sat-aprs-web, sat-aprs-agent…);
 #   2. con --desde, copia de la carpeta antigua .env, sat_config.json, los avisos
 #      emitidos, el perfil, la última posición y el historial (y config.ini solo
 #      si no hay sat_config.json, para que la consola lo importe una vez);
@@ -47,7 +47,8 @@ fi
 
 paso "1. Restos de la versión antigua"
 if systemctl cat "$SERVICIO" >/dev/null 2>&1; then systemctl stop "$SERVICIO" || true; echo "Consola parada."; fi
-for viejo in sat-aprs-agent.service aprs-sat.service aprs_sat.service; do
+# Nombres que ha tenido la consola y su agente en instalaciones anteriores
+for viejo in sat-aprs-web.service sat-aprs-agent.service sat-aprs-py.service aprs-sat.service aprs_sat.service; do
   if [ -f "$UNIDADES/$viejo" ] || systemctl cat "$viejo" >/dev/null 2>&1; then
     systemctl disable --now "$viejo" >/dev/null 2>&1 || true
     rm -f "$UNIDADES/$viejo"

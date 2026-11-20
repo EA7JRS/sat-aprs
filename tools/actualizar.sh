@@ -141,6 +141,18 @@ while [ $i -lt 30 ]; do
   elif [ $i -ge 5 ]; then break
   fi
 done
+# Que conteste alguien no basta: tiene que ser este servicio y no otro proceso que ocupe el puerto
+if [ $i -lt 30 ] && command -v ss >/dev/null 2>&1; then
+  ESCUCHA="$(ss -ltnpH "sport = :$PUERTO" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"
+  GRUPO="$(systemctl show -p ControlGroup --value "$SERVICIO" 2>/dev/null || true)"
+  if [ -n "$ESCUCHA" ] && [ -n "$GRUPO" ] && [ -r "/sys/fs/cgroup$GRUPO/cgroup.procs" ] && ! grep -qx "$ESCUCHA" "/sys/fs/cgroup$GRUPO/cgroup.procs"; then
+    echo "FALLO: el puerto $PUERTO lo ocupa otro proceso, no $SERVICIO:" >&2
+    ps -o pid,user,lstart,cmd -p "$ESCUCHA" >&2 || true
+    systemctl status "$ESCUCHA" --no-pager 2>/dev/null | head -3 >&2 || true
+    echo "Pare ese proceso (si es un servicio: sudo systemctl disable --now <nombre>) y repita con --aqui." >&2
+    exit 1
+  fi
+fi
 if [ $i -ge 30 ]; then
   echo "FALLO: la consola no responde en el puerto $PUERTO tras 30 s. Últimas líneas del registro:" >&2
   journalctl -u "$SERVICIO" -n 30 --no-pager >&2 || true

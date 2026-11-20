@@ -101,6 +101,14 @@ Al abrir un aviso:
   | Calidad del aire (CAMS) | — | nivel naranja | — |
   | Umbrales de la estación | en la estación | viento 20 kn, calor 35 °C, frío 5 °C, lluvia 10 mm/h | un aviso por tipo y día; se activa en Sistema → Configuración → Claves API |
   | Pronóstico (WeatherAPI) | en la estación | sus avisos oficiales; viento 25 kn, helada 0 °C, lluvia 20 mm al día | hasta 3 días; necesita la clave de WeatherAPI |
+  | MeteoAlarm | las zonas que se siguen | nivel amarillo | se repite cada 60 min; con AEMET activado no repite las zonas de España |
+  | Ciclones tropicales (NHC) | 1000 km | nivel amarillo (depresión), naranja (tormenta), rojo (huracán) | se repite cada 3 h |
+  | Radiactividad (EURDEP) | 100 km | 0,3 µSv/h (amarillo; ×3 naranja; ×10 rojo) | medidas de las últimas 12 h, sin validar |
+
+  Las tres últimas vienen apagadas y se encienden en **Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos**:
+  - **MeteoAlarm** (EUMETNET): avisos oficiales de los servicios meteorológicos europeos, sin clave. Su feed no trae el contorno de las zonas, así que se indica qué zonas sigue la estación: por su código EMMA_ID (`PT014`) o por una parte del nombre (`Algarve`). La pantalla muestra las zonas que han tenido aviso, para elegirlas con un toque. Útil cerca de la frontera (Portugal, Francia, Andorra) o si AEMET está apagado.
+  - **Ciclones tropicales** del Centro Nacional de Huracanes de EE. UU. (`CurrentStorms.json`): clase, intensidad, presión y posición del último aviso; el objeto APRS va en el centro del ciclón.
+  - **Radiactividad ambiental**: la última tasa de dosis gamma de las sondas de EURDEP (entre ellas, las de la REA del CSN), de los datos abiertos que publica la BfS alemana. La tabla de la pantalla da las cinco sondas más cercanas; la más cercana alimenta también la regla «Radiación» de las notificaciones. Son medidas sin validar: revise las condiciones de uso de EURDEP antes de difundir más allá de la estación.
 
 - **«Emitir ahora»** pone el aviso en la cola de emisión sin esperar a la repetición. Con la emisión apagada se registra, pero no sale.
 
@@ -332,7 +340,7 @@ Pestañas:
 | General & Identidad | Indicativo, passcode, posición de respaldo, radio de cobertura sísmica, servidor APRS-IS y modo eco |
 | Direwolf TNC Módems | Tarjeta de sonido, módem, PTT, gpsd y puerto KISS; genera `direwolf.conf` sin `CBEACON` y con `LOGDIR` |
 | WeeWX Weather Engine | Controlador, base de datos e intervalos de WeeWX |
-| Claves API & Puertos | Claves de OpenWeatherMap, AEMET, IQAir y WeatherAPI; umbrales meteorológicos |
+| Claves API & Puertos | Claves de OpenWeatherMap, AEMET, IQAir y WeatherAPI; umbrales meteorológicos; más fuentes de avisos (MeteoAlarm, NHC, EURDEP) |
 | Alertas e Inundación | Alarmas sonoras, tonos y silencio programado de guardia; color, sonido y zoom del aviso en pantalla para las tramas con `!EMERGENCY!`, `!PRIORITY!` o `!SPECIAL!` |
 | Archivos .conf Debian | Ver, validar y editar `direwolf.conf`, `aprx.conf`, `weewx.conf`, el `config.json` de Pat y `axports` |
 | Estación APRS | El mismo perfil que Estación → Perfil |

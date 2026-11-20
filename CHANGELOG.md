@@ -2,6 +2,18 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.38.0] - 2026-11-20
+### Tres fuentes nuevas sin clave
+- **MeteoAlarm** (`server/fuentes/meteoalarm.ts`): los avisos oficiales de los servicios meteorológicos europeos, del feed Atom de cada país (`feeds.meteoalarm.org`). El feed no trae el contorno de las zonas: la estación sigue las que se le indiquen, por código EMMA_ID o por nombre, y en pantalla aparecen las zonas que han tenido aviso para elegirlas. Con AEMET activado no repite las zonas de España. Objeto en la estación con nombre estable por zona y fenómeno (`PT014VI`).
+- **Ciclones tropicales del NHC** (`server/fuentes/ciclones.ts`, `CurrentStorms.json`): clase, categoría, intensidad y presión del último aviso; objeto en el centro del ciclón (`HUOPHELIA`). Depresión amarillo, tormenta naranja, huracán rojo; 1000 km de radio de serie.
+- **Radiactividad ambiental de EURDEP** (`server/fuentes/radiacion.ts`): la última tasa de dosis gamma de cada sonda, de los datos abiertos de la BfS (WFS `opendata:eurdep_latestValue`). Avisa desde el umbral (0,3 µSv/h de serie) dentro del radio (100 km); naranja desde 3 veces y rojo desde 10. Dice «sin validar» cuando lo está. La sonda más cercana alimenta la regla «Radiación» de las notificaciones, que hasta ahora no tenía dato.
+- Las tres vienen **apagadas** y se ajustan en Sistema → Configuración → Claves API & Puertos → **Más fuentes de avisos**; sus reglas, también desde el aviso.
+- `/api/fuentes/meteoalarm/zonas` y `/api/fuentes/radiacion`.
+- **Tornados y Protección Civil, sin fuente**: el SPC de la NOAA solo cubre EE. UU. y no se conoce un feed público de los avisos de Protección Civil (ES-Alert llega por difusión celular a los móviles). Sin fuente real no se conecta nada.
+- Avisos de WeatherAPI: el detalle dice qué es y el título dónde, como en AEMET. Antes la lista mostraba «aviso oficial» o «pronostico» como titular.
+
+---
+
 ## [v1.37.0] - 2026-11-20
 ### Historial en SQLite
 - **`sat_historial.db`** (`server/sistema/historial.ts`, con `node:sqlite` de Node.js 22.13 o posterior, sin dependencias nativas). Sobrevive a un reinicio:

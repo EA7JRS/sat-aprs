@@ -25,6 +25,7 @@ import {
 
 import AdminAccess from './AdminAccess';
 import SOSConfiguration from '../emergency/SOSConfiguration';
+import FuentesAvisos from './FuentesAvisos';
 import StationProfile from './StationProfile';
 import StationWeather from './StationWeather';
 import { aprsPasscode as passcodeDe, splitCallsign } from '../../../server/aprs';
@@ -2234,6 +2235,8 @@ LOGDIR /var/log/direwolf
                 </label>
               </div>
             </div>
+
+            <FuentesAvisos config={config} />
           </div>
         )}
 

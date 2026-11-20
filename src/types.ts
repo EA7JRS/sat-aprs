@@ -240,6 +240,21 @@ export interface TelemetryConfig {
   /** Calidad del aire en la estación (CAMS): nivel mínimo. */
   aireEnabled?: boolean;
   aireGravedadMinima?: 'amarillo' | 'naranja' | 'rojo';
+  /** MeteoAlarm: países (nombre del feed: portugal, france…) y zonas seguidas (EMMA_ID o nombre). */
+  meteoalarmEnabled?: boolean;
+  meteoalarmPaises?: string;
+  meteoalarmZonas?: string;
+  meteoalarmGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  meteoalarmRepetirMin?: number;
+  /** Ciclones tropicales del NHC: radio y nivel mínimo. */
+  ciclonesEnabled?: boolean;
+  ciclonesRadioKm?: number;
+  ciclonesGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  /** Radiactividad ambiental (EURDEP): países (ES, PT…), radio y umbral en µSv/h. */
+  radiacionEnabled?: boolean;
+  radiacionPaises?: string;
+  radiacionRadioKm?: number;
+  radiacionUmbral?: number;
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */

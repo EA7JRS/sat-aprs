@@ -50,7 +50,9 @@ test('pronóstico de WeatherAPI: avisos oficiales y días que pasan los umbrales
     'pronostico-viento-2026-11-21', 'pronostico-helada-2026-11-21', 'pronostico-lluvia-2026-11-21',
   ]);
   assert.equal(ev[0].gravedad, 'amarillo');
-  assert.equal(ev[0].titulo, 'Aviso amarillo por viento Campiña sevillana');
+  assert.equal(ev[0].titulo, 'Campiña sevillana');
+  assert.equal(ev[0].detalle, 'Aviso amarillo por viento');
+  assert.equal(ev[1].detalle, undefined);
   assert.equal(ev[1].titulo, 'Viento previsto 30kn el 21/11');
   assert.equal(ev[2].titulo, 'Helada prevista -1.5C el 21/11');
   assert.equal(ev[1].inicio, Date.parse('2026-11-21T00:00:00Z'));

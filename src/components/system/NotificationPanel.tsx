@@ -288,6 +288,19 @@ export default function NotificationPanel({
 
   // Weather and general simulation state
   const [isSimActive, setIsSimActive] = useState(false);
+  // Tasa de dosis de la sonda EURDEP más cercana (/api/fuentes/radiacion), si hay
+  const [radiacionCercana, setRadiacionCercana] = useState<number | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const leer = () => fetch('/api/fuentes/radiacion').then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (!vivo) return;
+      const s = j?.activo ? j.sondas?.[0] : null;
+      setRadiacionCercana(s && Date.now() - s.cuando < 12 * 3600_000 && Number.isFinite(s.valor) ? s.valor : null);
+    }).catch(() => undefined);
+    leer();
+    const t = setInterval(leer, 5 * 60_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
   const [simTemp, setSimTemp] = useState(25);
   const [simWind, setSimWind] = useState(10);
   const [simRain, setSimRain] = useState(0);
@@ -321,8 +334,8 @@ export default function NotificationPanel({
 
   // Derive active threat/telemetry values
   const activeMagnitude = isSimActive ? simMagnitude : (earthquakes.length > 0 ? Math.max(...earthquakes.map(eq => eq.magnitud)) : 0);
-  // Sin fuente de radiación conectada: sin dato, nunca un valor supuesto
-  const activeRadiation: number | null = isSimActive ? simRadiation : null;
+  // Radiación: la sonda EURDEP más cercana, si la fuente está encendida y su medida es de las últimas 12 h
+  const activeRadiation: number | null = isSimActive ? simRadiation : radiacionCercana;
   const activeNavarea = isSimActive ? simNavarea : navareas.length;
 
   // Evaluate which rules are currently triggered

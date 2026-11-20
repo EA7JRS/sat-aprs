@@ -54,6 +54,9 @@ import { AvisoAemet, CacheCap, avisoAEvento, descargarAvisosAemet } from './serv
 import { distanciaAZonaKm } from './server/core/zona';
 import { NivelEscala, descargarClimaEspacial, escalaAEvento } from './server/fuentes/climaEspacial';
 import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
+import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './server/fuentes/meteoalarm';
+import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
+import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
 import { EstacionesOidas } from './server/estaciones';
@@ -323,6 +326,21 @@ let config: TelemetryConfig = {
   // Calidad del aire en la estación (CAMS): solo cuando es mala
   aireEnabled: true,
   aireGravedadMinima: 'naranja',
+  // MeteoAlarm (avisos oficiales europeos, sin clave): países y zonas que se siguen
+  meteoalarmEnabled: false,
+  meteoalarmPaises: 'portugal',
+  meteoalarmZonas: '',
+  meteoalarmGravedadMinima: 'amarillo',
+  meteoalarmRepetirMin: 60,
+  // Ciclones tropicales del NHC a menos de este radio
+  ciclonesEnabled: false,
+  ciclonesRadioKm: 1000,
+  ciclonesGravedadMinima: 'amarillo',
+  // Radiactividad ambiental (EURDEP): sondas a menos del radio por encima del umbral (µSv/h)
+  radiacionEnabled: false,
+  radiacionPaises: 'ES,PT',
+  radiacionRadioKm: 100,
+  radiacionUmbral: 0.3,
   // Parte meteorológico de la estación por APRS. Apagado por defecto: actívelo solo
   // si WeeWX, Direwolf o aprx no emiten ya el parte con este indicativo.
   wxBeaconEnabled: false,
@@ -4482,6 +4500,69 @@ async function descargarPronosticoAvisos() {
   difundirAvisos(eventosPronostico, politicaPronostico());
 }
 
+// MeteoAlarm, ciclones tropicales (NHC) y radiactividad ambiental (EURDEP)
+let eventosMeteoAlarmLista: Evento[] = [];
+let eventosCiclonesLista: Evento[] = [];
+let eventosRadiacionLista: Evento[] = [];
+let sondasRadiacion: { sondas: Sonda[]; cuando: number } | null = null;
+// Zonas de MeteoAlarm vistas en los feeds, para elegir las que se siguen (se guardan en el historial)
+const zonasMeteoAlarm: Record<string, { nombre: string; pais: string; visto: number }> = historial.leerEstado('meteoalarmZonas') ?? {};
+const paisesMeteoAlarm = () => String(config.meteoalarmPaises ?? '').split(/[,;\s]+/).map((p) => p.trim().toLowerCase()).filter((p) => /^[a-z][a-z-]{2,29}$/.test(p)).slice(0, 6);
+function politicaMeteoAlarm(): Politica {
+  return {
+    radioKm: null, gravedadMinima: gravedadDe(config.meteoalarmGravedadMinima, 'amarillo'), vigenciaMs: 6 * 3600_000,
+    antelacionMs: 12 * 3600_000, repetirCadaMs: Math.min(720, Math.max(10, Number(config.meteoalarmRepetirMin ?? 60))) * 60_000, boletin: true,
+  };
+}
+function politicaCiclones(): Politica {
+  return {
+    radioKm: Math.min(5000, Math.max(50, Number(config.ciclonesRadioKm ?? 1000))), gravedadMinima: gravedadDe(config.ciclonesGravedadMinima, 'amarillo'),
+    vigenciaMs: 9 * 3600_000, repetirCadaMs: 180 * 60_000, boletin: true,
+  };
+}
+function politicaRadiacion(): Politica {
+  return { radioKm: Math.min(1000, Math.max(5, Number(config.radiacionRadioKm ?? 100))), gravedadMinima: 'amarillo', vigenciaMs: 3 * 3600_000, repetirCadaMs: 120 * 60_000, boletin: true };
+}
+async function descargarMeteoAlarmAvisos() {
+  if (config.systemPower === false || config.meteoalarmEnabled !== true) { eventosMeteoAlarmLista = []; return; }
+  const todos: AvisoMeteoAlarm[] = [];
+  const fallos: string[] = [];
+  for (const pais of paisesMeteoAlarm()) {
+    try { todos.push(...await descargarMeteoAlarm(pais)); } catch (e: any) { fallos.push(`${pais}: ${e?.message || e}`); }
+  }
+  const ahora = Date.now();
+  for (const a of todos) zonasMeteoAlarm[a.zona] = { nombre: a.nombreZona, pais: a.pais, visto: ahora };
+  historial.guardarEstado('meteoalarmZonas', zonasMeteoAlarm);
+  if (todos.length || !fallos.length) {
+    eventosMeteoAlarmLista = eventosMeteoAlarm(todos, String(config.meteoalarmZonas ?? ''), { lat: gpsdState.lat, lon: gpsdState.lon }, ahora, !!config.aemetAlertsSubscriptionEnabled);
+  }
+  anotarFuente('meteoalarm', 'Avisos · MeteoAlarm', fallos.length === 0, fallos.length ? fallos.join(' · ') : `${todos.length} avisos en ${paisesMeteoAlarm().join(', ') || 'ningún país'} · ${eventosMeteoAlarmLista.length} en las zonas seguidas`);
+  difundirAvisos(eventosMeteoAlarmLista, politicaMeteoAlarm());
+}
+async function descargarCiclonesAvisos() {
+  if (config.systemPower === false || config.ciclonesEnabled !== true) { eventosCiclonesLista = []; return; }
+  try {
+    eventosCiclonesLista = eventosCiclones(await descargarCiclones());
+    anotarFuente('ciclones', 'Ciclones tropicales · NHC', true, eventosCiclonesLista.length ? eventosCiclonesLista.map((e) => e.titulo).join(', ') : 'Ningún ciclón activo');
+  } catch (e: any) {
+    anotarFuente('ciclones', 'Ciclones tropicales · NHC', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosCiclonesLista, politicaCiclones());
+}
+async function descargarRadiacionAvisos() {
+  if (config.systemPower === false || config.radiacionEnabled !== true) { eventosRadiacionLista = []; sondasRadiacion = null; return; }
+  try {
+    const sondas = await descargarEurdep(String(config.radiacionPaises ?? 'ES').split(/[,;\s]+/));
+    sondasRadiacion = { sondas, cuando: Date.now() };
+    eventosRadiacionLista = eventosRadiacion(sondas, Number(config.radiacionUmbral ?? 0.3));
+    const cerca = sondasCercanas(sondas, { lat: gpsdState.lat, lon: gpsdState.lon }, 1)[0];
+    anotarFuente('radiacion', 'Radiactividad · EURDEP', true, cerca ? `${sondas.length} sondas · la más cercana, ${cerca.nombre}: ${cerca.valor.toFixed(2)} µSv/h` : `${sondas.length} sondas`);
+  } catch (e: any) {
+    anotarFuente('radiacion', 'Radiactividad · EURDEP', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosRadiacionLista, politicaRadiacion());
+}
+
 function programarOtrasFuentes() {
   const seguro = (f: () => Promise<void>) => () => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
   setInterval(seguro(descargarClimaEspacialAvisos), 5 * 60_000);
@@ -4494,6 +4575,12 @@ function programarOtrasFuentes() {
   setTimeout(seguro(descargarPronosticoAvisos), 20000);
   setInterval(evaluarUmbralesLocales, 5 * 60_000);
   setTimeout(evaluarUmbralesLocales, 25000);
+  setInterval(seguro(descargarMeteoAlarmAvisos), 15 * 60_000);
+  setInterval(seguro(descargarCiclonesAvisos), 30 * 60_000);
+  setInterval(seguro(descargarRadiacionAvisos), 30 * 60_000);
+  setTimeout(seguro(descargarMeteoAlarmAvisos), 28000);
+  setTimeout(seguro(descargarCiclonesAvisos), 31000);
+  setTimeout(seguro(descargarRadiacionAvisos), 34000);
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
   setInterval(() => {
     difundirAvisos(eventosEspacio, politicaEspacio());
@@ -4501,6 +4588,9 @@ function programarOtrasFuentes() {
     difundirAvisos(eventosAire, politicaAire());
     difundirAvisos(eventosUmbrales, politicaUmbrales());
     difundirAvisos(eventosPronostico, politicaPronostico());
+    difundirAvisos(eventosMeteoAlarmLista, politicaMeteoAlarm());
+    difundirAvisos(eventosCiclonesLista, politicaCiclones());
+    difundirAvisos(eventosRadiacionLista, politicaRadiacion());
   }, 60_000);
 }
 
@@ -4589,6 +4679,9 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
     { eventos: eventosFuego, politica: politicaFuego(), activo: config.fuegoEnabled !== false },
     { eventos: eventosEspacio, politica: politicaEspacio(), activo: config.climaEspacialEnabled !== false },
     { eventos: eventosAire, politica: politicaAire(), activo: config.aireEnabled !== false },
+    { eventos: eventosMeteoAlarmLista, politica: politicaMeteoAlarm(), activo: config.meteoalarmEnabled === true, grupo: 'meteoalarm' },
+    { eventos: eventosCiclonesLista, politica: politicaCiclones(), activo: config.ciclonesEnabled === true },
+    { eventos: eventosRadiacionLista, politica: politicaRadiacion(), activo: config.radiacionEnabled === true },
   ];
 }
 
@@ -5294,6 +5387,23 @@ app.post('/api/estacion/weewx', async (req, res) => {
   res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
 
+// Fuentes: zonas de MeteoAlarm vistas y sondas de radiactividad más cercanas
+app.get('/api/fuentes/meteoalarm/zonas', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    paises: paisesMeteoAlarm(), seguidas: String(config.meteoalarmZonas ?? ''),
+    zonas: Object.entries(zonasMeteoAlarm).map(([codigo, z]) => ({ codigo, ...z })).sort((a, b) => a.codigo.localeCompare(b.codigo)),
+  });
+});
+app.get('/api/fuentes/radiacion', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  res.json({
+    activo: config.radiacionEnabled === true, umbral: Number(config.radiacionUmbral ?? 0.3), cuando: sondasRadiacion?.cuando ?? null,
+    sondas: sondasRadiacion ? sondasCercanas(sondasRadiacion.sondas, estacion, 10).map((s) => ({ ...s, distanciaKm: Math.round(s.distanciaKm) })) : [],
+  });
+});
+
 // Historial (SQLite): resumen, búsqueda y exportación
 app.get('/api/historial', (_req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -5804,6 +5914,24 @@ app.post('/api/config', (req, res) => {
     if (updated.fuegoGravedadMinima !== undefined && GRAVEDADES.includes(updated.fuegoGravedadMinima as Gravedad)) config.fuegoGravedadMinima = updated.fuegoGravedadMinima;
     if (updated.aireEnabled !== undefined) config.aireEnabled = !!updated.aireEnabled;
     if (updated.aireGravedadMinima !== undefined && ['amarillo', 'naranja', 'rojo'].includes(String(updated.aireGravedadMinima))) config.aireGravedadMinima = updated.aireGravedadMinima;
+    const numEn = (v: unknown, min: number, max: number) => (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : undefined);
+    let fuentesCambiadas = false;
+    if (updated.meteoalarmEnabled !== undefined) { config.meteoalarmEnabled = !!updated.meteoalarmEnabled; fuentesCambiadas = true; }
+    if (updated.meteoalarmPaises !== undefined) { config.meteoalarmPaises = String(updated.meteoalarmPaises).toLowerCase().replace(/[^a-z,\s-]/g, '').slice(0, 120); fuentesCambiadas = true; }
+    if (updated.meteoalarmZonas !== undefined) { config.meteoalarmZonas = String(updated.meteoalarmZonas).replace(/[<>]/g, '').slice(0, 400); fuentesCambiadas = true; }
+    if (updated.meteoalarmGravedadMinima !== undefined && GRAVEDADES.includes(updated.meteoalarmGravedadMinima as Gravedad)) config.meteoalarmGravedadMinima = updated.meteoalarmGravedadMinima;
+    if (numEn(updated.meteoalarmRepetirMin, 10, 720) !== undefined) config.meteoalarmRepetirMin = Math.round(numEn(updated.meteoalarmRepetirMin, 10, 720)!);
+    if (updated.ciclonesEnabled !== undefined) { config.ciclonesEnabled = !!updated.ciclonesEnabled; fuentesCambiadas = true; }
+    if (numEn(updated.ciclonesRadioKm, 50, 5000) !== undefined) config.ciclonesRadioKm = Math.round(numEn(updated.ciclonesRadioKm, 50, 5000)!);
+    if (updated.ciclonesGravedadMinima !== undefined && GRAVEDADES.includes(updated.ciclonesGravedadMinima as Gravedad)) config.ciclonesGravedadMinima = updated.ciclonesGravedadMinima;
+    if (updated.radiacionEnabled !== undefined) { config.radiacionEnabled = !!updated.radiacionEnabled; fuentesCambiadas = true; }
+    if (updated.radiacionPaises !== undefined) { config.radiacionPaises = String(updated.radiacionPaises).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60); fuentesCambiadas = true; }
+    if (numEn(updated.radiacionRadioKm, 5, 1000) !== undefined) config.radiacionRadioKm = Math.round(numEn(updated.radiacionRadioKm, 5, 1000)!);
+    if (numEn(updated.radiacionUmbral, 0.05, 100) !== undefined) { config.radiacionUmbral = numEn(updated.radiacionUmbral, 0.05, 100)!; fuentesCambiadas = true; }
+    if (fuentesCambiadas) {
+      const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
+      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); }, 500);
+    }
     if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
     if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));
     if (updated.wxFuente !== undefined && ['auto', 'propia', 'internet'].includes(String(updated.wxFuente))) config.wxFuente = updated.wxFuente;

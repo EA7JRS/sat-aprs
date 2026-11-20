@@ -76,6 +76,18 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
     { clave: 'localThresholdTempMinC', rotulo: 'Temperatura baja', unidad: '°C', porDefecto: 5 },
     { clave: 'localThresholdRainMm', rotulo: 'Lluvia', unidad: 'mm/h', porDefecto: 10 },
   ] },
+  meteoalarm: { titulo: 'los avisos de MeteoAlarm', campos: [
+    { clave: 'meteoalarmGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'amarillo' },
+    { clave: 'meteoalarmRepetirMin', rotulo: 'Repetición', unidad: 'min', porDefecto: 60 },
+  ] },
+  huracan: { titulo: 'los ciclones tropicales', campos: [
+    { clave: 'ciclonesRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 1000 },
+    { clave: 'ciclonesGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'amarillo' },
+  ] },
+  radiacion: { titulo: 'la radiactividad ambiental', campos: [
+    { clave: 'radiacionRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 100 },
+    { clave: 'radiacionUmbral', rotulo: 'Umbral', unidad: 'µSv/h', porDefecto: 0.3 },
+  ] },
   pronostico: { titulo: 'el pronóstico de WeatherAPI', campos: [
     { clave: 'thresholdWindKts', rotulo: 'Viento previsto', unidad: 'kn', porDefecto: 25 },
     { clave: 'thresholdTempMinC', rotulo: 'Helada', unidad: '°C', porDefecto: 0 },
@@ -318,7 +330,7 @@ export default function Avisos({ config, onGuardar, sismos }: { config: Telemetr
 
       {error && <Tarjeta className="text-amber-300">No se pudo consultar la lista de avisos.</Tarjeta>}
       {!error && avisos.length === 0 && (
-        <Tarjeta className="text-slate-300">No hay avisos en vigor en las fuentes conectadas: sismos (IGN), meteorología (AEMET), focos de calor (FIRMS), clima espacial (NOAA) y calidad del aire (CAMS).</Tarjeta>
+        <Tarjeta className="text-slate-300">No hay avisos en vigor en las fuentes conectadas: sismos (IGN), meteorología (AEMET y, si se encienden, MeteoAlarm, umbrales y pronóstico), focos de calor (FIRMS), clima espacial (NOAA), calidad del aire (CAMS) y, si se encienden, ciclones tropicales (NHC) y radiactividad (EURDEP).</Tarjeta>
       )}
 
       <div className="flex flex-wrap gap-5 items-start">

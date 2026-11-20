@@ -12,7 +12,7 @@
 
 **S.A.T.-APRS** (Servicio de Alerta Temprana por APRS) convierte un PC pequeño con Debian (un Intel NUC, por ejemplo) en una **estación APRS de emergencias desatendida, 24/7**, para radioaficionados y grupos de voluntariado de emergencias.
 
-- Vigila **fuentes oficiales** (IGN, AEMET, NOAA, NASA FIRMS, Copernicus CAMS…) y, cuando algo ocurre dentro del radio que elijas alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
+- Vigila **fuentes oficiales** (IGN, AEMET, NOAA, NASA FIRMS, Copernicus CAMS y, si se encienden, MeteoAlarm, los ciclones del NHC y la radiactividad de EURDEP…) y, cuando algo ocurre dentro del radio que elijas alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
 - Funciona como **estación APRS y meteorológica**: baliza de posición, parte meteorológico, mensajería con acuse, grupo de estaciones (ARTS) y emergencia remota (EAI).
 - Es la **consola de la estación de radio**: equipo por CAT, rotor, cluster DX, satélites con Doppler, Direwolf, aprx y Winlink (Pat), y la salida NMEA 2000 hacia un plotter.
 
@@ -61,7 +61,8 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
 | Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
 | NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
-| Radiación, huracanes, tornados, Protección Civil | Sin fuente real todavía |
+| Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; sin probar aún contra las fuentes reales |
+| Tornados, Protección Civil | Sin fuente pública utilizable: el SPC de la NOAA solo cubre EE. UU.; no se conoce un feed público de los avisos de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 
 ---
 
@@ -103,7 +104,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/aprs.ts` | Protocolo APRS / AX.25 / KISS y política de emisión |
 | `server/aprsIs.ts`, `server/aprsPosicion.ts`, `server/estaciones.ts` | Sesión con APRS-IS, lectura de posiciones recibidas y estaciones oídas |
 | `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
-| `server/fuentes/` | Fuentes oficiales: sismos (IGN), avisos (AEMET), clima espacial (NOAA), focos de calor (FIRMS) y calidad del aire (CAMS) |
+| `server/fuentes/` | Fuentes oficiales: sismos (IGN), avisos (AEMET y MeteoAlarm), clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS), ciclones (NHC) y radiactividad (EURDEP) |
 | `server/estacion/` | Baliza de posición y parte meteorológico de la estación |
 | `server/radio/` | Radio: mensajería APRS, DAPNET, cluster DX y tabla DXCC, Hamlib (equipo y rotor) y caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat (Winlink) |
 | `server/conectividad/` | Salida NMEA 2000 por SocketCAN |

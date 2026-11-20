@@ -72,7 +72,7 @@ export function eventosPronosticoWeatherApi(j: any, u: UmbralesPronostico, estac
     const zona = String(a?.areas ?? '').split(/[;,]/)[0].trim();
     ev.push({
       ...base, id: `weatherapi-${evento}-${dia(inicio)}-${zona}`.replace(/\s+/g, '_').slice(0, 120),
-      gravedad, titulo: `${evento}${zona ? ` ${zona}` : ''}`.slice(0, 60), detalle: 'aviso oficial', inicio, fin,
+      gravedad, detalle: evento.slice(0, 40), titulo: (zona || 'WeatherAPI').slice(0, 60), inicio, fin,
     });
   }
   for (const d of (Array.isArray(j?.forecast?.forecastday) ? j.forecast.forecastday : [])) {
@@ -83,13 +83,13 @@ export function eventosPronosticoWeatherApi(j: any, u: UmbralesPronostico, estac
     const corto = fecha.slice(8, 10) + '/' + fecha.slice(5, 7);
     const comun = { ...base, gravedad: 'amarillo' as Gravedad, inicio: t, fin: t + 86_400_000 };
     if (finito(dd.maxwind_kph) && u.vientoKn > 0 && dd.maxwind_kph * KMH_A_KN >= u.vientoKn) {
-      ev.push({ ...comun, id: `pronostico-viento-${fecha}`, titulo: `Viento previsto ${fmt(dd.maxwind_kph * KMH_A_KN)}kn el ${corto}`, detalle: 'pronostico', datos: { nudos: dd.maxwind_kph * KMH_A_KN } });
+      ev.push({ ...comun, id: `pronostico-viento-${fecha}`, titulo: `Viento previsto ${fmt(dd.maxwind_kph * KMH_A_KN)}kn el ${corto}`, datos: { nudos: dd.maxwind_kph * KMH_A_KN } });
     }
     if (finito(dd.mintemp_c) && dd.mintemp_c <= u.tempMinC) {
-      ev.push({ ...comun, id: `pronostico-helada-${fecha}`, titulo: `Helada prevista ${fmt(dd.mintemp_c, 1)}C el ${corto}`, detalle: 'pronostico', datos: { tempC: dd.mintemp_c } });
+      ev.push({ ...comun, id: `pronostico-helada-${fecha}`, titulo: `Helada prevista ${fmt(dd.mintemp_c, 1)}C el ${corto}`, datos: { tempC: dd.mintemp_c } });
     }
     if (finito(dd.totalprecip_mm) && u.lluviaMm > 0 && dd.totalprecip_mm >= u.lluviaMm) {
-      ev.push({ ...comun, id: `pronostico-lluvia-${fecha}`, titulo: `Lluvia prevista ${fmt(dd.totalprecip_mm)}mm el ${corto}`, detalle: 'pronostico', datos: { mm: dd.totalprecip_mm } });
+      ev.push({ ...comun, id: `pronostico-lluvia-${fecha}`, titulo: `Lluvia prevista ${fmt(dd.totalprecip_mm)}mm el ${corto}`, datos: { mm: dd.totalprecip_mm } });
     }
   }
   return ev;

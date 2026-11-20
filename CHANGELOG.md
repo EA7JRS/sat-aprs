@@ -2,6 +2,11 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.4] - 2026-11-20
+- El acceso de administrador de la barra superior se lee: botón «Entrar como administrador» de tamaño normal, en vez de un rótulo de 9 px que decía «Modo demostración · Acceder».
+
+---
+
 ## [v1.44.3] - 2026-11-20
 ### Pat ya no se busca en /root
 - La comprobación de archivos de configuración buscaba el `config.json` de Pat en `/root/.config/pat/`, de cuando la consola corría como root, y dejaba «sudo: a password is required» en el registro al arrancar. Ahora lo busca en la carpeta del usuario del servicio (`pat@usuario` → `/home/usuario/.config/pat/config.json`) y solo usa `sudo` para los archivos de `/etc`.

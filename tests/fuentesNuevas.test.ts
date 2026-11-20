@@ -206,3 +206,26 @@ test('EFFIS: áreas quemadas recientes, con su centro y sus hectáreas', () => {
   assert.deepEqual(eventosAreasQuemadas(areas, 10, Date.parse('2026-11-20T00:00:00Z')), []);
   assert.throws(() => leerAreasQuemadas({}), /GeoJSON/);
 });
+
+import { eventosEmsc, leerEmsc, mismoSismo, nivelSismo, URL_EMSC } from '../server/fuentes/emsc';
+
+// La muestra de EMSC de las pruebas de la app Android (core/SelfTest.kt)
+test('EMSC: sismos de fuera de España con el nivel por magnitud y distancia', () => {
+  const j = { type: 'FeatureCollection', features: [
+    { type: 'Feature', id: '20261104_0000300', properties: { time: '2026-11-04T21:24:25.643Z', flynn_region: 'SOUTH OF FIJI ISLANDS', lat: -25.3174, lon: 179.8078, depth: 508.1, mag: 5.0, unid: '20261104_0000300' } },
+    { type: 'Feature', properties: { time: '2026-11-04T16:14:39.4Z', flynn_region: 'STRAIT OF GIBRALTAR', lat: 36.0, lon: -5.5, depth: 10, mag: 4.6, unid: 'b' } },
+    { type: 'Feature', properties: { flynn_region: 'SIN DATOS' } },
+  ] };
+  const sismos = leerEmsc(j);
+  assert.equal(sismos.length, 2);
+  const ahora = Date.parse('2026-11-04T22:00:00Z');
+  const ev = eventosEmsc(sismos, { lat: 36.5, lon: -6.0 }, [], ahora);
+  assert.deepEqual(ev.map((e) => [e.titulo, e.gravedad, e.detalle]), [['SOUTH OF FIJI ISLANDS', 'info', 'M5.0 Prof:508km'], ['STRAIT OF GIBRALTAR', 'amarillo', 'M4.6 Prof:10km']]);
+  // El que ya da el IGN no se repite
+  const ign = [{ lat: 36.04, lon: -5.47, cuando: Date.parse('2026-11-04T16:14:52Z'), magnitud: 4.4 }];
+  assert.ok(mismoSismo(sismos[1], ign[0]));
+  assert.deepEqual(eventosEmsc(sismos, { lat: 36.5, lon: -6.0 }, ign, ahora).map((e) => e.titulo), ['SOUTH OF FIJI ISLANDS']);
+  assert.deepEqual([nivelSismo(6.1, 250), nivelSismo(5.2, 250), nivelSismo(5.2, 500), nivelSismo(5.2, 900), nivelSismo(7.6, 2500)], ['rojo', 'naranja', 'amarillo', 'info', 'naranja']);
+  assert.equal(URL_EMSC(36.5, -6.3, Date.parse('2026-11-04T00:00:00Z')), 'https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=50&minmag=3.5&latitude=36.50&longitude=-6.30&maxradius=15&start=2026-11-04T00:00:00');
+  assert.ok(boletinAprs('EA7JRS-13', ev[1], 78).includes('SISMO M4.6 Prof:10km STRAIT OF GIBRALTAR a 78km'));
+});

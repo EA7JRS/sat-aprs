@@ -37,6 +37,7 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     eonetEnabled: config.eonetEnabled === true,
     eonetCategorias: config.eonetCategorias ?? 'floods,severeStorms,volcanoes',
     eonetRadioKm: String(config.eonetRadioKm ?? 300),
+    emscEnabled: config.emscEnabled === true,
     effisPeligroEnabled: config.effisPeligroEnabled === true,
     effisAreasEnabled: config.effisAreasEnabled === true,
     effisAreasRadioKm: String(config.effisAreasRadioKm ?? 100),
@@ -72,7 +73,7 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     setOcupado(false);
   };
 
-  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled' | 'nwsEnabled' | 'eonetEnabled' | 'effisPeligroEnabled' | 'effisAreasEnabled', titulo: string, detalle: string) => (
+  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled' | 'nwsEnabled' | 'eonetEnabled' | 'effisPeligroEnabled' | 'effisAreasEnabled' | 'emscEnabled', titulo: string, detalle: string) => (
     <label className="flex items-start gap-2.5 text-slate-100 text-[13px] cursor-pointer" htmlFor={id}>
       <input type="checkbox" id={id} checked={v[k]} disabled={!isAdmin} onChange={(e) => pon(k, e.target.checked)} className="mt-0.5 w-4 h-4" />
       <span><span className="font-semibold">{titulo}</span> <span className="text-slate-400">{detalle}</span></span>
@@ -154,6 +155,11 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
         <p className="text-[12px] text-slate-400">
           Datos abiertos de EURDEP que publica la BfS alemana; son medidas sin validar. Avisa desde el umbral (amarillo), desde tres veces el umbral (naranja) y desde diez veces (rojo). Antes de difundir más allá de la estación, revise las condiciones de uso de EURDEP.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
+        {casilla('check-emsc', 'emscEnabled', 'Sismos de fuera de España (EMSC)', '(M3,5 o más a menos de 15° de la estación: Portugal, Marruecos, Argelia, el Atlántico…)')}
+        <p className="text-[12px] text-slate-400">El nivel sale de la magnitud y la distancia, como en la app Android: amarillo M4 a menos de 100 km, M5 a menos de 600 o M6 a menos de 2000; naranja M5 a menos de 300, M6 a menos de 1000 o M7,5 a menos de 3000; rojo M6 a menos de 300 o M7 a menos de 1000. Los que ya da el IGN no se repiten. Datos de EMSC-CSEM (CC BY 4.0).</p>
       </div>
 
       <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">

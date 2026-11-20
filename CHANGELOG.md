@@ -2,6 +2,15 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.42.0] - 2026-11-20
+### Sismos de fuera de España (EMSC)
+- **`server/fuentes/emsc.ts`**: servicio FDSN del Centro Sismológico Euro-Mediterráneo (SeismicPortal, CC BY 4.0, sin clave). Sismos de M3,5 o más de las últimas 24 horas a menos de 15° de la estación.
+- Mismo lector y mismos niveles que la app Android (`OfficialAlerts.emsc`, `quakeLevel`): la gravedad sale de la magnitud y de la distancia. De serie se difunde desde amarillo.
+- Los sismos que ya da el IGN no se repiten (menos de 60 km, 90 s y 0,6 de magnitud de diferencia).
+- Apagada de serie; en Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos.
+
+---
+
 ## [v1.41.0] - 2026-11-20
 ### Peligro de incendio y áreas quemadas de EFFIS
 - **`server/fuentes/effis.ts`**, del Sistema Europeo de Información sobre Incendios Forestales (Copernicus EMS, datos CC BY 4.0, sin clave):

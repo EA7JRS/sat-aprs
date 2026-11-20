@@ -265,6 +265,9 @@ export interface TelemetryConfig {
   eonetEnabled?: boolean;
   eonetCategorias?: string;
   eonetRadioKm?: number;
+  /** Sismos de fuera de España (EMSC): nivel por magnitud y distancia. */
+  emscEnabled?: boolean;
+  emscGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
   /** EFFIS (Copernicus): peligro de incendio en la estación y áreas quemadas cerca. */
   effisPeligroEnabled?: boolean;
   effisPeligroGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';

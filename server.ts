@@ -62,6 +62,7 @@ import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
 import { CATEGORIAS_EONET, descargarEonet, eventosEonet } from './server/fuentes/eonet';
+import { descargarEmsc, eventosEmsc } from './server/fuentes/emsc';
 import { PeligroDia, clasePeligro, descargarAreasQuemadas, descargarFwi, eventosAreasQuemadas, eventosPeligroIncendio } from './server/fuentes/effis';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
@@ -354,6 +355,9 @@ let config: TelemetryConfig = {
   eonetEnabled: false,
   eonetCategorias: 'floods,severeStorms,volcanoes',
   eonetRadioKm: 300,
+  // Sismos de fuera de España (EMSC), con el nivel por magnitud y distancia
+  emscEnabled: false,
+  emscGravedadMinima: 'amarillo',
   // EFFIS (Copernicus): peligro de incendio (FWI) en la estación y áreas quemadas cerca
   effisPeligroEnabled: false,
   effisPeligroGravedadMinima: 'naranja',
@@ -4577,6 +4581,24 @@ async function descargarEonetAvisos() {
   difundirAvisos(eventosEonetLista, politicaEonet());
 }
 
+// EMSC: sismos de M3,5 o más a menos de 15° de la estación que el IGN no da
+let eventosEmscLista: Evento[] = [];
+function politicaEmsc(): Politica {
+  return { radioKm: null, gravedadMinima: gravedadDe(config.emscGravedadMinima, 'amarillo'), vigenciaMs: 6 * 3600_000, repetirCadaMs: 60 * 60_000, boletin: true };
+}
+async function descargarEmscAvisos() {
+  if (config.systemPower === false || config.emscEnabled !== true) { eventosEmscLista = []; return; }
+  try {
+    const sismos = await descargarEmsc(gpsdState.lat, gpsdState.lon);
+    const delIgn = earthquakes.map((e) => ({ lat: e.latitude, lon: e.longitude, cuando: new Date(e.time).getTime(), magnitud: e.magnitud }));
+    eventosEmscLista = eventosEmsc(sismos, { lat: gpsdState.lat, lon: gpsdState.lon }, delIgn);
+    anotarFuente('emsc', 'Sismos · EMSC', true, `${sismos.length} sismos de M3,5 o más en 24 h · ${sismos.length - eventosEmscLista.length} ya dados por el IGN`);
+  } catch (e: any) {
+    anotarFuente('emsc', 'Sismos · EMSC', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosEmscLista, politicaEmsc());
+}
+
 // EFFIS: peligro de incendio (FWI de hoy y de los dos días siguientes) y áreas quemadas
 let eventosEffisPeligro: Evento[] = [];
 let eventosEffisAreas: Evento[] = [];
@@ -4791,6 +4813,8 @@ function programarOtrasFuentes() {
   setInterval(seguro(descargarEonetAvisos), 60 * 60_000);
   setTimeout(seguro(descargarNwsAvisos), 37000);
   setTimeout(seguro(descargarEonetAvisos), 40000);
+  setInterval(seguro(descargarEmscAvisos), 5 * 60_000);
+  setTimeout(seguro(descargarEmscAvisos), 46000);
   setInterval(seguro(descargarEffis), 3 * 3600_000);
   setTimeout(seguro(descargarEffis), 43000);
   setInterval(leerNavtex, 2000);
@@ -4810,6 +4834,7 @@ function programarOtrasFuentes() {
     difundirAvisos(eventosTsunamiLista, politicaTsunami());
     difundirAvisos(eventosNwsLista, politicaNws());
     difundirAvisos(eventosEonetLista, politicaEonet());
+    difundirAvisos(eventosEmscLista, politicaEmsc());
     difundirAvisos(eventosEffisPeligro, politicaEffisPeligro());
     difundirAvisos(eventosEffisAreas, politicaEffisAreas());
   }, 60_000);
@@ -4906,6 +4931,7 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
     { eventos: eventosTsunamiLista, politica: politicaTsunami(), activo: config.tsunamiMonitorEnabled !== false },
     { eventos: eventosNwsLista, politica: politicaNws(), activo: config.nwsEnabled === true, grupo: 'nws' },
     { eventos: eventosEonetLista, politica: politicaEonet(), activo: config.eonetEnabled === true, grupo: 'eonet' },
+    { eventos: eventosEmscLista, politica: politicaEmsc(), activo: config.emscEnabled === true, grupo: 'emsc' },
     { eventos: eventosEffisPeligro, politica: politicaEffisPeligro(), activo: config.effisPeligroEnabled === true, grupo: 'effisPeligro' },
     { eventos: eventosEffisAreas, politica: politicaEffisAreas(), activo: config.effisAreasEnabled === true, grupo: 'effisAreas' },
     { eventos: eventosNavtexLista(), politica: politicaNavtex(), activo: config.navtexEnabled === true, grupo: 'navtex' },
@@ -6163,6 +6189,8 @@ app.post('/api/config', (req, res) => {
     if (updated.eonetEnabled !== undefined) { config.eonetEnabled = !!updated.eonetEnabled; fuentesCambiadas = true; }
     if (updated.eonetCategorias !== undefined) { config.eonetCategorias = String(updated.eonetCategorias).split(/[,;\s]+/).filter((c) => c in CATEGORIAS_EONET).join(','); fuentesCambiadas = true; }
     if (numEn(updated.eonetRadioKm, 10, 5000) !== undefined) config.eonetRadioKm = Math.round(numEn(updated.eonetRadioKm, 10, 5000)!);
+    if (updated.emscEnabled !== undefined) { config.emscEnabled = !!updated.emscEnabled; fuentesCambiadas = true; }
+    if (updated.emscGravedadMinima !== undefined && GRAVEDADES.includes(updated.emscGravedadMinima as Gravedad)) config.emscGravedadMinima = updated.emscGravedadMinima;
     if (updated.effisPeligroEnabled !== undefined) { config.effisPeligroEnabled = !!updated.effisPeligroEnabled; fuentesCambiadas = true; }
     if (updated.effisPeligroGravedadMinima !== undefined && GRAVEDADES.includes(updated.effisPeligroGravedadMinima as Gravedad)) config.effisPeligroGravedadMinima = updated.effisPeligroGravedadMinima;
     if (updated.effisAreasEnabled !== undefined) { config.effisAreasEnabled = !!updated.effisAreasEnabled; fuentesCambiadas = true; }
@@ -6184,7 +6212,7 @@ app.post('/api/config', (req, res) => {
     ajustarEgc();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
-      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); seguro(descargarEffis); }, 500);
+      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); seguro(descargarEffis); seguro(descargarEmscAvisos); }, 500);
     }
     if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
     if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));

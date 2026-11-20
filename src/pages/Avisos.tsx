@@ -98,6 +98,9 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
   eonet: { titulo: 'los sucesos de NASA EONET', campos: [
     { clave: 'eonetRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 300 },
   ] },
+  emsc: { titulo: 'los sismos de fuera de España (EMSC)', campos: [
+    { clave: 'emscGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'amarillo' },
+  ] },
   effisPeligro: { titulo: 'el peligro de incendio (EFFIS)', campos: [
     { clave: 'effisPeligroGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
   ] },

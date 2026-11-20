@@ -62,6 +62,7 @@ import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
 import { CATEGORIAS_EONET, descargarEonet, eventosEonet } from './server/fuentes/eonet';
+import { PeligroDia, clasePeligro, descargarAreasQuemadas, descargarFwi, eventosAreasQuemadas, eventosPeligroIncendio } from './server/fuentes/effis';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
 import { EstacionesOidas } from './server/estaciones';
@@ -353,6 +354,12 @@ let config: TelemetryConfig = {
   eonetEnabled: false,
   eonetCategorias: 'floods,severeStorms,volcanoes',
   eonetRadioKm: 300,
+  // EFFIS (Copernicus): peligro de incendio (FWI) en la estación y áreas quemadas cerca
+  effisPeligroEnabled: false,
+  effisPeligroGravedadMinima: 'naranja',
+  effisAreasEnabled: false,
+  effisAreasRadioKm: 100,
+  effisAreasDias: 10,
   // NAVTEX con SDR propio: archivo que escribe tools/navtex/navtex.sh
   navtexEnabled: false,
   navtexArchivo: '/var/lib/sat-aprs/navtex.txt',
@@ -4570,6 +4577,55 @@ async function descargarEonetAvisos() {
   difundirAvisos(eventosEonetLista, politicaEonet());
 }
 
+// EFFIS: peligro de incendio (FWI de hoy y de los dos días siguientes) y áreas quemadas
+let eventosEffisPeligro: Evento[] = [];
+let eventosEffisAreas: Evento[] = [];
+let peligroIncendio: { dias: PeligroDia[]; cuando: number } | null = null;
+function politicaEffisPeligro(): Politica {
+  return { radioKm: null, gravedadMinima: gravedadDe(config.effisPeligroGravedadMinima, 'naranja'), vigenciaMs: 24 * 3600_000, antelacionMs: 72 * 3600_000, repetirCadaMs: 360 * 60_000, boletin: true };
+}
+function politicaEffisAreas(): Politica {
+  return { radioKm: Math.min(1000, Math.max(10, Number(config.effisAreasRadioKm ?? 100))), gravedadMinima: 'amarillo', vigenciaMs: 6 * 3600_000, repetirCadaMs: 360 * 60_000, boletin: true };
+}
+async function descargarEffis() {
+  const encendido = config.systemPower !== false;
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  if (!encendido || config.effisPeligroEnabled !== true) { eventosEffisPeligro = []; peligroIncendio = null; }
+  else {
+    try {
+      const dias: PeligroDia[] = [];
+      for (let i = 0; i < 3; i++) {
+        const dia = new Date(Date.now() + i * 86_400_000).toISOString().slice(0, 10);
+        dias.push({ dia, fwi: await descargarFwi(estacion.lat, estacion.lon, dia) });
+      }
+      peligroIncendio = { dias, cuando: Date.now() };
+      eventosEffisPeligro = eventosPeligroIncendio(dias, estacion);
+      const hoy = dias[0];
+      anotarFuente('effis-fwi', 'Peligro de incendio · EFFIS', true, hoy.fwi === null ? 'EFFIS no tiene datos de hoy' : `Hoy FWI ${hoy.fwi.toFixed(1)}, peligro ${clasePeligro(hoy.fwi).nombre}`);
+    } catch (e: any) {
+      anotarFuente('effis-fwi', 'Peligro de incendio · EFFIS', false, e?.message || 'Sin respuesta');
+    }
+    difundirAvisos(eventosEffisPeligro, politicaEffisPeligro());
+  }
+  if (!encendido || config.effisAreasEnabled !== true) { eventosEffisAreas = []; return; }
+  try {
+    const radio = politicaEffisAreas().radioKm ?? 100;
+    const areas = await descargarAreasQuemadas(estacion.lat, estacion.lon, radio);
+    eventosEffisAreas = eventosAreasQuemadas(areas, Math.min(60, Math.max(1, Number(config.effisAreasDias ?? 10))));
+    anotarFuente('effis-ba', 'Áreas quemadas · EFFIS', true, `${areas.length} perímetros en el recuadro · ${eventosEffisAreas.length} recientes`);
+  } catch (e: any) {
+    anotarFuente('effis-ba', 'Áreas quemadas · EFFIS', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosEffisAreas, politicaEffisAreas());
+}
+app.get('/api/fuentes/peligro-incendio', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    activo: config.effisPeligroEnabled === true, cuando: peligroIncendio?.cuando ?? null,
+    dias: (peligroIncendio?.dias ?? []).map((d) => ({ ...d, clase: d.fwi === null ? null : clasePeligro(d.fwi).nombre })),
+  });
+});
+
 // ---------------------------------------------------------------------------
 // NAVTEX e Inmarsat-C por SDR (server/radio/navtex.ts y egc.ts)
 // ---------------------------------------------------------------------------
@@ -4735,6 +4791,8 @@ function programarOtrasFuentes() {
   setInterval(seguro(descargarEonetAvisos), 60 * 60_000);
   setTimeout(seguro(descargarNwsAvisos), 37000);
   setTimeout(seguro(descargarEonetAvisos), 40000);
+  setInterval(seguro(descargarEffis), 3 * 3600_000);
+  setTimeout(seguro(descargarEffis), 43000);
   setInterval(leerNavtex, 2000);
   ajustarEgc();
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
@@ -4752,6 +4810,8 @@ function programarOtrasFuentes() {
     difundirAvisos(eventosTsunamiLista, politicaTsunami());
     difundirAvisos(eventosNwsLista, politicaNws());
     difundirAvisos(eventosEonetLista, politicaEonet());
+    difundirAvisos(eventosEffisPeligro, politicaEffisPeligro());
+    difundirAvisos(eventosEffisAreas, politicaEffisAreas());
   }, 60_000);
 }
 
@@ -4846,6 +4906,8 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
     { eventos: eventosTsunamiLista, politica: politicaTsunami(), activo: config.tsunamiMonitorEnabled !== false },
     { eventos: eventosNwsLista, politica: politicaNws(), activo: config.nwsEnabled === true, grupo: 'nws' },
     { eventos: eventosEonetLista, politica: politicaEonet(), activo: config.eonetEnabled === true, grupo: 'eonet' },
+    { eventos: eventosEffisPeligro, politica: politicaEffisPeligro(), activo: config.effisPeligroEnabled === true, grupo: 'effisPeligro' },
+    { eventos: eventosEffisAreas, politica: politicaEffisAreas(), activo: config.effisAreasEnabled === true, grupo: 'effisAreas' },
     { eventos: eventosNavtexLista(), politica: politicaNavtex(), activo: config.navtexEnabled === true, grupo: 'navtex' },
     { eventos: eventosEgcLista(), politica: politicaEgc(), activo: config.egcEnabled === true, grupo: 'egc' },
   ];
@@ -6101,6 +6163,11 @@ app.post('/api/config', (req, res) => {
     if (updated.eonetEnabled !== undefined) { config.eonetEnabled = !!updated.eonetEnabled; fuentesCambiadas = true; }
     if (updated.eonetCategorias !== undefined) { config.eonetCategorias = String(updated.eonetCategorias).split(/[,;\s]+/).filter((c) => c in CATEGORIAS_EONET).join(','); fuentesCambiadas = true; }
     if (numEn(updated.eonetRadioKm, 10, 5000) !== undefined) config.eonetRadioKm = Math.round(numEn(updated.eonetRadioKm, 10, 5000)!);
+    if (updated.effisPeligroEnabled !== undefined) { config.effisPeligroEnabled = !!updated.effisPeligroEnabled; fuentesCambiadas = true; }
+    if (updated.effisPeligroGravedadMinima !== undefined && GRAVEDADES.includes(updated.effisPeligroGravedadMinima as Gravedad)) config.effisPeligroGravedadMinima = updated.effisPeligroGravedadMinima;
+    if (updated.effisAreasEnabled !== undefined) { config.effisAreasEnabled = !!updated.effisAreasEnabled; fuentesCambiadas = true; }
+    if (numEn(updated.effisAreasRadioKm, 10, 1000) !== undefined) { config.effisAreasRadioKm = Math.round(numEn(updated.effisAreasRadioKm, 10, 1000)!); fuentesCambiadas = true; }
+    if (numEn(updated.effisAreasDias, 1, 60) !== undefined) config.effisAreasDias = Math.round(numEn(updated.effisAreasDias, 1, 60)!);
     if (updated.navtexEnabled !== undefined) config.navtexEnabled = !!updated.navtexEnabled;
     if (updated.navtexEstaciones !== undefined) config.navtexEstaciones = String(updated.navtexEstaciones).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60);
     if (numEn(updated.navtexRadioKm, 10, 2000) !== undefined) config.navtexRadioKm = Math.round(numEn(updated.navtexRadioKm, 10, 2000)!);
@@ -6117,7 +6184,7 @@ app.post('/api/config', (req, res) => {
     ajustarEgc();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
-      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); }, 500);
+      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); seguro(descargarEffis); }, 500);
     }
     if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
     if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));

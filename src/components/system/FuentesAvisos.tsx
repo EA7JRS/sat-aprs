@@ -37,7 +37,11 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     eonetEnabled: config.eonetEnabled === true,
     eonetCategorias: config.eonetCategorias ?? 'floods,severeStorms,volcanoes',
     eonetRadioKm: String(config.eonetRadioKm ?? 300),
+    effisPeligroEnabled: config.effisPeligroEnabled === true,
+    effisAreasEnabled: config.effisAreasEnabled === true,
+    effisAreasRadioKm: String(config.effisAreasRadioKm ?? 100),
   }));
+  const [peligro, setPeligro] = useState<Array<{ dia: string; fwi: number | null; clase: string | null }>>([]);
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [sondas, setSondas] = useState<SondaCerca[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -46,6 +50,7 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
 
   const leer = () => {
     customFetch('/api/fuentes/meteoalarm/zonas').then((r) => r.ok ? r.json() : null).then((j) => { if (j) setZonas(j.zonas); }).catch(() => undefined);
+    customFetch('/api/fuentes/peligro-incendio').then((r) => r.ok ? r.json() : null).then((j) => { if (j) setPeligro(j.dias); }).catch(() => undefined);
     customFetch('/api/fuentes/radiacion').then((r) => r.ok ? r.json() : null).then((j) => { if (j) setSondas(j.sondas.slice(0, 5)); }).catch(() => undefined);
   };
   useEffect(() => { leer(); const t = setInterval(leer, 60_000); return () => clearInterval(t); }, []);
@@ -55,11 +60,11 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
 
   const guardar = async () => {
     const n = (s: string) => Number(String(s).replace(',', '.'));
-    if (![n(v.ciclonesRadioKm), n(v.radiacionRadioKm), n(v.radiacionUmbral), n(v.eonetRadioKm)].every(Number.isFinite)) { setMsg({ ok: false, texto: 'El radio y el umbral tienen que ser números.' }); return; }
+    if (![n(v.ciclonesRadioKm), n(v.radiacionRadioKm), n(v.radiacionUmbral), n(v.eonetRadioKm), n(v.effisAreasRadioKm)].every(Number.isFinite)) { setMsg({ ok: false, texto: 'El radio y el umbral tienen que ser números.' }); return; }
     setOcupado(true);
     try {
       const r = await customFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        ...v, ciclonesRadioKm: n(v.ciclonesRadioKm), radiacionRadioKm: n(v.radiacionRadioKm), radiacionUmbral: n(v.radiacionUmbral), eonetRadioKm: n(v.eonetRadioKm),
+        ...v, ciclonesRadioKm: n(v.ciclonesRadioKm), radiacionRadioKm: n(v.radiacionRadioKm), radiacionUmbral: n(v.radiacionUmbral), eonetRadioKm: n(v.eonetRadioKm), effisAreasRadioKm: n(v.effisAreasRadioKm),
       }) });
       setMsg(r.ok ? { ok: true, texto: 'Guardado. Las fuentes encendidas se consultan ahora; el resultado sale en Avisos.' } : { ok: false, texto: 'No se pudo guardar.' });
       if (r.ok) setTimeout(leer, 8000);
@@ -67,7 +72,7 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     setOcupado(false);
   };
 
-  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled' | 'nwsEnabled' | 'eonetEnabled', titulo: string, detalle: string) => (
+  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled' | 'nwsEnabled' | 'eonetEnabled' | 'effisPeligroEnabled' | 'effisAreasEnabled', titulo: string, detalle: string) => (
     <label className="flex items-start gap-2.5 text-slate-100 text-[13px] cursor-pointer" htmlFor={id}>
       <input type="checkbox" id={id} checked={v[k]} disabled={!isAdmin} onChange={(e) => pon(k, e.target.checked)} className="mt-0.5 w-4 h-4" />
       <span><span className="font-semibold">{titulo}</span> <span className="text-slate-400">{detalle}</span></span>
@@ -149,6 +154,20 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
         <p className="text-[12px] text-slate-400">
           Datos abiertos de EURDEP que publica la BfS alemana; son medidas sin validar. Avisa desde el umbral (amarillo), desde tres veces el umbral (naranja) y desde diez veces (rojo). Antes de difundir más allá de la estación, revise las condiciones de uso de EURDEP.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
+        {casilla('check-effis-peligro', 'effisPeligroEnabled', 'Peligro de incendio (EFFIS)', '(índice FWI oficial de Copernicus en la estación, hoy y los dos días siguientes)')}
+        {peligro.length > 0 && (
+          <p className="text-[13px] text-slate-200" id="effis-peligro-dias">
+            {peligro.map((d) => `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}: ${d.fwi === null ? 'sin datos' : `FWI ${d.fwi.toFixed(1)}, ${d.clase}`}`).join(' · ')}
+          </p>
+        )}
+        {casilla('check-effis-areas', 'effisAreasEnabled', 'Áreas quemadas (EFFIS)', '(perímetros cartografiados por satélite casi en tiempo real)')}
+        <label className={`${rotulo} md:w-48`}>Radio (km)
+          <input className={campo} inputMode="numeric" value={v.effisAreasRadioKm} disabled={!isAdmin} onChange={(e) => pon('effisAreasRadioKm', e.target.value)} id="input-effis-radio" />
+        </label>
+        <p className="text-[12px] text-slate-400">Avisa con peligro alto (amarillo), muy alto (naranja) y extremo (rojo); de serie se difunde desde naranja. Las áreas quemadas: amarillo, naranja desde 500 ha y rojo desde 5000 ha. Datos de EFFIS, Copernicus EMS (CC BY 4.0).</p>
       </div>
 
       <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">

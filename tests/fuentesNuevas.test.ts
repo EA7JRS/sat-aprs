@@ -174,3 +174,35 @@ test('EONET: el último punto de cada suceso abierto', () => {
   assert.equal(eventosEonet(j, 'volcanoes', AHORA)[0].detalle.startsWith('Volcan'), true);
   assert.deepEqual(eventosEonet(j, 'inventada', AHORA), []);
 });
+
+import fs from 'fs';
+import path from 'path';
+import { clasePeligro, eventosAreasQuemadas, eventosPeligroIncendio, fwiEnPunto, leerAreasQuemadas, leerTiffFloat32 } from '../server/fuentes/effis';
+
+// Respuestas reales de EFFIS del 2-11-2026 (de agent-engineering-studio/effis-client, datos CC BY 4.0):
+// recuadro 15,0–17,5 E y 39,5–41,5 N, a 0,05° por píxel.
+const FIX = path.join(process.cwd(), 'tests', 'fixtures');
+const CAJA = { oeste: 15.0, sur: 39.5, este: 17.5, norte: 41.5 };
+
+test('EFFIS: lee el GeoTIFF float32 del FWI y no confunde «sin datos» con «sin peligro»', () => {
+  const r = leerTiffFloat32(fs.readFileSync(path.join(FIX, 'fwi_2026-11-01.tif')));
+  assert.equal(r.ancho, 50);
+  assert.equal(r.alto, 40);
+  assert.ok(Math.abs(fwiEnPunto(r, CAJA, 40.6, 16.6)! - 10.343368530273438) < 1e-6);   // Matera
+  const vacio = leerTiffFloat32(fs.readFileSync(path.join(FIX, 'fwi_no_data.tif')));
+  assert.equal(fwiEnPunto(vacio, CAJA, 40.6, 16.6), null);
+  assert.throws(() => leerTiffFloat32(Buffer.from('<?xml version="1.0"?><ServiceExceptionReport/>')), /GeoTIFF/);
+  assert.deepEqual([4, 10, 20, 30, 45, 60].map((v) => clasePeligro(v).nombre), ['muy bajo', 'bajo', 'moderado', 'alto', 'muy alto', 'extremo']);
+  const ev = eventosPeligroIncendio([{ dia: '2026-11-20', fwi: 10.3 }, { dia: '2026-11-21', fwi: 41.2 }, { dia: '2026-11-22', fwi: null }], EST);
+  assert.deepEqual(ev.map((e) => [e.id, e.gravedad, e.detalle, e.titulo, e.nombre]), [['effis-fwi-2026-11-21-naranja', 'naranja', 'Peligro de incendio muy alto', 'FWI 41 el 21/11', 'FWI1121']]);
+});
+
+test('EFFIS: áreas quemadas recientes, con su centro y sus hectáreas', () => {
+  const areas = leerAreasQuemadas(JSON.parse(fs.readFileSync(path.join(FIX, 'perimeters.geojson'), 'utf8')));
+  assert.deepEqual(areas.map((a) => [a.id, a.hectareas]), [['384188', 160], ['10207552', 251], ['15954978', 256]]);
+  const ev = eventosAreasQuemadas(areas, 10, Date.parse('2026-10-08T00:00:00Z'));
+  assert.deepEqual(ev.map((e) => [e.id, e.gravedad, e.detalle, e.titulo, e.nombre]), [['effis-ba-15954978', 'amarillo', 'Area quemada 256ha', 'Incendio del 03/10', 'BA1595497']]);
+  assert.ok(Math.abs(ev[0].lat! - 40.5) < 0.6);
+  assert.deepEqual(eventosAreasQuemadas(areas, 10, Date.parse('2026-11-20T00:00:00Z')), []);
+  assert.throws(() => leerAreasQuemadas({}), /GeoJSON/);
+});

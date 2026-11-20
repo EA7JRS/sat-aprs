@@ -130,6 +130,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |
 | MeteoAlarm, ciclones tropicales (NHC), radiación (EURDEP) | Hecho en la v1.38.0 (`server/fuentes/meteoalarm.ts`, `ciclones.ts`, `radiacion.ts`); sin probar aún contra las fuentes reales |
 | Tsunamis (tsunami.gov), NWS de EE. UU. y NASA EONET | Hecho en la v1.40.0, con los lectores de la app Android (`server/fuentes/tsunami.ts`, `nws.ts`, `eonet.ts`); sin probar aún contra las fuentes reales |
+| Peligro de incendio y áreas quemadas (EFFIS) | Hecho en la v1.41.0 (`server/fuentes/effis.ts`): WMS `mf010.fwi` como GeoTIFF float32 y WFS `nrt.ba.poly` |
 | Tornados en España, Protección Civil | Sin fuente pública: el NWS solo cubre EE. UU. y no se conoce un feed de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |

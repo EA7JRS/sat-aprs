@@ -98,6 +98,13 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
   eonet: { titulo: 'los sucesos de NASA EONET', campos: [
     { clave: 'eonetRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 300 },
   ] },
+  effisPeligro: { titulo: 'el peligro de incendio (EFFIS)', campos: [
+    { clave: 'effisPeligroGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
+  effisAreas: { titulo: 'las áreas quemadas (EFFIS)', campos: [
+    { clave: 'effisAreasRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 100 },
+    { clave: 'effisAreasDias', rotulo: 'Cartografiadas en los últimos', unidad: 'días', porDefecto: 10 },
+  ] },
   navtex: { titulo: 'los avisos NAVTEX', campos: [
     { clave: 'navtexRadioKm', rotulo: 'Radio (si traen posición)', unidad: 'km', porDefecto: 400 },
     { clave: 'navtexGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },

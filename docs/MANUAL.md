@@ -107,11 +107,14 @@ Al abrir un aviso:
 
   | Tsunamis (tsunami.gov) | 3000 km | nivel amarillo (vigilancia); aviso naranja, alerta rojo | mensajes de las últimas 24 h del PTWC y el NTWC; la categoría es la del centro de alerta |
   | NWS de EE. UU. | en la estación | nivel naranja | tornados, tormentas severas, huracanes…; solo cubre EE. UU. |
+  | Peligro de incendio (EFFIS) | en la estación | nivel naranja (muy alto); alto amarillo, extremo rojo | índice FWI oficial de hoy y de los dos días siguientes |
+  | Áreas quemadas (EFFIS) | 100 km | amarillo; naranja desde 500 ha, rojo desde 5000 ha | perímetros cartografiados en los últimos 10 días |
   | NASA EONET | 300 km | todo entra en amarillo | inundaciones, tormentas severas, volcanes, deslizamientos e incendios abiertos |
 
-  MeteoAlarm, ciclones, radiactividad, NWS y EONET vienen apagadas y se encienden en **Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos**:
+  MeteoAlarm, ciclones, radiactividad, EFFIS, NWS y EONET vienen apagadas y se encienden en **Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos**:
   - **MeteoAlarm** (EUMETNET): avisos oficiales de los servicios meteorológicos europeos, sin clave. Su feed no trae el contorno de las zonas, así que se indica qué zonas sigue la estación: por su código EMMA_ID (`PT014`) o por una parte del nombre (`Algarve`). La pantalla muestra las zonas que han tenido aviso, para elegirlas con un toque. Útil cerca de la frontera (Portugal, Francia, Andorra) o si AEMET está apagado.
   - **Ciclones tropicales** del Centro Nacional de Huracanes de EE. UU. (`CurrentStorms.json`): clase, intensidad, presión y posición del último aviso; el objeto APRS va en el centro del ciclón.
+  - **EFFIS** (Sistema Europeo de Información sobre Incendios Forestales, Copernicus; datos CC BY 4.0): el **peligro de incendio** es el índice FWI oficial en el punto de la estación, con las clases de EFFIS (muy bajo, bajo, moderado, alto, muy alto, extremo); la pantalla muestra el valor de los tres días. Es la capa de peligro de incendios del mapa de la Red de Alerta Nacional de Protección Civil, tomada de la fuente europea. Si EFFIS no tiene datos de un día, se dice «sin datos»: no se toma por «sin peligro». Las **áreas quemadas** son los perímetros que EFFIS cartografía por satélite, con sus hectáreas; el objeto APRS va en el centro del perímetro.
   - **NWS** y **NASA EONET** son las fuentes de tornados y de sucesos naturales de la app Android APRS LoRa+, con el mismo lector. El NWS da los avisos en vigor para el punto de la estación y solo cubre Estados Unidos: en España la fuente responde «fuera de cobertura» y no hay avisos. EONET es mundial pero no da gravedad.
   - **Radiactividad ambiental**: la última tasa de dosis gamma de las sondas de EURDEP (entre ellas, las de la REA del CSN), de los datos abiertos que publica la BfS alemana. La tabla de la pantalla da las cinco sondas más cercanas; la más cercana alimenta también la regla «Radiación» de las notificaciones. Son medidas sin validar: revise las condiciones de uso de EURDEP antes de difundir más allá de la estación.
 

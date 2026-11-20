@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.41.0] - 2026-11-20
+### Peligro de incendio y áreas quemadas de EFFIS
+- **`server/fuentes/effis.ts`**, del Sistema Europeo de Información sobre Incendios Forestales (Copernicus EMS, datos CC BY 4.0, sin clave):
+  - **Peligro de incendio**: el índice FWI oficial en el punto de la estación, hoy y los dos días siguientes (WMS `mf010.fwi`, pedido como GeoTIFF float32 y leído sin dependencias). Aviso con peligro alto (amarillo), muy alto (naranja) y extremo (rojo); de serie se difunde desde naranja. Un ráster todo a cero es «sin datos», no «sin peligro».
+  - **Áreas quemadas**: perímetros cartografiados casi en tiempo real (WFS `nrt.ba.poly`) dentro del radio (100 km) y de los últimos 10 días, con sus hectáreas; objeto APRS en el centro.
+- Las peculiaridades de los servidores de EFFIS (errores con HTTP 200, capa `mf010` en vez de la documentada, WFS sin filtro de fecha) están tomadas de `agent-engineering-studio/effis-client`; las pruebas usan sus respuestas reales del 2-11-2026.
+- Apagadas de serie; en Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos. `/api/fuentes/peligro-incendio`.
+- Revisadas y no conectadas: el mapa de la Red de Alerta Nacional (sus capas son AEMET, IGN y este mismo peligro de incendio) e incendiosespaña.es (sin API ni licencia de datos).
+
+---
+
 ## [v1.40.0] - 2026-11-20
 ### Las fuentes de avisos de la app Android
 - **Tsunamis de tsunami.gov** (`server/fuentes/tsunami.ts`): los feeds Atom del PTWC y del NTWC, con el lector de la app (`OfficialAlerts.tsunamiEntry`). La categoría es la del centro de alerta: alerta (rojo), aviso (naranja), vigilancia (amarillo), información. Entran en Avisos con radio (3000 km de serie) y objeto en el epicentro. **Sustituye** a la lista anterior, que tomaba los seísmos del USGS con marca de tsunami y les ponía la gravedad según la magnitud.

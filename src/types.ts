@@ -265,6 +265,12 @@ export interface TelemetryConfig {
   eonetEnabled?: boolean;
   eonetCategorias?: string;
   eonetRadioKm?: number;
+  /** EFFIS (Copernicus): peligro de incendio en la estación y áreas quemadas cerca. */
+  effisPeligroEnabled?: boolean;
+  effisPeligroGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  effisAreasEnabled?: boolean;
+  effisAreasRadioKm?: number;
+  effisAreasDias?: number;
   /** NAVTEX por SDR: archivo del descodificador, estaciones (letra B1) que se siguen, radio y nivel. */
   navtexEnabled?: boolean;
   navtexArchivo?: string;

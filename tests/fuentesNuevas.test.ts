@@ -115,3 +115,62 @@ test('EURDEP: la medida más corta de cada sonda y aviso por encima del umbral',
   assert.equal(eventosRadiacion(sondas, 0.1, AHORA).find((e) => e.titulo.startsWith('Huelva'))!.gravedad, 'naranja');
   assert.ok(objetoAprs('EA7JRS-13', ev[0], AHORA)!.includes(';RADES0040*'));
 });
+
+import { eventosTsunami, leerFeedTsunami } from '../server/fuentes/tsunami';
+import { eventosNws } from '../server/fuentes/nws';
+import { eventosEonet } from '../server/fuentes/eonet';
+
+// Las mismas muestras que las pruebas de la app Android (core/SelfTest.kt)
+test('tsunami.gov: la categoría la da el centro de alerta, no la magnitud', () => {
+  const entrada = '<entry><title>BONIN ISLANDS  JAPAN REGION</title><updated>2026-10-25T02:27:01Z</updated><geo:lat>28.</geo:lat><geo:long>139.9</geo:long>' +
+    '<summary type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><strong>Category:</strong> Information<br/><strong>Bulletin Issue Time: </strong> 2026.10.25 02:27:01 UTC <br/>' +
+    '<strong>Preliminary Magnitude: </strong>7.0(Mwp)<br/><strong>Lat/Lon: </strong>28. / 139.9<br/><strong>Affected Region: </strong>BONIN ISLANDS  JAPAN REGION<br/></div></summary>' +
+    '<id>urn:uuid:ba64bc82</id></entry>';
+  const [m] = leerFeedTsunami(`<feed>${entrada}</feed>`);
+  assert.equal(m.categoria, 'Information');
+  assert.equal(m.gravedad, 'info');
+  assert.equal(m.magnitud, '7.0(Mwp)');
+  assert.equal(m.emitido, Date.UTC(2026, 9, 25, 2, 27, 1));
+  assert.equal(m.lat, 28);
+  const alerta = leerFeedTsunami(`<feed>${entrada.replace('Information', 'Warning')}</feed>`);
+  const [e] = eventosTsunami(alerta, m.emitido + 3600_000);
+  assert.equal(e.gravedad, 'rojo');
+  assert.equal(e.detalle, 'Alerta de tsunami M7.0');
+  assert.equal(e.titulo, 'BONIN ISLANDS JAPAN REGION');
+  assert.ok(objetoAprs('EA7JRS-13', e, m.emitido)!.includes('Alerta de tsunami M7.0'));
+  assert.deepEqual(eventosTsunami(alerta, m.emitido + 25 * 3600_000), []);   // pasadas 24 h
+  assert.deepEqual(eventosTsunami(leerFeedTsunami(`<feed>${entrada.replace('Information', 'Warning Cancellation')}</feed>`), m.emitido), []);
+});
+
+test('NWS: avisos en vigor para el punto, con el tipo por el nombre del aviso', () => {
+  const f = (id: string, event: string, severity: string, extra = {}) => ({ type: 'Feature', geometry: null, properties: { id, areaDesc: 'Travis, TX; Hays, TX', sent: '2026-11-04T10:00:00-06:00', onset: '2026-11-04T10:00:00-06:00', ends: '2026-11-07T06:00:00-06:00', status: 'Actual', messageType: 'Alert', severity, event, ...extra } });
+  const j = { features: [
+    { ...f('urn:oid:2.49.0.1.840.0.aaa', 'Flood Warning', 'Severe'), geometry: { type: 'Polygon', coordinates: [[[-97.9, 30.2], [-97.7, 30.2], [-97.7, 30.4], [-97.9, 30.4], [-97.9, 30.2]]] } },
+    f('urn:oid:2.49.0.1.840.0.bbb', 'Tornado Warning', 'Extreme'),
+    f('urn:oid:2.49.0.1.840.0.ccc', 'Tornado Watch', 'Severe', { messageType: 'Cancel' }),
+    f('urn:oid:2.49.0.1.840.0.ddd', 'Test', 'Minor', { status: 'Test' }),
+  ] };
+  const ev = eventosNws(j, { lat: 30.27, lon: -97.74 }, Date.parse('2026-11-05T00:00:00Z'));
+  assert.deepEqual(ev.map((e) => [e.tipo, e.gravedad, e.detalle, e.titulo]), [['meteo', 'naranja', 'Flood Warning', 'Travis, TX'], ['tornado', 'rojo', 'Tornado Warning', 'Travis, TX']]);
+  assert.ok(Math.abs(ev[0].lat! - 30.28) < 0.05);
+  assert.equal(ev[1].lat, 30.27);   // sin polígono, la estación
+  assert.equal(ev[0].fin, Date.parse('2026-11-07T12:00:00Z'));
+  assert.ok(boletinAprs('EA7JRS-13', ev[1]).includes('TORNADO Tornado Warning Travis, TX'));
+  assert.deepEqual(eventosNws({ features: [] }, EST), []);
+});
+
+test('EONET: el último punto de cada suceso abierto', () => {
+  const j = { events: [
+    { id: 'EONET_1', title: 'Flood in Valencia', categories: [{ id: 'floods', title: 'Floods' }], geometry: [{ date: '2026-11-10T00:00:00Z', type: 'Point', coordinates: [-1, 39] }, { magnitudeValue: 1200, magnitudeUnit: 'acres', date: '2026-11-12T10:00:00Z', type: 'Point', coordinates: [-0.4, 39.5] }] },
+    { id: 'EONET_2', title: 'Flood', geometry: [{ date: '2026-11-11T00:00:00Z', type: 'Polygon', coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2]]] }] },
+    { id: 'EONET_3', title: 'Sin geometría', geometry: [] },
+  ] };
+  const ev = eventosEonet(j, 'floods', AHORA);
+  assert.equal(ev.length, 2);
+  assert.equal(ev[0].lat, 39.5);
+  assert.equal(ev[0].detalle, 'Inundacion 1200 acres');
+  assert.equal(ev[0].nombre, 'IN1');
+  assert.equal(ev[1].lat, 1);
+  assert.equal(eventosEonet(j, 'volcanoes', AHORA)[0].detalle.startsWith('Volcan'), true);
+  assert.deepEqual(eventosEonet(j, 'inventada', AHORA), []);
+});

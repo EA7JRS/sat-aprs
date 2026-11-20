@@ -674,7 +674,7 @@ export default function NotificationPanel({
             triggerSystemNotification(
               `🌊 Alerta de Tsunami [${tsu.severity}]`,
               {
-                body: `Se ha detectado posible tsunami en ${tsu.location}. Olas máx: ${tsu.maxWaveHeightMeter?.toFixed(2)}m. Fuente: ${tsu.source}.`,
+                body: `${tsu.title}. Fuente: ${tsu.source}.`,
                 tag: tsu.id,
                 requireInteraction: isCritical
               }

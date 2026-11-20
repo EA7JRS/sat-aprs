@@ -2,6 +2,16 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.40.0] - 2026-11-20
+### Las fuentes de avisos de la app Android
+- **Tsunamis de tsunami.gov** (`server/fuentes/tsunami.ts`): los feeds Atom del PTWC y del NTWC, con el lector de la app (`OfficialAlerts.tsunamiEntry`). La categoría es la del centro de alerta: alerta (rojo), aviso (naranja), vigilancia (amarillo), información. Entran en Avisos con radio (3000 km de serie) y objeto en el epicentro. **Sustituye** a la lista anterior, que tomaba los seísmos del USGS con marca de tsunami y les ponía la gravedad según la magnitud.
+- **NWS de EE. UU.** (`server/fuentes/nws.ts`, `api.weather.gov/alerts/active?point=`): avisos en vigor para el punto de la estación; los de tornado salen como TORNADO, los de huracán como HURACAN. Solo cubre EE. UU.: fuera, la fuente dice «fuera de cobertura». Apagada de serie.
+- **NASA EONET** (`server/fuentes/eonet.ts`): sucesos naturales abiertos (inundaciones, tormentas severas, volcanes, deslizamientos, incendios) con su última posición; sin gravedad propia, entran en amarillo dentro del radio (300 km). Apagada de serie.
+- Se encienden en Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos; reglas editables desde Avisos.
+- Tornados en España y Protección Civil siguen sin fuente pública.
+
+---
+
 ## [v1.39.0] - 2026-11-20
 ### NAVTEX e Inmarsat-C con SDR
 - **Radio → NAVTEX e Inmarsat**, pantalla nueva: estado de los dos receptores, mensajes con su tema o prioridad, texto completo y ajustes.

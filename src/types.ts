@@ -255,6 +255,16 @@ export interface TelemetryConfig {
   radiacionPaises?: string;
   radiacionRadioKm?: number;
   radiacionUmbral?: number;
+  /** Tsunamis (tsunami.gov): radio y nivel mínimo. */
+  tsunamiRadioKm?: number;
+  tsunamiGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  /** Avisos del NWS de EE. UU. para el punto de la estación (tornados, tormentas severas…). */
+  nwsEnabled?: boolean;
+  nwsGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  /** Sucesos naturales de NASA EONET: categorías (floods, severeStorms, volcanoes, wildfires, landslides) y radio. */
+  eonetEnabled?: boolean;
+  eonetCategorias?: string;
+  eonetRadioKm?: number;
   /** NAVTEX por SDR: archivo del descodificador, estaciones (letra B1) que se siguen, radio y nivel. */
   navtexEnabled?: boolean;
   navtexArchivo?: string;
@@ -321,8 +331,8 @@ export interface TsunamiAlert {
   title: string;
   magnitude: number;
   location: string;
-  coordinates: [number, number];
-  depthKm: number;
+  coordinates?: [number, number];
+  depthKm?: number;
   time: string;
   severity: 'GREEN' | 'ADVISORY' | 'WATCH' | 'WARNING';
   distanceKm?: number;

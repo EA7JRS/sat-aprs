@@ -105,9 +105,14 @@ Al abrir un aviso:
   | Ciclones tropicales (NHC) | 1000 km | nivel amarillo (depresión), naranja (tormenta), rojo (huracán) | se repite cada 3 h |
   | Radiactividad (EURDEP) | 100 km | 0,3 µSv/h (amarillo; ×3 naranja; ×10 rojo) | medidas de las últimas 12 h, sin validar |
 
-  Las tres últimas vienen apagadas y se encienden en **Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos**:
+  | Tsunamis (tsunami.gov) | 3000 km | nivel amarillo (vigilancia); aviso naranja, alerta rojo | mensajes de las últimas 24 h del PTWC y el NTWC; la categoría es la del centro de alerta |
+  | NWS de EE. UU. | en la estación | nivel naranja | tornados, tormentas severas, huracanes…; solo cubre EE. UU. |
+  | NASA EONET | 300 km | todo entra en amarillo | inundaciones, tormentas severas, volcanes, deslizamientos e incendios abiertos |
+
+  MeteoAlarm, ciclones, radiactividad, NWS y EONET vienen apagadas y se encienden en **Sistema → Configuración → Claves API & Puertos → Más fuentes de avisos**:
   - **MeteoAlarm** (EUMETNET): avisos oficiales de los servicios meteorológicos europeos, sin clave. Su feed no trae el contorno de las zonas, así que se indica qué zonas sigue la estación: por su código EMMA_ID (`PT014`) o por una parte del nombre (`Algarve`). La pantalla muestra las zonas que han tenido aviso, para elegirlas con un toque. Útil cerca de la frontera (Portugal, Francia, Andorra) o si AEMET está apagado.
   - **Ciclones tropicales** del Centro Nacional de Huracanes de EE. UU. (`CurrentStorms.json`): clase, intensidad, presión y posición del último aviso; el objeto APRS va en el centro del ciclón.
+  - **NWS** y **NASA EONET** son las fuentes de tornados y de sucesos naturales de la app Android APRS LoRa+, con el mismo lector. El NWS da los avisos en vigor para el punto de la estación y solo cubre Estados Unidos: en España la fuente responde «fuera de cobertura» y no hay avisos. EONET es mundial pero no da gravedad.
   - **Radiactividad ambiental**: la última tasa de dosis gamma de las sondas de EURDEP (entre ellas, las de la REA del CSN), de los datos abiertos que publica la BfS alemana. La tabla de la pantalla da las cinco sondas más cercanas; la más cercana alimenta también la regla «Radiación» de las notificaciones. Son medidas sin validar: revise las condiciones de uso de EURDEP antes de difundir más allá de la estación.
 
 - **«Emitir ahora»** pone el aviso en la cola de emisión sin esperar a la repetición. Con la emisión apagada se registra, pero no sale.

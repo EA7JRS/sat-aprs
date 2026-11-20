@@ -129,7 +129,8 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Avisos meteorológicos de AEMET (CAP, por zonas) | Hecho (`server/fuentes/aemetAvisos.ts`, `server/core/zona.ts`); sin probar aún contra el índice real de AEMET |
 | Clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS) | Hecho (`server/fuentes/climaEspacial.ts`, `incendios.ts`, `calidadAire.ts`); sin probar aún contra las fuentes reales |
 | MeteoAlarm, ciclones tropicales (NHC), radiación (EURDEP) | Hecho en la v1.38.0 (`server/fuentes/meteoalarm.ts`, `ciclones.ts`, `radiacion.ts`); sin probar aún contra las fuentes reales |
-| Tornados, Protección Civil | Sin fuente pública utilizable: el SPC solo cubre EE. UU. y no se conoce un feed público de los avisos de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
+| Tsunamis (tsunami.gov), NWS de EE. UU. y NASA EONET | Hecho en la v1.40.0, con los lectores de la app Android (`server/fuentes/tsunami.ts`, `nws.ts`, `eonet.ts`); sin probar aún contra las fuentes reales |
+| Tornados en España, Protección Civil | Sin fuente pública: el NWS solo cubre EE. UU. y no se conoce un feed de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 | Fórmulas comunes con APRS LoRa+ | Hecho (`server/formulas/`) |
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |

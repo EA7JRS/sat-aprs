@@ -88,6 +88,16 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
     { clave: 'radiacionRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 100 },
     { clave: 'radiacionUmbral', rotulo: 'Umbral', unidad: 'µSv/h', porDefecto: 0.3 },
   ] },
+  tsunami: { titulo: 'los tsunamis', campos: [
+    { clave: 'tsunamiRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 3000 },
+    { clave: 'tsunamiGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'amarillo' },
+  ] },
+  nws: { titulo: 'los avisos del NWS', campos: [
+    { clave: 'nwsGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
+  eonet: { titulo: 'los sucesos de NASA EONET', campos: [
+    { clave: 'eonetRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 300 },
+  ] },
   navtex: { titulo: 'los avisos NAVTEX', campos: [
     { clave: 'navtexRadioKm', rotulo: 'Radio (si traen posición)', unidad: 'km', porDefecto: 400 },
     { clave: 'navtexGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },

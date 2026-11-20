@@ -4,7 +4,8 @@
 // Sistema · Configuración · Claves API: más fuentes de avisos sin clave.
 //  · MeteoAlarm (avisos oficiales europeos) por zonas;
 //  · ciclones tropicales del NHC;
-//  · radiactividad ambiental de EURDEP.
+//  · radiactividad ambiental de EURDEP;
+//  · avisos del NWS de EE. UU. (tornados…) y sucesos de NASA EONET.
 // Vienen apagadas. Las reglas de cada una (nivel, radio, repetición) se
 // cambian también desde el aviso, en Avisos.
 import React, { useEffect, useState } from 'react';
@@ -32,6 +33,10 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     radiacionPaises: config.radiacionPaises ?? 'ES,PT',
     radiacionRadioKm: String(config.radiacionRadioKm ?? 100),
     radiacionUmbral: String(config.radiacionUmbral ?? 0.3),
+    nwsEnabled: config.nwsEnabled === true,
+    eonetEnabled: config.eonetEnabled === true,
+    eonetCategorias: config.eonetCategorias ?? 'floods,severeStorms,volcanoes',
+    eonetRadioKm: String(config.eonetRadioKm ?? 300),
   }));
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [sondas, setSondas] = useState<SondaCerca[]>([]);
@@ -50,11 +55,11 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
 
   const guardar = async () => {
     const n = (s: string) => Number(String(s).replace(',', '.'));
-    if (![n(v.ciclonesRadioKm), n(v.radiacionRadioKm), n(v.radiacionUmbral)].every(Number.isFinite)) { setMsg({ ok: false, texto: 'El radio y el umbral tienen que ser números.' }); return; }
+    if (![n(v.ciclonesRadioKm), n(v.radiacionRadioKm), n(v.radiacionUmbral), n(v.eonetRadioKm)].every(Number.isFinite)) { setMsg({ ok: false, texto: 'El radio y el umbral tienen que ser números.' }); return; }
     setOcupado(true);
     try {
       const r = await customFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        ...v, ciclonesRadioKm: n(v.ciclonesRadioKm), radiacionRadioKm: n(v.radiacionRadioKm), radiacionUmbral: n(v.radiacionUmbral),
+        ...v, ciclonesRadioKm: n(v.ciclonesRadioKm), radiacionRadioKm: n(v.radiacionRadioKm), radiacionUmbral: n(v.radiacionUmbral), eonetRadioKm: n(v.eonetRadioKm),
       }) });
       setMsg(r.ok ? { ok: true, texto: 'Guardado. Las fuentes encendidas se consultan ahora; el resultado sale en Avisos.' } : { ok: false, texto: 'No se pudo guardar.' });
       if (r.ok) setTimeout(leer, 8000);
@@ -62,7 +67,7 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
     setOcupado(false);
   };
 
-  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled', titulo: string, detalle: string) => (
+  const casilla = (id: string, k: 'meteoalarmEnabled' | 'ciclonesEnabled' | 'radiacionEnabled' | 'nwsEnabled' | 'eonetEnabled', titulo: string, detalle: string) => (
     <label className="flex items-start gap-2.5 text-slate-100 text-[13px] cursor-pointer" htmlFor={id}>
       <input type="checkbox" id={id} checked={v[k]} disabled={!isAdmin} onChange={(e) => pon(k, e.target.checked)} className="mt-0.5 w-4 h-4" />
       <span><span className="font-semibold">{titulo}</span> <span className="text-slate-400">{detalle}</span></span>
@@ -144,6 +149,32 @@ export default function FuentesAvisos({ config }: { config: TelemetryConfig }) {
         <p className="text-[12px] text-slate-400">
           Datos abiertos de EURDEP que publica la BfS alemana; son medidas sin validar. Avisa desde el umbral (amarillo), desde tres veces el umbral (naranja) y desde diez veces (rojo). Antes de difundir más allá de la estación, revise las condiciones de uso de EURDEP.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
+        {casilla('check-nws', 'nwsEnabled', 'NWS de EE. UU.', '(tornados, tormentas severas, huracanes, inundaciones: avisos en vigor para el punto de la estación)')}
+        <p className="text-[12px] text-slate-400">Solo cubre Estados Unidos y sus territorios: con la estación en otro país no devuelve nada, y Avisos lo dice. Es la fuente de tornados de la app Android. De serie se difunde desde naranja.</p>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
+        {casilla('check-eonet', 'eonetEnabled', 'NASA EONET', '(sucesos naturales abiertos en todo el mundo, con su última posición)')}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Categorías de EONET">
+            {([['floods', 'Inundaciones'], ['severeStorms', 'Tormentas severas'], ['volcanoes', 'Volcanes'], ['landslides', 'Deslizamientos'], ['wildfires', 'Incendios']] as const).map(([id, nombre]) => {
+              const lista = v.eonetCategorias.split(',').filter(Boolean);
+              const puesta = lista.includes(id);
+              return (
+                <button key={id} type="button" disabled={!isAdmin} aria-pressed={puesta}
+                  onClick={() => pon('eonetCategorias', (puesta ? lista.filter((c) => c !== id) : [...lista, id]).join(','))}
+                  className={`min-h-[32px] px-2.5 rounded-full border text-[12px] cursor-pointer ${puesta ? 'border-sky-500 bg-sky-950 text-slate-100' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>{nombre}</button>
+              );
+            })}
+          </div>
+          <label className={`${rotulo} w-32`}>Radio (km)
+            <input className={campo} inputMode="numeric" value={v.eonetRadioKm} disabled={!isAdmin} onChange={(e) => pon('eonetRadioKm', e.target.value)} id="input-eonet-radio" />
+          </label>
+        </div>
+        <p className="text-[12px] text-slate-400">EONET no da gravedad: todo entra en amarillo y el radio decide. Los incendios ya llegan de FIRMS con más detalle.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">

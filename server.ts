@@ -59,6 +59,9 @@ import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
 import { ColaArchivo, MensajeNavtex, TEMAS_NAVTEX, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex } from './server/radio/navtex';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
+import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
+import { descargarNws, eventosNws } from './server/fuentes/nws';
+import { CATEGORIAS_EONET, descargarEonet, eventosEonet } from './server/fuentes/eonet';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
 import { EstacionesOidas } from './server/estaciones';
@@ -342,6 +345,14 @@ let config: TelemetryConfig = {
   radiacionPaises: 'ES,PT',
   radiacionRadioKm: 100,
   radiacionUmbral: 0.3,
+  // Tsunamis (tsunami.gov), avisos del NWS de EE. UU. (tornados…) y sucesos de NASA EONET
+  tsunamiRadioKm: 3000,
+  tsunamiGravedadMinima: 'amarillo',
+  nwsEnabled: false,
+  nwsGravedadMinima: 'naranja',
+  eonetEnabled: false,
+  eonetCategorias: 'floods,severeStorms,volcanoes',
+  eonetRadioKm: 300,
   // NAVTEX con SDR propio: archivo que escribe tools/navtex/navtex.sh
   navtexEnabled: false,
   navtexArchivo: '/var/lib/sat-aprs/navtex.txt',
@@ -2250,68 +2261,35 @@ async function refreshIQAir() {
   icaDataSimulated = true;
 }
 
-// Refresh live Global & Regional Tsunamis
+// Tsunamis: los mensajes de tsunami.gov (PTWC y NTWC), con la categoría que da el centro de alerta
+let eventosTsunamiLista: Evento[] = [];
+function politicaTsunami(): Politica {
+  return {
+    radioKm: Math.min(20000, Math.max(100, Number(config.tsunamiRadioKm ?? 3000))), gravedadMinima: gravedadDe(config.tsunamiGravedadMinima, 'amarillo'),
+    vigenciaMs: 24 * 3600_000, repetirCadaMs: 60 * 60_000, boletin: true,
+  };
+}
 async function refreshTsunamis() {
   if (config.systemPower === false || config.tsunamiMonitorEnabled === false) {
     tsunamiAlerts = [];
+    eventosTsunamiLista = [];
     return;
   }
   try {
-    // Collect tsunami alarm events from USGS magnitude 5.0+
-    const url = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=5.0&limit=15';
-    const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    let fetchedAlerts: TsunamiAlert[] = [];
-    
-    if (response.ok) {
-      const geo = await response.json();
-      if (geo.features && Array.isArray(geo.features)) {
-        // Solo los seísmos que el USGS marca con aviso de tsunami; no se deduce nada de la magnitud
-        const tsunamiFeatures = geo.features.filter((f: any) => f.properties.tsunami === 1);
-        
-        fetchedAlerts = tsunamiFeatures.map((f: any) => {
-          const props = f.properties;
-          const geom = f.geometry;
-          const lon = geom.coordinates[0];
-          const lat = geom.coordinates[1];
-          const mag = props.mag;
-          const place = props.place || 'Océano Abierto';
-          
-          let severity: 'GREEN' | 'ADVISORY' | 'WATCH' | 'WARNING' = 'GREEN';
-          if (mag >= 7.5) {
-            severity = 'WARNING';
-          } else if (mag >= 7.0) {
-            severity = 'WATCH';
-          } else if (mag >= 6.0) {
-            severity = 'ADVISORY';
-          }
-
-          const distanceKm = calculateDistance(gpsdState.lat, gpsdState.lon, lat, lon);
-
-          return {
-            id: f.id || `tsu_${props.code || Date.now()}`,
-            title: props.title || `Vigilancia de Tsunami M${mag}`,
-            magnitude: mag,
-            location: place,
-            coordinates: [lat, lon] as [number, number],
-            depthKm: geom.coordinates[2] || 10,
-            time: new Date(props.time || Date.now()).toISOString(),
-            severity,
-            distanceKm,
-            source: 'USGS / PTWC',
-            active: props.tsunami === 1,
-            link: props.url
-          };
-        });
-      }
-    }
-
-    // Sort by recency and show all real fetched tsunami alerts directly
-    tsunamiAlerts = fetchedAlerts.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
+    const mensajes = await descargarTsunami();
+    const ahora = Date.now();
+    eventosTsunamiLista = eventosTsunami(mensajes, ahora);
+    const NIVEL = { rojo: 'WARNING', naranja: 'ADVISORY', amarillo: 'WATCH', info: 'GREEN' } as const;
+    tsunamiAlerts = mensajes.filter((m) => !m.cancelado && ahora - m.emitido < 24 * 3600_000).map((m) => ({
+      id: m.id, title: `${m.categoria} · ${m.region}`, magnitude: parseFloat(m.magnitud) || 0, location: m.region,
+      ...(m.lat !== null && m.lon !== null ? { coordinates: [m.lat, m.lon] as [number, number], distanceKm: calculateDistance(gpsdState.lat, gpsdState.lon, m.lat, m.lon) } : {}),
+      time: new Date(m.emitido).toISOString(), severity: NIVEL[m.gravedad], source: 'tsunami.gov', active: true,
+    }));
+    anotarFuente('tsunami', 'Tsunamis · tsunami.gov', true, `${mensajes.length} mensajes · ${eventosTsunamiLista.length} de las últimas 24 h`);
   } catch (err: any) {
-    console.error("Error refreshing Tsunami telemetry:", err ? err.message : err);
-    tsunamiAlerts = [];
+    anotarFuente('tsunami', 'Tsunamis · tsunami.gov', false, err?.message || 'Sin respuesta');
   }
+  difundirAvisos(eventosTsunamiLista, politicaTsunami());
 }
 
 // APRS Specialized Object Beacon Generators
@@ -4559,6 +4537,39 @@ async function descargarRadiacionAvisos() {
   difundirAvisos(eventosRadiacionLista, politicaRadiacion());
 }
 
+// NWS (EE. UU.: tornados, tormentas severas…) y NASA EONET: las fuentes de la app Android
+let eventosNwsLista: Evento[] = [];
+let eventosEonetLista: Evento[] = [];
+function politicaNws(): Politica {
+  return { radioKm: null, gravedadMinima: gravedadDe(config.nwsGravedadMinima, 'naranja'), vigenciaMs: 6 * 3600_000, antelacionMs: 12 * 3600_000, repetirCadaMs: 30 * 60_000, boletin: true };
+}
+function politicaEonet(): Politica {
+  return { radioKm: Math.min(5000, Math.max(10, Number(config.eonetRadioKm ?? 300))), gravedadMinima: 'amarillo', vigenciaMs: 6 * 3600_000, repetirCadaMs: 360 * 60_000, boletin: true };
+}
+const categoriasEonet = () => String(config.eonetCategorias ?? '').split(/[,;\s]+/).filter((c) => c in CATEGORIAS_EONET);
+async function descargarNwsAvisos() {
+  if (config.systemPower === false || config.nwsEnabled !== true) { eventosNwsLista = []; return; }
+  try {
+    const j = await descargarNws(gpsdState.lat, gpsdState.lon);
+    eventosNwsLista = eventosNws(j, { lat: gpsdState.lat, lon: gpsdState.lon });
+    anotarFuente('nws', 'Avisos · NWS (EE. UU.)', true, j.fueraDeCobertura ? 'La estación está fuera de la cobertura del NWS (solo EE. UU.)' : `${eventosNwsLista.length} avisos en vigor para la estación`);
+  } catch (e: any) {
+    anotarFuente('nws', 'Avisos · NWS (EE. UU.)', false, e?.message || 'Sin respuesta');
+  }
+  difundirAvisos(eventosNwsLista, politicaNws());
+}
+async function descargarEonetAvisos() {
+  if (config.systemPower === false || config.eonetEnabled !== true) { eventosEonetLista = []; return; }
+  const todos: Evento[] = [];
+  const fallos: string[] = [];
+  for (const c of categoriasEonet()) {
+    try { todos.push(...eventosEonet(await descargarEonet(c, c === 'floods' ? 30 : 20), c)); } catch (e: any) { fallos.push(e?.message || c); }
+  }
+  if (todos.length || !fallos.length) eventosEonetLista = todos;
+  anotarFuente('eonet', 'Sucesos naturales · NASA EONET', fallos.length === 0, fallos.length ? fallos.join(' · ') : `${todos.length} sucesos abiertos (${categoriasEonet().map((c) => CATEGORIAS_EONET[c].nombre.toLowerCase()).join(', ') || 'ninguna categoría'})`);
+  difundirAvisos(eventosEonetLista, politicaEonet());
+}
+
 // ---------------------------------------------------------------------------
 // NAVTEX e Inmarsat-C por SDR (server/radio/navtex.ts y egc.ts)
 // ---------------------------------------------------------------------------
@@ -4720,6 +4731,10 @@ function programarOtrasFuentes() {
   setTimeout(seguro(descargarMeteoAlarmAvisos), 28000);
   setTimeout(seguro(descargarCiclonesAvisos), 31000);
   setTimeout(seguro(descargarRadiacionAvisos), 34000);
+  setInterval(seguro(descargarNwsAvisos), 5 * 60_000);
+  setInterval(seguro(descargarEonetAvisos), 60 * 60_000);
+  setTimeout(seguro(descargarNwsAvisos), 37000);
+  setTimeout(seguro(descargarEonetAvisos), 40000);
   setInterval(leerNavtex, 2000);
   ajustarEgc();
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
@@ -4734,6 +4749,9 @@ function programarOtrasFuentes() {
     difundirAvisos(eventosRadiacionLista, politicaRadiacion());
     difundirAvisos(eventosNavtexLista(), politicaNavtex());
     difundirAvisos(eventosEgcLista(), politicaEgc());
+    difundirAvisos(eventosTsunamiLista, politicaTsunami());
+    difundirAvisos(eventosNwsLista, politicaNws());
+    difundirAvisos(eventosEonetLista, politicaEonet());
   }, 60_000);
 }
 
@@ -4825,6 +4843,9 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
     { eventos: eventosMeteoAlarmLista, politica: politicaMeteoAlarm(), activo: config.meteoalarmEnabled === true, grupo: 'meteoalarm' },
     { eventos: eventosCiclonesLista, politica: politicaCiclones(), activo: config.ciclonesEnabled === true },
     { eventos: eventosRadiacionLista, politica: politicaRadiacion(), activo: config.radiacionEnabled === true },
+    { eventos: eventosTsunamiLista, politica: politicaTsunami(), activo: config.tsunamiMonitorEnabled !== false },
+    { eventos: eventosNwsLista, politica: politicaNws(), activo: config.nwsEnabled === true, grupo: 'nws' },
+    { eventos: eventosEonetLista, politica: politicaEonet(), activo: config.eonetEnabled === true, grupo: 'eonet' },
     { eventos: eventosNavtexLista(), politica: politicaNavtex(), activo: config.navtexEnabled === true, grupo: 'navtex' },
     { eventos: eventosEgcLista(), politica: politicaEgc(), activo: config.egcEnabled === true, grupo: 'egc' },
   ];
@@ -6073,6 +6094,13 @@ app.post('/api/config', (req, res) => {
     if (updated.radiacionPaises !== undefined) { config.radiacionPaises = String(updated.radiacionPaises).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60); fuentesCambiadas = true; }
     if (numEn(updated.radiacionRadioKm, 5, 1000) !== undefined) config.radiacionRadioKm = Math.round(numEn(updated.radiacionRadioKm, 5, 1000)!);
     if (numEn(updated.radiacionUmbral, 0.05, 100) !== undefined) { config.radiacionUmbral = numEn(updated.radiacionUmbral, 0.05, 100)!; fuentesCambiadas = true; }
+    if (numEn(updated.tsunamiRadioKm, 100, 20000) !== undefined) config.tsunamiRadioKm = Math.round(numEn(updated.tsunamiRadioKm, 100, 20000)!);
+    if (updated.tsunamiGravedadMinima !== undefined && GRAVEDADES.includes(updated.tsunamiGravedadMinima as Gravedad)) config.tsunamiGravedadMinima = updated.tsunamiGravedadMinima;
+    if (updated.nwsEnabled !== undefined) { config.nwsEnabled = !!updated.nwsEnabled; fuentesCambiadas = true; }
+    if (updated.nwsGravedadMinima !== undefined && GRAVEDADES.includes(updated.nwsGravedadMinima as Gravedad)) config.nwsGravedadMinima = updated.nwsGravedadMinima;
+    if (updated.eonetEnabled !== undefined) { config.eonetEnabled = !!updated.eonetEnabled; fuentesCambiadas = true; }
+    if (updated.eonetCategorias !== undefined) { config.eonetCategorias = String(updated.eonetCategorias).split(/[,;\s]+/).filter((c) => c in CATEGORIAS_EONET).join(','); fuentesCambiadas = true; }
+    if (numEn(updated.eonetRadioKm, 10, 5000) !== undefined) config.eonetRadioKm = Math.round(numEn(updated.eonetRadioKm, 10, 5000)!);
     if (updated.navtexEnabled !== undefined) config.navtexEnabled = !!updated.navtexEnabled;
     if (updated.navtexEstaciones !== undefined) config.navtexEstaciones = String(updated.navtexEstaciones).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60);
     if (numEn(updated.navtexRadioKm, 10, 2000) !== undefined) config.navtexRadioKm = Math.round(numEn(updated.navtexRadioKm, 10, 2000)!);
@@ -6089,7 +6117,7 @@ app.post('/api/config', (req, res) => {
     ajustarEgc();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
-      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); }, 500);
+      setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); }, 500);
     }
     if (updated.wxBeaconEnabled !== undefined) config.wxBeaconEnabled = !!updated.wxBeaconEnabled;
     if (updated.wxBeaconInterval !== undefined && Number.isFinite(Number(updated.wxBeaconInterval))) config.wxBeaconInterval = Math.min(120, Math.max(5, Math.round(Number(updated.wxBeaconInterval))));

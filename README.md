@@ -62,7 +62,8 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
 | Radio · NAVTEX e Inmarsat: NAVTEX con RTL-SDR o SDRplay (`tools/navtex/`) e Inmarsat-C EGC desde InmarScope por UDP; sus avisos, por APRS | Operativo desde la v1.39.0; la cadena NAVTEX probada con una grabación real, sin probar aún con el SDR en la estación |
 | Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; sin probar aún contra las fuentes reales |
-| Tornados, Protección Civil | Sin fuente pública utilizable: el SPC de la NOAA solo cubre EE. UU.; no se conoce un feed público de los avisos de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
+| Tsunamis de tsunami.gov (PTWC y NTWC), avisos del NWS de EE. UU. (tornados, tormentas severas…) y sucesos de NASA EONET: las fuentes de la app Android APRS LoRa+ | Operativo desde la v1.40.0; sin probar aún contra las fuentes reales. El NWS solo cubre EE. UU. |
+| Tornados en España, Protección Civil | Sin fuente pública: no se conoce un feed de avisos de tornado para Europa ni de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 
 ---
 

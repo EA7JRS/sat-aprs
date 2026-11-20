@@ -214,3 +214,12 @@ export function analizarTrama(texto: string, estacion: LatLon | null): Analisis 
     tipo, nombreTipo: NOMBRE_TIPO[tipo], que: describirTrama(t.source, t.destination, t.info, estacion),
   };
 }
+
+/**
+ * Texto para mostrar: las tramas se guardan byte a byte (latin1) para no perder
+ * nada; si esos bytes son UTF-8 válido («Región»), se enseñan como tal.
+ */
+export function textoLegible(s: string): string {
+  if (!/[\x80-\xff]/.test(s)) return s;
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(s, 'latin1')); } catch { return s; }
+}

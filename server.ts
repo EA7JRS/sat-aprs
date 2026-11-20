@@ -21,7 +21,7 @@ import { Orden, frecuenciaHz, leerOrden, pideConfirmacion, textoAyuda, AYUDA } f
 import { leerPosicionAprs } from './server/aprsPosicion';
 import { ConfAprx, MonitorAprx, SeguidorArchivo, leerConfAprx, leerLineaRf } from './server/radio/aprx';
 import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
-import { NOMBRE_TIPO, RegistroTramas, analizarTrama } from './server/radio/tramas';
+import { NOMBRE_TIPO, RegistroTramas, analizarTrama, textoLegible } from './server/radio/tramas';
 import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
@@ -5206,7 +5206,7 @@ app.get('/api/radio/direwolf', (_req, res) => {
     propia: monitorDirewolf.propia,
     ultimaEmisionPropia: monitorDirewolf.ultimaEmisionPropia || null,
     txEnabled: TX_ENABLED,
-    tramas: monitorDirewolf.tramas.slice(0, 60).map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) })),
+    tramas: monitorDirewolf.tramas.slice(0, 60).map((t) => ({ ...t, info: textoLegible(t.info), que: textoLegible(describirTrama(t.origen, t.destino, t.info, estacion)) })),
   });
 });
 
@@ -5589,7 +5589,7 @@ app.get('/api/radio/aprx', (_req, res) => {
     conf: c ? { ...c, ruta: confAprx!.ruta } : null,
     registro: { activado: !!c?.registroRf, error: seguidorAprx.error, ultimaLinea: seguidorAprx.ultimaLinea || null },
     resumen: monitorAprx.resumen(),
-    tramas: monitorAprx.lineas.slice(0, 60).map((l) => ({ ...l, que: describirTrama(l.origen, l.destino, l.info, estacion) })),
+    tramas: monitorAprx.lineas.slice(0, 60).map((l) => ({ ...l, info: textoLegible(l.info), que: textoLegible(describirTrama(l.origen, l.destino, l.info, estacion)) })),
   });
 });
 
@@ -5679,7 +5679,7 @@ app.get('/api/historial/tramas', (req, res) => {
       filas.map((f) => ({ ...f, cuando_utc: new Date(f.cuando).toISOString() }))));
   }
   const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
-  res.json({ disponible: historial.disponible, error: historial.error, dias, tramas: filas.map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) })) });
+  res.json({ disponible: historial.disponible, error: historial.error, dias, tramas: filas.map((t) => ({ ...t, info: textoLegible(t.info), que: textoLegible(describirTrama(t.origen, t.destino, t.info, estacion)) })) });
 });
 
 app.get('/api/historial/registro', (req, res) => {
@@ -5701,7 +5701,7 @@ app.get('/api/radio/tramas', (req, res) => {
   const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
   const desde = Number(req.query.desde) || 0;
   const tramas = registroTramas.tramas.filter((t) => t.n > desde).slice(0, 200)
-    .map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) }));
+    .map((t) => ({ ...t, info: textoLegible(t.info), que: textoLegible(describirTrama(t.origen, t.destino, t.info, estacion)) }));
   res.json({
     kiss: { conectado: kissConectado, desde: kissDesde, puerto: config.kissTcpPort },
     aprsIs: { estado: clienteAprsIs.estado, servidor: `${config.serverIp}:${config.aprscPort}` },

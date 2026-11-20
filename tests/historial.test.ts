@@ -7,7 +7,7 @@ import os from 'os';
 import path from 'path';
 import { Historial, aCsv } from '../server/sistema/historial';
 import { Mensajeria } from '../server/radio/mensajes';
-import { RegistroTramas } from '../server/radio/tramas';
+import { RegistroTramas, textoLegible } from '../server/radio/tramas';
 
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sat-hist-')), 'h.db');
 
@@ -76,4 +76,10 @@ test('mensajería: se exporta y se restaura; lo pendiente queda sin acuse', () =
 
 test('aCsv: comillas, comas y saltos', () => {
   assert.equal(aCsv(['a', 'b'], [{ a: 'x,y', b: 'di "hola"' }, { a: null, b: 3 }]), 'a,b\r\n"x,y","di ""hola"""\r\n,3\r\n');
+});
+
+test('textoLegible: UTF-8 guardado byte a byte se enseña bien; lo demás no se toca', () => {
+  assert.equal(textoLegible(Buffer.from('>Radio Club Región de Murcia', 'utf8').toString('latin1')), '>Radio Club Región de Murcia');
+  assert.equal(textoLegible('!3750.10N/00116.82W-'), '!3750.10N/00116.82W-');
+  assert.equal(textoLegible('caf\xe9 \xff'), 'caf\xe9 \xff');   // latin1 de verdad: no es UTF-8 válido
 });

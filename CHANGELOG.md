@@ -2,6 +2,11 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.6] - 2026-11-20
+- Tramas APRS, Direwolf, aprx e historial: los textos en UTF-8 se muestran con sus tildes («Región», no «RegiÃ³n»). Las tramas se siguen guardando y descodificando byte a byte.
+
+---
+
 ## [v1.44.5] - 2026-11-20
 ### APRS-IS: motivo del fallo y reconexión más rápida
 - Si el servidor APRS-IS rechazaba la conexión y estaba puesto como `localhost`, la consola mostraba «desconectado» sin motivo (Node da un error agregado sin mensaje al fallar IPv6 e IPv4). Ahora dice el motivo (`connect ECONNREFUSED …`).

@@ -14,6 +14,7 @@ import { Cifra, Estado, duracion, horaMin } from '../components/radio/Piezas';
 interface Hora { hora: number; tempC: number | null; humedadPct: number | null; presionHpa: number | null; vientoKmh: number | null; rachaKmh: number | null; lluviaMm: number | null; registros: number }
 interface Datos {
   servicio: { estado: 'active' | 'inactive' | 'failed' | null; desde: number | null };
+  simulador?: boolean;
   conf: null | { ruta: string; tipoEstacion: string | null; ubicacion: string | null; lat: number | null; lon: number | null; altitud: string | null; intervaloArchivoS: number | null; baseDatos: string | null; unidadesInforme: string | null };
   bd: { ruta: string; error: string | null; leido: number; ultimaHora: number | null };
   actual: null | { cuando: number; tempC?: number; humedadPct?: number; presionHpa?: number; vientoKmh?: number; rachaKmh?: number; dirGrados?: number; lluvia1hMm?: number; lluvia24hMm?: number };
@@ -143,6 +144,11 @@ export default function Weewx() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold text-slate-100">Estación · WeeWX</h1>
+      {datos.simulador && (
+        <p className="border border-red-500 bg-red-950/40 text-red-200 rounded-lg p-3 text-sm" role="alert" id="wx-simulador">
+          <strong>WeeWX está con el controlador «Simulator».</strong> Lo que guarda en su base de datos son valores inventados, no medidas. La consola no los usa: ni en el parte meteorológico, ni en los umbrales, ni como observación propia. Las gráficas de abajo son de esos valores simulados. Para medir de verdad, configure en <span className="font-mono">weewx.conf</span> el controlador de su estación (<span className="font-mono">sudo weectl station reconfigure</span>).
+        </p>
+      )}
 
       <section aria-label="Estado de WeeWX" className="flex flex-wrap gap-3">
         <Estado id="wx-servicio" titulo="Servicio" ok={s.estado === null ? null : s.estado === 'active'} texto={s.estado === null ? 'Sin systemd' : s.estado === 'active' ? 'Activo' : s.estado === 'failed' ? 'Ha fallado' : 'Parado'}

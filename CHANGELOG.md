@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.7] - 2026-11-20
+### WeeWX en modo simulador no cuenta como estación
+- En la primera prueba real, WeeWX estaba con el controlador `Simulator` y la consola tomaba sus valores inventados como medida propia. Ahora, si `weewx.conf` dice `station_type = Simulator`, la consola **no usa** esos datos (ni en el parte meteorológico, ni en los umbrales, ni como observación propia), lo anota en el registro y lo avisa en rojo en Estación → WeeWX.
+- `weewx.conf` se lee con el permiso de `sudo` del usuario de servicio cuando no es legible directamente: antes la pantalla decía que no lo encontraba.
+
+---
+
 ## [v1.44.6] - 2026-11-20
 - Tramas APRS, Direwolf, aprx e historial: los textos en UTF-8 se muestran con sus tildes («Región», no «RegiÃ³n»). Las tramas se siguen guardando y descodificando byte a byte.
 

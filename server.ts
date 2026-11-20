@@ -2933,7 +2933,8 @@ let timerParteMeteo: NodeJS.Timeout | undefined;
 /** Lee la estación meteorológica propia: la base de datos de WeeWX o, si se indica, wxnow.txt. */
 async function leerEstacionPropia() {
   const deArchivo = leerArchivoWxnow(String(config.wxWxnowPath || '').trim());
-  const deWeewx = await leerWeewx(String(config.wxWeewxDb || '').trim());
+  // Nada simulado entra como medida propia: con el controlador Simulator, WeeWX se ignora
+  const deWeewx = weewxSimulador ? null : await leerWeewx(String(config.wxWeewxDb || '').trim());
   // Si hay las dos, la más reciente
   const candidatas = [deArchivo, deWeewx].filter((o): o is Observacion => !!o);
   observacionPropia = candidatas.sort((a, b) => b.cuando - a.cuando)[0] ?? null;
@@ -5604,11 +5605,26 @@ app.post('/api/radio/aprx', async (req, res) => {
 // WeeWX: su configuración y su base de datos (últimas 24 h), de verdad
 let confWeewx: { conf: ConfWeewx; ruta: string } | null = null;
 let weewxDesde: number | null = null;
+/** weewx.conf dice station_type = Simulator: lo que hay en su base de datos no son medidas. */
+let weewxSimulador = false;
 let weewxBd: { ruta: string; horas: HoraWeewx[]; error: string | null; leido: number } = { ruta: '', horas: [], error: null, leido: 0 };
 async function leerWeewxCompleto() {
   confWeewx = null;
   for (const ruta of ['/etc/weewx/weewx.conf', '/etc/weewx.conf', path.join(os.homedir(), 'weewx-data', 'weewx.conf'), './weewx.conf']) {
     try { confWeewx = { conf: leerConfWeewx(fs.readFileSync(ruta, 'utf8')), ruta }; break; } catch { /* siguiente */ }
+    // weewx.conf suele ser solo de root y del usuario weewx: con el permiso de tools/sudoers-sat-aprs
+    if (ruta.startsWith('/etc/')) {
+      try {
+        confWeewx = { conf: leerConfWeewx(execFileSync('sudo', ['-n', 'cat', ruta], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })), ruta };
+        break;
+      } catch { /* siguiente */ }
+    }
+  }
+  const eraSimulador = weewxSimulador;
+  weewxSimulador = /simulator/i.test(confWeewx?.conf.tipoEstacion ?? '');
+  if (weewxSimulador && !eraSimulador) {
+    addLog('SYS', 'WeeWX', 'LOCAL', 'ESTACION', 'WeeWX está con el controlador Simulator: sus datos son inventados y la consola no los usa (ni para el parte, ni para los umbrales, ni en pantalla como medida propia).', false, 'Estación meteorológica');
+    if (observacionPropia?.fuente === 'WeeWX') observacionPropia = null;
   }
   weewxDesde = desdeServicio('weewx');
   const ruta = String(config.wxWeewxDb || '').trim() || confWeewx?.conf.baseDatos || '';
@@ -5624,6 +5640,7 @@ app.get('/api/estacion/weewx', (_req, res) => {
   res.json({
     servicio: { estado: process.platform === 'linux' ? nucStats.services.weewx : null, desde: weewxDesde },
     conf: confWeewx ? { ...confWeewx.conf, ruta: confWeewx.ruta } : null,
+    simulador: weewxSimulador,
     bd: { ruta: weewxBd.ruta, error: weewxBd.error, leido: weewxBd.leido, ultimaHora: ultima?.hora ?? null },
     actual: observacionPropia && observacionPropia.fuente === 'WeeWX' ? observacionPropia : null,
     horas: weewxBd.horas,

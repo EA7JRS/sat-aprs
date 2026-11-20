@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.35.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.35.1**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -329,7 +329,7 @@ Pestañas:
 | Direwolf TNC Módems | Tarjeta de sonido, módem, PTT, gpsd y puerto KISS; genera `direwolf.conf` sin `CBEACON` y con `LOGDIR` |
 | WeeWX Weather Engine | Controlador, base de datos e intervalos de WeeWX |
 | Claves API & Puertos | Claves de OpenWeatherMap, AEMET, IQAir y WeatherAPI; umbrales meteorológicos |
-| Alertas e Inundación | Alarmas sonoras, tonos y silencio programado de guardia |
+| Alertas e Inundación | Alarmas sonoras, tonos y silencio programado de guardia; color, sonido y zoom del aviso en pantalla para las tramas con `!EMERGENCY!`, `!PRIORITY!` o `!SPECIAL!` |
 | Archivos .conf Debian | Ver, validar y editar `direwolf.conf`, `aprx.conf`, `weewx.conf`, el `config.json` de Pat y `axports` |
 | Estación APRS | El mismo perfil que Estación → Perfil |
 

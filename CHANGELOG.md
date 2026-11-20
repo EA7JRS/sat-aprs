@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.35.1] - 2026-11-20
+### Dos restos
+- **Reglas de notificación sin valores supuestos**: sin datos meteorológicos, la temperatura, el viento, la lluvia, la humedad y la presión quedan «sin dato» y su regla no salta. Antes tomaban 22,5 °C, 4 nudos, 0 mm, 50 % y 1016,2 hPa. Lo mismo con la radiación, que no tiene fuente.
+- **Ajustes de los códigos SOS** (`!EMERGENCY!`, `!PRIORITY!`, `!SPECIAL!`: color, sonido y zoom del aviso en pantalla), de vuelta en **Sistema → Configuración → Alertas e Inundación**. Se habían quedado sin pantalla al retirar los paneles de demostración de Pruebas. El botón «Guardar» ya no dice que guarda en la nube: se guarda en este navegador.
+
+---
+
 ## [v1.35.0] - 2026-11-20
 ### HF y sismos
 - **Rayos X en la LUF, solo de día**: la absorción de la capa D por una fulguración (clase X 8 MHz, M 4, C 1,5, B 0,5 con el sol en el cenit) crece con cos(cenit)^0,75 y es cero de noche, como el modelo D-RAP de SWPC (`absorcionRayosX` en `server/propagacion.ts`). Antes, `server.ts` la sumaba entera también de noche y el monitor de propagación ponía una décima. Es la misma fórmula que usan el tracker APRS LoRa+ y su app.

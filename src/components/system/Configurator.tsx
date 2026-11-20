@@ -24,6 +24,7 @@ import {
 
 
 import AdminAccess from './AdminAccess';
+import SOSConfiguration from '../emergency/SOSConfiguration';
 import StationProfile from './StationProfile';
 import StationWeather from './StationWeather';
 import { aprsPasscode as passcodeDe, splitCallsign } from '../../../server/aprs';
@@ -3242,6 +3243,12 @@ LOGDIR /var/log/direwolf
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Avisos en pantalla de las tramas APRS con !EMERGENCY!, !PRIORITY! o !SPECIAL! */}
+            <div className="bg-slate-900/40 border border-slate-900 p-4 rounded-xl" id="config-sos">
+              <SOSConfiguration />
+              <p className="text-[12px] text-slate-400 mt-3">Color, sonido y zoom del aviso en pantalla cuando llega una trama con uno de estos códigos. Se guarda en este navegador.</p>
             </div>
 
           </div>

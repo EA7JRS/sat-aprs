@@ -74,7 +74,7 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
     if (onSettingsChange) onSettingsChange(updated);
   };
 
-  const handleSaveToCloud = async () => {
+  const handleSave = async () => {
     setIsSaving(true);
     setSaveSuccess(false);
     try {
@@ -172,7 +172,7 @@ export default function SOSConfiguration({ onSettingsChange, isExtremeContrast =
           </button>
           <button
             type="button"
-            onClick={handleSaveToCloud}
+            onClick={handleSave}
             disabled={isSaving}
             className={`px-3 py-1.5 rounded text-[10px] font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
               saveSuccess 

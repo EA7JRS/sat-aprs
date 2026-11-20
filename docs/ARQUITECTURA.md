@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS
 
-© 2026 Manuel - EA7JRS · v1.35.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.35.1 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS

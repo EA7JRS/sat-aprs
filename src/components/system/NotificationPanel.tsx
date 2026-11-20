@@ -310,23 +310,25 @@ export default function NotificationPanel({
   // Track triggered alert IDs to edge-trigger native system notifications
   const triggeredRuleIdsRef = useRef<Set<string>>(new Set());
 
-  // Derive active weather values (either live from props or from simulator)
-  const activeTemp = isSimActive ? simTemp : (weather?.tempC ?? 22.5);
-  const activeWind = isSimActive ? simWind : (weather?.windSpeedKts ?? 4);
-  const activeRain = isSimActive ? simRain : ((weather?.rain1hIn ?? 0) * 25.4);
-  const activeHum = isSimActive ? simHum : (weather?.humidityPct ?? 50);
-  const activePress = isSimActive ? simPress : (weather?.pressureHpa ?? 1016.2);
+  // Valores actuales: los de la estación (o del simulador, si está activo).
+  // Sin dato, null: la regla no salta ni se rellena con un valor supuesto.
+  const dato = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const activeTemp = isSimActive ? simTemp : dato(weather?.tempC);
+  const activeWind = isSimActive ? simWind : dato(weather?.windSpeedKts);
+  const activeRain = isSimActive ? simRain : (dato(weather?.rain1hIn) === null ? null : (weather!.rain1hIn as number) * 25.4);
+  const activeHum = isSimActive ? simHum : dato(weather?.humidityPct);
+  const activePress = isSimActive ? simPress : dato(weather?.pressureHpa);
 
   // Derive active threat/telemetry values
   const activeMagnitude = isSimActive ? simMagnitude : (earthquakes.length > 0 ? Math.max(...earthquakes.map(eq => eq.magnitud)) : 0);
-  // Sin fuente de radiación conectada: sin dato (0), nunca un valor supuesto
-  const activeRadiation = isSimActive ? simRadiation : 0;
+  // Sin fuente de radiación conectada: sin dato, nunca un valor supuesto
+  const activeRadiation: number | null = isSimActive ? simRadiation : null;
   const activeNavarea = isSimActive ? simNavarea : navareas.length;
 
   // Evaluate which rules are currently triggered
   const evaluatedRulesStatus = useMemo(() => {
     return weatherRules.map(rule => {
-      let currentValue = 0;
+      let currentValue: number | null = null;
       switch (rule.variable) {
         case 'tempC':
           currentValue = activeTemp;
@@ -353,10 +355,10 @@ export default function NotificationPanel({
           currentValue = activeNavarea;
           break;
         default:
-          currentValue = 0;
+          currentValue = null;
       }
 
-      const isTriggered = rule.enabled && (
+      const isTriggered = rule.enabled && currentValue !== null && (
         rule.operator === 'greater_than' 
           ? currentValue > rule.threshold 
           : currentValue < rule.threshold
@@ -447,7 +449,7 @@ export default function NotificationPanel({
           triggerSystemNotification(
             `⚠️ Alerta [${categoryUpper}]: ${rule.name}`,
             {
-              body: `Las condiciones de ${categoryUpper} han superado el umbral: ${variableLabel} actual de ${rule.currentValue.toFixed(2)}${unit} es ${comparisonStr} límite de ${rule.threshold}${unit}.`,
+              body: `Las condiciones de ${categoryUpper} han superado el umbral: ${variableLabel} actual de ${(rule.currentValue ?? 0).toFixed(2)}${unit} es ${comparisonStr} límite de ${rule.threshold}${unit}.`,
               tag: rule.id,
               requireInteraction: true
             }
@@ -1317,7 +1319,7 @@ export default function NotificationPanel({
                             ⚠️ [{rule.threatType.toUpperCase()}] {rule.name}
                           </span>
                           <span className="font-bold text-red-400 shrink-0">
-                            {valLabel}: {rule.currentValue.toFixed(2)}{unit} ({opChar} {rule.threshold}{unit})
+                            {valLabel}: {(rule.currentValue ?? 0).toFixed(2)}{unit} ({opChar} {rule.threshold}{unit})
                           </span>
                         </div>
                       );
@@ -1385,7 +1387,7 @@ export default function NotificationPanel({
                             break;
                         }
 
-                        const currentVal = evaluatedRulesStatus.find(r => r.id === rule.id)?.currentValue ?? 0;
+                        const currentVal = evaluatedRulesStatus.find(r => r.id === rule.id)?.currentValue ?? null;
 
                         return (
                           <div 
@@ -1411,7 +1413,7 @@ export default function NotificationPanel({
                                 </span>
                                 <span className="text-slate-500">•</span>
                                 <span className={isTriggered ? "text-red-400 font-bold" : "text-slate-550"}>
-                                  Actual: {currentVal.toFixed(1)}{unit}
+                                  Actual: {currentVal === null ? 'sin dato' : `${currentVal.toFixed(1)}${unit}`}
                                 </span>
                               </div>
                             </div>

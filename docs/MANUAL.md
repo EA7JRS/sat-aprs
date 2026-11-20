@@ -536,6 +536,17 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 
 ## 12. Servicios, puertos y archivos
 
+**Mantenimiento por SSH** (detalle en el README, «Procedimiento de Actualización»):
+
+| Para | Orden |
+| :--- | :--- |
+| Ver si hay versión nueva | `sudo sh /opt/sat-aprs/tools/actualizar.sh --comprobar` |
+| Actualizar | `sudo sh /opt/sat-aprs/tools/actualizar.sh` |
+| Montar la consola o migrar desde una carpeta antigua | `sudo sh tools/instalar.sh [--desde /opt/sat-aprs.antiguo]` |
+| Registro en vivo | `journalctl -u sat-aprs -f` |
+| Reiniciar | `sudo systemctl restart sat-aprs` |
+
+
 | Servicio | Para qué | Enlace con la consola |
 | :--- | :--- | :--- |
 | `sat-aprs` | La consola y el servicio | HTTP 3000 |
@@ -564,6 +575,7 @@ Archivos de la consola, en su carpeta de instalación:
 | `sat_config.json` | Ajustes de la consola (los guarda la propia consola) |
 | `sat_perfil.json` | Perfil del operador, estaciones y presets |
 | `sat_avisos.json` | Avisos ya emitidos y cuándo se repiten |
+| `copias/<fecha>/` | Copias de la configuración y del historial que hace `tools/actualizar.sh` antes de cada actualización (las diez últimas) |
 | `sat_historial.db` (y `-wal`, `-shm`) | Historial en SQLite: tramas, registro de la consola y mensajería, que sobreviven a un reinicio |
 | `config.ini` | Del agente antiguo, ya retirado: se importa una vez si no hay `sat_config.json` |
 

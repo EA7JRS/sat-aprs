@@ -26,7 +26,7 @@ S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APR
 
 ---
 
-## 📌 Qué hace hoy (v1.36.0)
+## 📌 Qué hace hoy (v1.44.0)
 
 La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sistema**, con color automático, claro, oscuro o táctico (ámbar, rojo, verde o azul nocturno), y se usa también desde el móvil.
 
@@ -116,7 +116,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/propagacion.ts`, `server/sistema/` | HF y propagación; estado del equipo (ntpsec) |
 | `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
 | `src/` | Consola web: React 19, Vite y Tailwind CSS (`src/pages/` una pantalla por archivo, `src/navigation.ts` las secciones) |
-| `tools/` | `instalar-aprx.sh` (aprx desde el fork), `navtex/` (receptor NAVTEX con SDR) y `canboat/` (comprobación de los PGN de NMEA 2000) |
+| `tools/` | `instalar.sh` (monta la consola y retira restos antiguos), `actualizar.sh` (actualiza con una orden), `instalar-aprx.sh` (aprx desde el fork), `navtex/` (receptor NAVTEX con SDR) y `canboat/` (comprobación de los PGN de NMEA 2000) |
 | `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y radio |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)
@@ -226,6 +226,8 @@ En la consola, **Estación → Perfil**: titular, indicativo y SSID, passcode de
 
 ### ⚙️ Fase 2: Servicio del sistema
 
+> **Atajo:** `sudo sh tools/instalar.sh` hace las fases 1.3 a 2.1 de una vez (Node.js, `.env`, usuario de servicio, unidad de systemd, compilación y arranque). Lo que sigue es el mismo proceso a mano.
+
 > **Desde el agente antiguo (`aprs_sat.py`):** si aún no hay `sat_config.json`, la consola importa una vez su `config.ini` (indicativo, passcode, servidor, posición de respaldo, claves y umbrales). Después, todo se ajusta en la consola. Desactive el servicio antiguo: `sudo systemctl disable --now sat-aprs-agent.service`.
 
 #### 2.1- Unidad de systemd
@@ -270,27 +272,48 @@ sudo systemctl status gpsd ntpsec aprx direwolf sat-aprs.service
 
 ## 🔄 Procedimiento de Actualización
 
+Con una orden, también por SSH:
+
 ```bash
+ssh usuario@nuc
 cd /opt/sat-aprs
-sudo systemctl stop sat-aprs.service
-
-# Copia de seguridad de su configuración local
-cp .env .env.bak
-cp sat_config.json sat_config.json.bak 2>/dev/null
-cp sat_historial.db sat_historial.db.bak 2>/dev/null   # con el servicio parado
-
-git pull --ff-only     # si falla, vea la nota sobre el 14-11-2026
-
-npm ci
-npm run build
-
-sudo systemctl start sat-aprs.service
-journalctl -u sat-aprs.service -f -n 50
+sudo sh tools/actualizar.sh --comprobar   # dice si hay versión nueva y qué trae; no toca nada
+sudo sh tools/actualizar.sh               # actualiza
 ```
+
+`tools/actualizar.sh` hace copia de la configuración y del historial en `copias/<fecha>/` (guarda las diez últimas), trae la versión nueva, instala dependencias y compila **con la consola todavía en marcha**, reinicia el servicio y comprueba que responde. Si la compilación falla, vuelve a la versión anterior y la consola no se detiene. `--forzar` recompila y reinicia aunque no haya cambios; `--aqui` hace lo mismo sin traer nada.
+
+Órdenes útiles por SSH:
+
+| Para | Orden |
+| :--- | :--- |
+| Ver si está en marcha | `systemctl status sat-aprs` |
+| Registro en vivo | `journalctl -u sat-aprs -f` |
+| Últimas 100 líneas | `journalctl -u sat-aprs -n 100 --no-pager` |
+| Reiniciar / parar / arrancar | `sudo systemctl restart sat-aprs` (`stop`, `start`) |
+| Versión instalada | `grep '"version"' /opt/sat-aprs/package.json` |
+| Encender o apagar la emisión | `sudo nano /opt/sat-aprs/.env` (`SAT_APRS_TX=on` u `off`) y `sudo systemctl restart sat-aprs` |
+| Estado de todos los servicios | `systemctl status gpsd ntpsec direwolf aprx sat-aprs --no-pager` |
+| Abrir la consola desde su equipo sin exponerla | `ssh -L 3000:127.0.0.1:3000 usuario@nuc` y luego `http://127.0.0.1:3000` |
+| Volver a una copia | `sudo systemctl stop sat-aprs`, copiar los archivos de `copias/<fecha>/` y `sudo systemctl start sat-aprs` |
+
+### Desde una instalación antigua: retirar los restos y montar la nueva
+
+Lo más limpio es apartar la carpeta antigua, clonar de nuevo y traer solo la configuración:
+
+```bash
+sudo systemctl stop sat-aprs.service sat-aprs-agent.service 2>/dev/null
+sudo mv /opt/sat-aprs /opt/sat-aprs.antiguo
+sudo git clone https://github.com/EA7JRS/sat-aprs.git /opt/sat-aprs
+cd /opt/sat-aprs
+sudo sh tools/instalar.sh --desde /opt/sat-aprs.antiguo
+```
+
+`tools/instalar.sh` retira el servicio del agente Python antiguo, copia de la carpeta antigua `.env`, `sat_config.json`, los avisos emitidos, el perfil y el historial (y `config.ini` solo si no hay `sat_config.json`, para importarlo una vez), instala Node.js 22 si hace falta, crea el usuario `satapr` y la unidad de systemd, compila, arranca y comprueba. No borra la carpeta antigua: cuando todo funcione, `sudo rm -rf /opt/sat-aprs.antiguo`. No toca Direwolf, aprx, gpsd ni sus archivos de `/etc`. Se puede repetir: solo hace lo que falta.
 
 > **aprx del fork:** para traer la última versión de [EA7JRS/aprx](https://github.com/EA7JRS/aprx), vuelva a ejecutar `sudo sh tools/instalar-aprx.sh`.
 
-> **Clones anteriores al 14-11-2026:** ese día se reescribió el historial del repositorio y `git pull` falla. Con la copia de seguridad hecha: `git fetch origin && git reset --hard origin/main`.
+> **Clones anteriores al 14-11-2026:** ese día se reescribió el historial del repositorio y la actualización no puede avanzar. Use el procedimiento «Desde una instalación antigua» de arriba.
 
 > **Al actualizar desde una versión anterior a la 1.36.0:** el agente Python se ha retirado. Pare y desactive su servicio (`sudo systemctl disable --now sat-aprs-agent.service`) y borre su unidad (`sudo rm /etc/systemd/system/sat-aprs-agent.service`). Si aún no tenía `sat_config.json`, la consola importa su `config.ini` la primera vez.
 

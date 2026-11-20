@@ -2,6 +2,14 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.44.0] - 2026-11-20
+### Instalar y actualizar con una orden, por SSH
+- **`tools/actualizar.sh`**: `sudo sh tools/actualizar.sh` hace copia de la configuración y del historial (`copias/<fecha>/`, las diez últimas), trae la versión nueva, instala dependencias y compila con la consola en marcha, reinicia el servicio y comprueba que responde. Si la compilación falla, vuelve a la versión anterior sin parar la consola. `--comprobar` solo dice si hay versión nueva; `--forzar` y `--aqui` recompilan y reinician.
+- **`tools/instalar.sh`**: monta la consola (Node.js 22, `.env`, usuario de servicio, unidad de systemd, compilación y arranque) y retira los restos de una instalación antigua: el servicio y los archivos del agente Python. Con `--desde <carpeta antigua>` trae la configuración y el historial. Se puede repetir.
+- README: procedimiento de actualización rehecho, migración desde una instalación antigua y tabla de órdenes útiles por SSH.
+
+---
+
 ## [v1.43.0] - 2026-11-20
 ### Salud, con datos reales
 - **Avisos → Salud rehecha** (`src/pages/Salud.tsx`). La pantalla anterior era de las antiguas: avisos de AEMET escritos a mano (con fecha de junio que se cambiaba a la de hoy), temperaturas de muestra cuando fallaba la consulta, umbrales por provincia sin fuente, un «nivel de riesgo» calculado por la consola y un botón que inyectaba un objeto con un indicativo ajeno. Fuera todo.

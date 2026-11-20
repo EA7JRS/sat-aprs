@@ -35,3 +35,6 @@ sat_perfil.json
 sat_historial.db
 sat_historial.db-wal
 sat_historial.db-shm
+# Copias de seguridad de tools/actualizar.sh y caché de npm del usuario de servicio
+copias/
+.npm/

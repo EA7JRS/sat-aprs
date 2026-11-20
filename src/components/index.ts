@@ -10,7 +10,6 @@ export { default as AprsValidator } from './radio/AprsValidator';
 export { default as PropagacionMonitor } from './radio/PropagacionMonitor';
 
 // Environmental, Weather & Scientific Monitors
-export { default as MeteosaludPortal } from './environment/MeteosaludPortal';
 export { default as WeatherStation } from './environment/WeatherStation';
 
 // Diagnostic, Logs, Layout & Core System Utilities

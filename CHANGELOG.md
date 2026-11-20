@@ -2,6 +2,15 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.43.0] - 2026-11-20
+### Salud, con datos reales
+- **Avisos → Salud rehecha** (`src/pages/Salud.tsx`). La pantalla anterior era de las antiguas: avisos de AEMET escritos a mano (con fecha de junio que se cambiaba a la de hoy), temperaturas de muestra cuando fallaba la consulta, umbrales por provincia sin fuente, un «nivel de riesgo» calculado por la consola y un botón que inyectaba un objeto con un indicativo ajeno. Fuera todo.
+- Ahora muestra: los avisos de temperatura en vigor de la cadena de Avisos, las máximas y mínimas previstas en la posición de la estación (Open-Meteo) y el acceso a los dos paneles oficiales, el **índice Kairós** del Instituto de Salud Carlos III y **Meteosalud** del Ministerio de Sanidad.
+- Kairós y Meteosalud no publican sus datos en un formato legible: la consola enlaza a ellos y no muestra ni difunde niveles propios.
+- Anotado en la arquitectura, para la campaña: el Índice de Riesgo de Incendio Forestal de Andalucía (REDIAM).
+
+---
+
 ## [v1.42.0] - 2026-11-20
 ### Sismos de fuera de España (EMSC)
 - **`server/fuentes/emsc.ts`**: servicio FDSN del Centro Sismológico Euro-Mediterráneo (SeismicPortal, CC BY 4.0, sin clave). Sismos de M3,5 o más de las últimas 24 horas a menos de 15° de la estación.

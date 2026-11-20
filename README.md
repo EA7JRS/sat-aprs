@@ -76,7 +76,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 | Sección | Pantallas | Para qué |
 | :--- | :--- | :--- |
 | **Inicio** | Inicio | Avisos activos en tu zona, estado de la estación (posición, hora, baliza, meteo), últimas emisiones y si las fuentes responden. |
-| **Avisos** | En vigor · Salud | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; Plan Meteosalud del Ministerio de Sanidad. |
+| **Avisos** | En vigor · Salud | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; temperaturas y salud, con acceso a Kairós (ISCIII) y Meteosalud (Sanidad). |
 | **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza); WeeWX con sus últimas 24 h. |
 | **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
 | **Radio** | Principal · Direwolf · HF y propagación · aprx · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |

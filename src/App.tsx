@@ -14,13 +14,13 @@ import Aprx from './pages/Aprx';
 import Winlink from './pages/Winlink';
 import TramasAprs from './pages/TramasAprs';
 import Maritimo from './pages/Maritimo';
+import Salud from './pages/Salud';
 import Weewx from './pages/Weewx';
 import type { AprsPacket } from './utils/aprsPaquete';
 import Nmea2000Card from './components/Nmea2000Card';
 import ResumenHF from './components/radio/ResumenHF';
 import MedidoresAire from './components/environment/MedidoresAire';
 import BoyasCercanas from './components/environment/BoyasCercanas';
-import { AvisoDemostracion } from './components/shell/Etiquetas';
 import { useAvisos } from './utils/useAvisos';
 import { COLORES_TACTICO, useTema } from './utils/tema';
 import { useState, useEffect, useRef } from 'react';
@@ -39,7 +39,6 @@ import {
   DgtTrafficDatabase,
   NotificationPanel,
   SyncScheduler,
-  MeteosaludPortal,
   NtpSyncStatus,
   HelpOverlay,
   PropagacionMonitor,
@@ -1074,18 +1073,7 @@ export default function App() {
             <BoyasCercanas />
           </motion.div>
         ) : activeTab === 'salud' ? (
-          /* METEOSALUD PLAN TEMPERATURE WATCH PORTAL */
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4"
-          >
-            <AvisoDemostracion>Pantalla de consulta. Los avisos que la estación difunde por APRS son solo los de la pestaña «En vigor».</AvisoDemostracion>
-            <MeteosaludPortal 
-              gpsd={data.gpsd} 
-              onInjectRaw={handleInjectRaw} 
-            />
-          </motion.div>
+          <Salud gpsd={data.gpsd} />
         ) : activeTab === 'propagacion' ? (
           /* HF PROPAGATION & SPACE WEATHER MONITOR */
           <motion.div

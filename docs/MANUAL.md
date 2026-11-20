@@ -126,7 +126,7 @@ Los sismos tienen además su tabla con fecha, magnitud, profundidad, lugar y dis
 
 ### Salud
 
-El **Plan Meteosalud** del Ministerio de Sanidad: temperaturas máximas previstas por provincia, los avisos de AEMET en vigor y el portal oficial. Es informativo; no emite nada.
+Temperaturas y salud, solo con datos reales: los avisos de temperatura en vigor de la cadena de Avisos, las máximas y mínimas previstas en la posición de la estación (Open-Meteo) y el acceso a los dos paneles oficiales, el **índice Kairós** del Instituto de Salud Carlos III (riesgo de mortalidad atribuible a temperaturas extremas, tres niveles, a seis días) y **Meteosalud** del Ministerio de Sanidad. Ninguno de los dos publica sus datos en un formato legible por la consola, así que sus niveles no se muestran ni se difunden. Es de consulta; no emite nada.
 
 ---
 

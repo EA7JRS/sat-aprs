@@ -62,6 +62,7 @@ import { Barcos, LectorAis, claseBarco } from './server/ais';
 import { Aeronaves, emergenciaSquawk } from './server/adsb';
 import { EnlaceTcp } from './server/enlaceTcp';
 import { NTP_SIN_DATOS, consultarNtp } from './server/sistema/ntp';
+import { Historial, aCsv } from './server/sistema/historial';
 import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from './server/estacion/baliza';
 import { Observacion, elegirObservacion, intervaloMeteoMs, leerArchivoWxnow, leerWeewx, parteMeteoAprs, validarParte } from './server/estacion/meteo';
 import { gcDistanceKm } from './server/formulas/geo';
@@ -94,6 +95,10 @@ import {
 dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
+
+// Historial en SQLite (sat_historial.db): tramas, registro y mensajería sobreviven a un reinicio
+const historial = new Historial(path.join(process.cwd(), 'sat_historial.db'));
+console.log(historial.disponible ? `[HISTORIAL] ${historial.ruta}` : `[HISTORIAL] Sin historial en disco: ${historial.error}`);
 const PORT = parseInt(process.env.PORT || '3000', 10) || 3000;
 // HOST=127.0.0.1 limita la consola al propio equipo (recomendado tras un proxy inverso)
 const HOST = process.env.HOST || '0.0.0.0';
@@ -657,12 +662,21 @@ function scheduleGpsdReconnect() {
 const estacionesOidas = new EstacionesOidas();
 // Todas las tramas APRS que entran (radio, APRS-IS) y salen, para Radio → Tramas APRS
 const registroTramas = new RegistroTramas(500);
+registroTramas.cargar(historial.tramas(500) as never);
+registroTramas.alAnotar = (t) => historial.guardarTrama(t);
 let firmaAprsIs = '';
 
 // ---------------------------------------------------------------------------
 // Radio: mensajería APRS de la estación y cluster DX
 // ---------------------------------------------------------------------------
 const mensajeria = new Mensajeria(() => config.callsign);
+mensajeria.restaurar(historial.leerEstado('mensajeria'));
+// La mensajería se guarda en el historial cuando cambia (cada 10 s como mucho)
+let mensajeriaGuardada = JSON.stringify(mensajeria.exportar());
+setInterval(() => {
+  const ahora = JSON.stringify(mensajeria.exportar());
+  if (ahora !== mensajeriaGuardada) { historial.guardarEstado('mensajeria', mensajeria.exportar()); mensajeriaGuardada = ahora; }
+}, 10_000);
 
 /** Emite un mensaje, acuse o boletín de la mensajería por la cola de emisión (con su política). */
 function emitirMensajeria(info: string, motivo: string) {
@@ -1469,7 +1483,7 @@ function loadSchedules() {
 
 function saveSchedules(bypassDisk: boolean = false) {
   if (bypassDisk) {
-    console.log('[DEMO MODE] Omitiendo guardado físico de programaciones en disco.');
+    console.log('[PROGRAMACIONES] Sin sesión de administrador: los cambios quedan solo en memoria.');
     return;
   }
   try {
@@ -1553,7 +1567,15 @@ let navareaWarnings: NavareaWarning[] = [];
 let erddapBuoys: ERDDAPBuoy[] = [];
 let portusStations: OceanStation[] = [];
 let noaaAlerts: NoaaSpaceAlert[] = [];
-let logs: AprsPacketLog[] = [];
+// El registro de la consola se recupera del historial al arrancar
+let logs: AprsPacketLog[] = historial.registro(Math.max(1, Number(config.terminalLogsRetention) || 150)).map((f) => f.datos as AprsPacketLog);
+// Retención del historial: tramas 7 días y registro 30, salvo que se cambie
+const retencionHistorial = () => ({
+  diasTramas: Math.min(365, Math.max(1, Number(config.historialDiasTramas) || 7)),
+  diasRegistro: Math.min(3650, Math.max(1, Number(config.historialDiasRegistro) || 30)),
+});
+setTimeout(() => historial.purgar(retencionHistorial()), 60_000);
+setInterval(() => historial.purgar(retencionHistorial()), 6 * 3600_000);
 let trafficTrends: TrafficDataPoint[] = [];
 
 
@@ -1610,6 +1632,7 @@ function addLog(type: 'TX' | 'RX' | 'SYS' | 'AIS' | 'WINLINK', source: string, d
       newLog.remarks = `[NO EMITIDO: ${notSent}] ${remarks}`;
     }
   }
+  historial.guardarRegistro(newLog.id, Date.now(), type, newLog);
 
   // Increment real-time Traffic Counts of the current minute
   if (trafficTrends.length > 0) {
@@ -4071,7 +4094,7 @@ app.post('/api/space-weather/aprs-bulletin/transmit', async (req, res) => {
 
 app.post('/api/telemetry/clear-logs', (req, res) => {
   logs = [];
-  res.json({ success: true, msg: 'Búfer de logs del Terminal TNC borrado exitosamente.' });
+  res.json({ success: true, msg: 'Registro de la consola vaciado en pantalla; el historial en disco se conserva.' });
 });
 
 // Servicios cuyos registros puede vaciar la consola
@@ -4085,7 +4108,7 @@ app.post('/api/system/clear-service-logs', (req, res) => {
 
   const isAuth = isAuthorizedRequest(req);
   if (!isAuth) {
-    return res.json({ success: true, msg: `[DEMO PÚBLICA] Se simula el vaciado de logs para el servicio: ${service}` });
+    return res.status(403).json({ success: false, error: 'Solo el administrador puede vaciar los registros de los servicios.' });
   }
 
   // Órdenes con argumentos fijos y sin intérprete de órdenes. El nombre del
@@ -5271,6 +5294,42 @@ app.post('/api/estacion/weewx', async (req, res) => {
   res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
 
+// Historial (SQLite): resumen, búsqueda y exportación
+app.get('/api/historial', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ...historial.resumen(), retencion: retencionHistorial() });
+});
+
+app.get('/api/historial/tramas', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const dias = Math.min(365, Math.max(1, Number(req.query.dias) || 7));
+  const q = String(req.query.q ?? '').trim().toUpperCase().slice(0, 40);
+  const via = ['RF', 'IS', 'TX'].includes(String(req.query.via)) ? String(req.query.via) : undefined;
+  const csv = req.query.formato === 'csv';
+  if (csv && !isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede exportar.' });
+  const filas = historial.tramas(csv ? 5000 : 300, { q: q || undefined, desde: Date.now() - dias * 86_400_000, via });
+  if (csv) {
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="tramas-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.send(aCsv(['cuando_utc', 'via', 'origen', 'destino', 'ruta', 'tipo', 'info', 'noEmitida'],
+      filas.map((f) => ({ ...f, cuando_utc: new Date(f.cuando).toISOString() }))));
+  }
+  const estacion = { lat: gpsdState.lat, lon: gpsdState.lon };
+  res.json({ disponible: historial.disponible, error: historial.error, dias, tramas: filas.map((t) => ({ ...t, que: describirTrama(t.origen, t.destino, t.info, estacion) })) });
+});
+
+app.get('/api/historial/registro', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador puede exportar.' });
+  const dias = Math.min(3650, Math.max(1, Number(req.query.dias) || 30));
+  const filas = historial.registro(20000, Date.now() - dias * 86_400_000);
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="registro-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(aCsv(['cuando_utc', 'tipo', 'origen', 'destino', 'ruta', 'resultado', 'nota', 'trama'], filas.map((f) => {
+    const d = f.datos as AprsPacketLog;
+    return { cuando_utc: new Date(f.cuando).toISOString(), tipo: f.tipo, origen: d.source, destino: d.destination, ruta: d.path, resultado: d.success ? 'ok' : 'error', nota: d.remarks, trama: d.payload };
+  })));
+});
+
 // Tramas APRS: lo que entra por radio y por APRS-IS y lo que sale
 app.get('/api/radio/tramas', (req, res) => {
   res.set('Cache-Control', 'no-store');
@@ -5514,6 +5573,7 @@ app.get('/api/enlaces', (_req, res) => {
     cluster: { activo: config.clusterEnabled === true, estado: clusterDx.estado, destino: clusterDx.destinoActual || `${config.clusterHost}:${config.clusterPort}`, spots: clusterDx.spots.length },
     pat: { alcanzable: clientePat.estado.alcanzable, url: String(config.patUrl), error: clientePat.estado.error, conectado: clientePat.estado.conectado },
     nmea2000: servicioN2k.estado(),
+    historial: historial.resumen(),
     ais: {
       activo: config.aisEnabled !== false,
       udpPuerto: udpAisPuerto, udpEscuchando: !!udpAis, udpError: udpAisError,
@@ -5700,6 +5760,14 @@ app.post('/api/config', (req, res) => {
     if (updated.forecastDays !== undefined) config.forecastDays = parseInt(updated.forecastDays.toString());
 
     // Local Weather settings
+    if (updated.historialDiasTramas !== undefined) {
+      const n = Math.round(Number(updated.historialDiasTramas));
+      if (Number.isFinite(n) && n >= 1 && n <= 365) config.historialDiasTramas = n;
+    }
+    if (updated.historialDiasRegistro !== undefined) {
+      const n = Math.round(Number(updated.historialDiasRegistro));
+      if (Number.isFinite(n) && n >= 1 && n <= 3650) config.historialDiasRegistro = n;
+    }
     if (updated.avisosUmbralesLocales !== undefined) config.avisosUmbralesLocales = !!updated.avisosUmbralesLocales;
     if (updated.avisosPronostico !== undefined) config.avisosPronostico = !!updated.avisosPronostico;
     if (updated.localThresholdWindKts !== undefined) config.localThresholdWindKts = parseFloat(updated.localThresholdWindKts.toString());
@@ -5842,7 +5910,7 @@ app.post('/api/config', (req, res) => {
         console.error("[SYS CONFIG ERROR] No se pudo escribir sat_config.json:", err);
       }
     } else {
-      addLog('SYS', 'CONFIG', 'DEMO', 'SYSCONF', '[DEMO PÚBLICA] Configuración integral guardada temporalmente en memoria (Bypass de escritura en disco activo por seguridad).', true, 'Simulado en memoria');
+      addLog('SYS', 'CONFIG', 'LOCAL', 'SYSCONF', 'Configuración cambiada solo en memoria: sin sesión de administrador no se escribe en disco y se pierde al reiniciar.', true, 'Solo en memoria');
     }
 
     // Quick async update and scheduler restart
@@ -6318,11 +6386,9 @@ app.post('/api/files/configs', (req, res) => {
     return res.status(400).json({ success: false, error: 'Tipo de configuración inválido.' });
   }
 
-  // Demo Mode check: if no auth header, simulate write
-  const isAuth = isAuthorizedRequest(req);
-  if (!isAuth) {
-    addLog('SYS', 'CONFIG', 'DEMO', 'FILES', `[DEMO PÚBLICA] Simulación de archivo de configuración de ${type} validada con éxito (Escritura real en disco omitida por seguridad).`, true, 'Operación simulada');
-    return res.json({ success: true, path: paths[paths.length - 1] + " (Simulado - Modo Demo)" });
+  // Sin sesión de administrador no se escribe nada (y no se finge que sí)
+  if (!isAuthorizedRequest(req)) {
+    return res.status(403).json({ success: false, error: 'Solo el administrador puede escribir archivos de configuración.' });
   }
 
   let lastError = '';

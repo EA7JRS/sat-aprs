@@ -1,17 +1,17 @@
 {
   "name": "sat-aprs",
   "private": true,
-  "version": "1.36.0",
+  "version": "1.37.0",
   "description": "S.A.T.-APRS: Servicio de Alerta Temprana por APRS",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "NODE_ENV=production node dist/server.cjs",
+    "start": "NODE_ENV=production node --disable-warning=ExperimentalWarning dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"

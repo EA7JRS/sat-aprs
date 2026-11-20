@@ -183,6 +183,24 @@ export class Mensajeria {
     for (const r of this.recibidos) r.leido = true;
   }
 
+  /** Lo que se guarda en el historial para no perderlo al reiniciar. */
+  exportar() {
+    return { recibidos: this.recibidos, enviados: this.enviados, contador: this.contador };
+  }
+
+  /**
+   * Recupera lo guardado. Un mensaje que estaba esperando acuse queda «sin
+   * acuse»: tras un reinicio no se reintenta solo (se puede volver a enviar).
+   */
+  restaurar(d: { recibidos?: MensajeRecibido[]; enviados?: MensajeEnviado[]; contador?: number } | null) {
+    if (!d) return;
+    this.recibidos = (Array.isArray(d.recibidos) ? d.recibidos : []).filter((r) => r && typeof r.de === 'string').slice(0, MAX_GUARDADOS);
+    this.enviados = (Array.isArray(d.enviados) ? d.enviados : []).filter((e) => e && typeof e.para === 'string').slice(0, MAX_GUARDADOS)
+      .map((e) => (e.estado === 'pendiente' ? { ...e, estado: 'sin-acuse' as EstadoEnvio } : e));
+    const maximo = Math.max(0, ...this.enviados.map((e) => Number(e.id) || 0));
+    this.contador = Number.isFinite(Number(d.contador)) ? Math.max(Number(d.contador), maximo) % 99999 : maximo;
+  }
+
   get sinLeer(): number {
     return this.recibidos.filter((r) => !r.leido && !r.boletin).length;
   }

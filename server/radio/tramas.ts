@@ -70,7 +70,15 @@ export function tipoTrama(origen: string, destino: string, info: string): TipoTr
 export class RegistroTramas {
   tramas: TramaAprs[] = [];
   private contador = 0;
+  /** Se llama con cada trama anotada (el historial la guarda en SQLite). */
+  alAnotar: ((t: TramaAprs) => void) | null = null;
   constructor(private max = 500) {}
+
+  /** Carga las tramas guardadas (de la más nueva a la más antigua). */
+  cargar(tramas: TramaAprs[]) {
+    this.tramas = tramas.slice(0, this.max);
+    this.contador = Math.max(this.contador, ...this.tramas.map((t) => t.n), 0);
+  }
 
   anotar(via: ViaTrama, origen: string, destino: string, ruta: string, info: string, extra: { noEmitida?: string | null; canales?: string; cuando?: number } = {}): TramaAprs {
     const t: TramaAprs = {
@@ -89,6 +97,7 @@ export class RegistroTramas {
     }
     this.tramas.unshift(t);
     if (this.tramas.length > this.max) this.tramas.length = this.max;
+    try { this.alAnotar?.(t); } catch { /* el historial no debe parar la recepción */ }
     return t;
   }
 

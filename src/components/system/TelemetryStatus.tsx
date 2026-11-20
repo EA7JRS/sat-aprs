@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { GPSDStatus, NTPSECStatus } from '../../types';
 import EnlacesEquipo from './EnlacesEquipo';
+import HistorialEquipo from './HistorialEquipo';
 
 interface TelemetryProps {
   gpsd: GPSDStatus;
@@ -653,6 +654,7 @@ myloc       lat 4025.00N lon 00342.00W
 
       {/* 2. Enlaces reales de la consola con los programas y equipos de la estación */}
       <EnlacesEquipo />
+      <HistorialEquipo />
 
       {/* 3. DIAGNÓSTICO DEL SISTEMA Y REGISTRO DE SERVICIOS (systemd journald) */}
       <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col gap-4" id="systemd-journald-panel">

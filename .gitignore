@@ -31,3 +31,7 @@ local_weather.json
 sat_avisos.json
 sat_perfil.json
 .build/
+# Historial de la estación (SQLite)
+sat_historial.db
+sat_historial.db-wal
+sat_historial.db-shm

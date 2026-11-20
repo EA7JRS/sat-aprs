@@ -187,7 +187,7 @@ cd /opt/sat-aprs
 #      Debian (respeta /etc/aprx.conf), queda retenido en apt y arrancado
 sudo sh tools/instalar-aprx.sh
 
-# 1.3- Instalar Node.js 20 LTS o superior
+# 1.3- Instalar Node.js 22 (22.13 o posterior: el historial usa node:sqlite)
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 
@@ -212,7 +212,7 @@ Variables principales de `.env` (todas documentadas en `.env.example`):
 | `SAT_TRUST_LOCALHOST` | `on` trata como administrador al navegador del propio equipo, sin token. |
 | `HOST` / `PORT` | Interfaz y puerto de escucha (`HOST=127.0.0.1` tras un proxy con TLS). |
 
-> **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. El perfil del operador, sus estaciones y presets se guardan en la propia estación (`sat_perfil.json`) y se ven igual desde cualquier navegador; los sonidos, en cada navegador. Sin un administrador configurado, la consola funciona en modo demostración: nada se escribe en disco.
+> **Sin cuentas ni nube.** La consola no depende de ningún servicio externo de autenticación o base de datos: el administrador se identifica con el token local (botón «Acceder» de la consola), que funciona también sin Internet. El perfil del operador, sus estaciones y presets se guardan en la propia estación (`sat_perfil.json`) y se ven igual desde cualquier navegador; los sonidos, en cada navegador. Sin un administrador configurado, los cambios de configuración quedan solo en memoria; el historial de tramas y del registro sí se guarda (`sat_historial.db`).
 
 #### 1.7- Perfil de la estación
 
@@ -273,6 +273,7 @@ sudo systemctl stop sat-aprs.service
 # Copia de seguridad de su configuración local
 cp .env .env.bak
 cp sat_config.json sat_config.json.bak 2>/dev/null
+cp sat_historial.db sat_historial.db.bak 2>/dev/null   # con el servicio parado
 
 git pull --ff-only     # si falla, vea la nota sobre el 14-11-2026
 

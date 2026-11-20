@@ -2,6 +2,20 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.37.0] - 2026-11-20
+### Historial en SQLite
+- **`sat_historial.db`** (`server/sistema/historial.ts`, con `node:sqlite` de Node.js 22.13 o posterior, sin dependencias nativas). Sobrevive a un reinicio:
+  - las **tramas** que entran por radio y por APRS-IS y las que salen, con el motivo si no se emitieron;
+  - el **registro** de la consola;
+  - la **mensajería**: recibidos, enviados y el número de mensaje. Lo que estaba pendiente de acuse al apagar queda «sin acuse»: no se reintenta solo.
+- **Retención**: tramas 7 días y registro 30, de serie; se cambia en Sistema → Equipo → Historial en disco. Lo más antiguo se borra cada 6 horas.
+- **Radio → Tramas APRS → Historial**: búsqueda en disco por indicativo o texto, días y vía; exportación a CSV para el administrador (`/api/historial/tramas?formato=csv`). El registro también se exporta (`/api/historial/registro`).
+- Si este Node.js no trae `node:sqlite`, la consola sigue en memoria y lo dice en Sistema → Equipo.
+- **Fuera tres respuestas fingidas** para quien no es administrador: vaciar los registros de un servicio y escribir un archivo `.conf` decían «hecho (simulado)»; ahora responden que hace falta la sesión de administrador. Al cambiar la configuración sin sesión, el registro dice que el cambio queda solo en memoria.
+- Node.js 22.13 o posterior (`engines`); `npm start` oculta el aviso de módulo experimental de `node:sqlite`.
+
+---
+
 ## [v1.36.0] - 2026-11-20
 ### Fuera el agente Python: un solo servicio
 - **Retirado `aprs_sat.py`**, junto con `aprs_proto.py`, `weather_services.py`, `config.ini.example`, sus pruebas, el trabajo de Python de la CI y `npm run test:py`. Todo lo que se emite sale de la consola, por una única cola con su política de emisión.

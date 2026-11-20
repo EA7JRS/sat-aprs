@@ -163,6 +163,9 @@ export interface TelemetryConfig {
   /** Avisos por umbrales de la estación y por el pronóstico de WeatherAPI. */
   avisosUmbralesLocales?: boolean;
   avisosPronostico?: boolean;
+  /** Días que guarda el historial (SQLite): tramas y registro. */
+  historialDiasTramas?: number;
+  historialDiasRegistro?: number;
   localThresholdWindKts?: number;
   localThresholdTempMaxC?: number;
   localThresholdTempMinC?: number;

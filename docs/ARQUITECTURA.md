@@ -139,5 +139,5 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |
 | Salida NMEA 2000 (`server/conectividad/`) | Hecho; PGN contrastados con CANboat en la CI; sin probar con un bus real |
 | Pantallas con partes de demostración | Rehechas en la v1.33.0: Tramas APRS (`server/radio/tramas.ts`), WeeWX (`server/estacion/weewx.ts`), enlaces de Sistema → Equipo (`/api/enlaces`). Fuera el A-GPS simulado. En la v1.34.0 se retiran Coordinación y los paneles de demostración de Pruebas |
-| Persistencia en SQLite | Pendiente (hoy, archivos JSON) |
+| Persistencia en SQLite | Hecho para el historial (`server/sistema/historial.ts`, `sat_historial.db` con `node:sqlite`): tramas, registro y mensajería sobreviven a un reinicio, con retención y exportación a CSV. La configuración y los avisos emitidos siguen en JSON |
 | `server.ts` | Aún contiene el resto de la lógica; se irá vaciando bloque a bloque |

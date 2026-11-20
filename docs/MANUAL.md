@@ -285,7 +285,8 @@ Todo lo que entra y sale, en una lista:
 - **En directo**: las últimas tramas, filtradas por vía (radio, APRS-IS, emitidas), por tipo y por indicativo o texto.
   - Cada trama se explica en castellano: posición a tantos km y rumbo, mensaje para…, boletín, objeto, Mic-E, meteorología, telemetría, estado…
   - Las emitidas dicen por dónde salieron o **por qué no salieron** (emisión desactivada, sin indicativo válido…).
-  - Se guardan las 500 últimas mientras la consola está en marcha.
+  - Aquí están las 500 últimas, también tras un reinicio.
+- **Historial**: todas las tramas guardadas en disco (7 días, ajustable), con búsqueda por indicativo o texto, por días y por vía. Muestra las 300 más recientes que cumplen el filtro; el administrador las exporta a CSV (hasta 5000).
 - **Analizador**: al tocar una trama, o al pegar una a mano, la descompone en sus campos (origen, ruta, por dónde llegó, posición, rumbo y velocidad, PHG, altitud, texto y número de mensaje, telemetría…) y avisa de lo que no cumple: un indicativo no válido, una ruta mala, un texto de más de 67 caracteres… **Solo analiza: no emite nada.**
 
 Los mensajes se envían desde Radio → Principal → Mensajería. Cuando llega un mensaje para la estación, sale un aviso en pantalla; su botón «Responder» lo envía de verdad por la mensajería, con acuse y reintentos.
@@ -319,6 +320,7 @@ El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `c
   - AIS y ADS-B;
   - equipo (rigctld), rotor y cluster DX;
   - Pat y NMEA 2000.
+- **Historial en disco** (`sat_historial.db`): cuántas tramas y entradas del registro guarda, desde cuándo y cuánto ocupa. El administrador cambia los días que se conservan (tramas 7 y registro 30, de serie) y exporta las dos cosas a CSV. Lo más antiguo se borra cada 6 horas.
 - **Perfiles del operador, avisos sonoros y diario de systemd.**
 
 ### Configuración
@@ -519,6 +521,7 @@ Archivos de la consola, en su carpeta de instalación:
 | `sat_config.json` | Ajustes de la consola (los guarda la propia consola) |
 | `sat_perfil.json` | Perfil del operador, estaciones y presets |
 | `sat_avisos.json` | Avisos ya emitidos y cuándo se repiten |
+| `sat_historial.db` (y `-wal`, `-shm`) | Historial en SQLite: tramas, registro de la consola y mensajería, que sobreviven a un reinicio |
 | `config.ini` | Del agente antiguo, ya retirado: se importa una vez si no hay `sat_config.json` |
 
 Ninguno de ellos está en git: las actualizaciones no los tocan.

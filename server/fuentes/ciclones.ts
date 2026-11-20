@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Ciclones tropicales del Centro Nacional de Huracanes (NHC, NOAA).
+// S.A.T.-APRS+ · Ciclones tropicales del Centro Nacional de Huracanes (NHC, NOAA).
 //
 // https://www.nhc.noaa.gov/CurrentStorms.json lista los ciclones activos del
 // Atlántico y del Pacífico oriental y central, con su centro, intensidad
@@ -73,7 +73,7 @@ export function eventosCiclones(j: any, ahora = Date.now()): Evento[] {
 }
 
 export async function descargarCiclones(): Promise<any> {
-  const r = await fetch(URL_NHC, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(URL_NHC, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`NHC respondió ${r.status}`);
   return r.json();
 }

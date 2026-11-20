@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Vigilancia de grupo (estilo ARTS) y emergencia remota (EAI).
+// S.A.T.-APRS+ · Vigilancia de grupo (estilo ARTS) y emergencia remota (EAI).
 //
 // Igual que en el tracker APRS LoRa+ (pages_utils.cpp, «Vigilancia de grupo»):
 //  · Hasta 5 indicativos. Con SSID solo vale ese; sin SSID, cualquiera.

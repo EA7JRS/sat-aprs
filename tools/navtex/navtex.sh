@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 #
-# S.A.T.-APRS · Recepción NAVTEX con un SDR.
+# S.A.T.-APRS+ · Recepción NAVTEX con un SDR.
 #
 #   SDR (USB, 1 kHz por debajo) → navtex_rx_from_file → archivo que lee la consola
 #

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Primera posición escrita en un aviso náutico.
+// S.A.T.-APRS+ · Primera posición escrita en un aviso náutico.
 //
 // Los radioavisos (NAVTEX, SafetyNET) dan las posiciones en texto, casi
 // siempre como grados y minutos: «36-05.2N 005-21.0W», «36 05N 005 21W»,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Zonas de aviso.
+// S.A.T.-APRS+ · Zonas de aviso.
 //
 // Muchos avisos oficiales (los de AEMET, por ejemplo) no afectan a un punto
 // sino a una zona delimitada por un polígono. Aquí está la geometría mínima

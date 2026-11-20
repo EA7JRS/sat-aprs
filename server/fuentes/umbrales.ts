@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Avisos por umbrales (antes los hacía el agente aprs_sat.py).
+// S.A.T.-APRS+ · Avisos por umbrales (antes los hacía el agente aprs_sat.py).
 //
 //  · Umbrales de la estación: con la observación real (estación propia o, si
 //    no hay, la de Internet), viento, calor, helada y lluvia por encima de los
@@ -98,7 +98,7 @@ export function eventosPronosticoWeatherApi(j: any, u: UmbralesPronostico, estac
 export async function descargarWeatherApi(clave: string, lat: number, lon: number, dias: number): Promise<any> {
   const n = Math.min(3, Math.max(1, Math.round(dias) || 3));
   const url = `https://api.weatherapi.com/v1/forecast.json?key=${encodeURIComponent(clave)}&q=${lat.toFixed(4)},${lon.toFixed(4)}&days=${n}&aqi=no&alerts=yes`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`WeatherAPI respondió ${r.status}`);
   return r.json();
 }

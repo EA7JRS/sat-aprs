@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Fuente oficial de sismos.
+// S.A.T.-APRS+ · Fuente oficial de sismos.
 //
 // Descarga los terremotos recientes del Instituto Geográfico Nacional (IGN),
 // con su feed RSS, el USGS y ShakeNet (Raspberry Shake) como respaldos, y los
@@ -41,7 +41,7 @@ const URL_SHAKENET = 'https://quakelink.raspberryshake.org/fdsnws/event/1/query?
 
 async function descargarIgn(): Promise<any[]> {
   const res = await fetch(URL_IGN, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' },
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -70,7 +70,7 @@ export function extraerSismosIgn(texto: string): any[] {
 }
 
 async function descargarIgnRss(): Promise<any[]> {
-  const res = await fetch(URL_IGN_RSS, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(6000) });
+  const res = await fetch(URL_IGN_RSS, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' }, signal: AbortSignal.timeout(6000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return extraerSismosRss(await res.text());
 }
@@ -114,7 +114,7 @@ async function descargarUsgs(): Promise<any[]> {
 
 async function descargarShakeNet(): Promise<any[]> {
   const desde = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 19);
-  const res = await fetch(`${URL_SHAKENET}&starttime=${desde}`, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(`${URL_SHAKENET}&starttime=${desde}`, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' }, signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return extraerSismosFdsnTexto(await res.text());
 }

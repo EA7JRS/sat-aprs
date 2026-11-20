@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 #
-# S.A.T.-APRS · Monta la consola en este equipo y retira los restos de una
+# S.A.T.-APRS+ · Monta la consola en este equipo y retira los restos de una
 # instalación antigua. Se puede repetir sin miedo: solo hace lo que falta.
 #
 #   sudo sh tools/instalar.sh                          instalación nueva
@@ -38,7 +38,7 @@ done
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
 [ "$(id -u)" = 0 ] || { echo "Ejecútelo con sudo: sudo sh tools/instalar.sh" >&2; exit 1; }
-[ -f package.json ] && [ -f server.ts ] || { echo "$DIR no parece la consola S.A.T.-APRS" >&2; exit 1; }
+[ -f package.json ] && [ -f server.ts ] || { echo "$DIR no parece la consola S.A.T.-APRS+" >&2; exit 1; }
 paso() { printf '\n== %s\n' "$*"; }
 
 if [ -n "$DESDE" ]; then
@@ -109,7 +109,7 @@ UNIDAD="$UNIDADES/$SERVICIO"
 NUEVA="$(mktemp)"
 cat > "$NUEVA" <<UNIT
 [Unit]
-Description=S.A.T.-APRS Consola Web
+Description=S.A.T.-APRS+ Consola Web
 After=network-online.target
 Wants=network-online.target
 

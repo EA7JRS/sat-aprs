@@ -36,7 +36,7 @@ class ErrorBoundary extends Component<Props, State> {
           <div className="max-w-2xl w-full bg-slate-900 border border-red-500/30 rounded-2xl p-6 shadow-2xl">
             <div className="flex items-center gap-3 text-red-400 mb-4">
               <span className="p-2 bg-red-950/40 rounded-lg border border-red-500/20">🚨</span>
-              <h1 className="font-sans font-bold text-lg tracking-wide">ERROR EN LA CONSOLA S.A.T.</h1>
+              <h1 className="font-sans font-bold text-lg tracking-wide">ERROR EN LA CONSOLA S.A.T.-APRS+</h1>
             </div>
             
             <p className="text-sm text-slate-300 mb-4">

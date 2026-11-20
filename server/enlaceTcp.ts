@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Cliente TCP de líneas de texto con reconexión.
+// S.A.T.-APRS+ · Cliente TCP de líneas de texto con reconexión.
 //
 // Para los programas del equipo que sirven datos línea a línea por TCP
 // (readsb/dump1090 en SBS, AIS-catcher o un servidor AIS en NMEA).

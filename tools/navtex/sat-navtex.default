@@ -1,4 +1,4 @@
-# S.A.T.-APRS · Recepción NAVTEX (tools/navtex/navtex.sh)
+# S.A.T.-APRS+ · Recepción NAVTEX (tools/navtex/navtex.sh)
 # Equipo: rtlsdr (rtl_fm) o soapy (rx_fm: SDRplay RSPdx-R2 y otros)
 SDR=rtlsdr
 FRECUENCIA=518000

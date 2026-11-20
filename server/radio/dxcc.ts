@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · De un indicativo a su país (entidad DXCC) y su situación.
+// S.A.T.-APRS+ · De un indicativo a su país (entidad DXCC) y su situación.
 //
 // Usa el fichero público cty.dat (country-files.com), el mismo que emplean los
 // programas de concursos: cada entidad con su latitud y longitud y la lista de

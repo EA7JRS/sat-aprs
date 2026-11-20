@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lo que WeeWX da de verdad, para su pantalla.
+// S.A.T.-APRS+ · Lo que WeeWX da de verdad, para su pantalla.
 //
 //  · weewx.conf: tipo de estación, ubicación, intervalo de archivo y base de datos.
 //  · Su base de datos (SQLite, tabla «archive»): las últimas 24 h, hora a

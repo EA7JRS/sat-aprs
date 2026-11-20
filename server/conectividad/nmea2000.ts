@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Emisión NMEA 2000 (SocketCAN).
+// S.A.T.-APRS+ · Emisión NMEA 2000 (SocketCAN).
 //
 // El NUC, con un adaptador CAN (SocketCAN, 250 kbit/s), hace de nodo NMEA 2000 y pone en el bus los datos propios de la
 // estación: posición y hora del GPS (gpsd), meteorología (Internet, Weewx, METAR, GRIB) y, si hay un objetivo o ruta, los

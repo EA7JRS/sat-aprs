@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lo que Direwolf da de verdad, para su pantalla.
+// S.A.T.-APRS+ · Lo que Direwolf da de verdad, para su pantalla.
 //
 //  · Las tramas que pasan por el enlace KISS, en los dos sentidos.
 //  · Su registro CSV (opción LOGDIR de direwolf.conf, un archivo por día):

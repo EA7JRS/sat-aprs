@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Conversión de avisos a tramas APRS.
+// S.A.T.-APRS+ · Conversión de avisos a tramas APRS.
 //
 // Cada aviso produce hasta dos tramas:
 //   - un OBJETO con la posición del suceso, su símbolo y sus datos, que

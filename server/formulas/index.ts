@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// Biblioteca de fórmulas de S.A.T.-APRS.
+// Biblioteca de fórmulas de S.A.T.-APRS+.
 //
 // geo, astro, wxcalc, wind, motion, units y wmm son el porte fiel del núcleo
 // del plotter APRS LoRa+ (mismos nombres y mismos resultados, comprobados

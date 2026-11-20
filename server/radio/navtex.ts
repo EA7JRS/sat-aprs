@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · NAVTEX recibido con un SDR propio.
+// S.A.T.-APRS+ · NAVTEX recibido con un SDR propio.
 //
 // La cadena va fuera de la consola (tools/navtex/navtex.sh): rtl_fm (RTL-SDR)
 // o rx_fm (SoapySDR: SDRplay RSPdx-R2 y otros) en USB a 1 kHz por debajo de

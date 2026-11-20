@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 /**
- * GEOGRAPHIC UTILITIES FOR APRS S.A.T.
+ * GEOGRAPHIC UTILITIES FOR S.A.T.-APRS+
  * Uniform Distance (Haversine) and Bearing (Rumbo) computations.
  */
 

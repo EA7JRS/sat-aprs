@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Calidad del aire en la estación (CAMS, vía Open-Meteo).
+// S.A.T.-APRS+ · Calidad del aire en la estación (CAMS, vía Open-Meteo).
 //
 // El índice europeo de calidad del aire (EAQI) que calcula el servicio
 // Copernicus CAMS para el punto de la estación. Es un dato de modelo, no de un

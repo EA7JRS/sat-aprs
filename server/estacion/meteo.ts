@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Parte meteorológico de la estación por APRS.
+// S.A.T.-APRS+ · Parte meteorológico de la estación por APRS.
 //
 // Una observación (de la estación propia o de una fuente de Internet) se
 // convierte en el parte meteorológico APRS con posición. Los datos que falten

@@ -1,6 +1,6 @@
-# S.A.T.-APRS · Recepción NAVTEX con un SDR
+# S.A.T.-APRS+ · Recepción NAVTEX con un SDR
 [Unit]
-Description=S.A.T.-APRS: recepcion NAVTEX con SDR
+Description=S.A.T.-APRS+: recepcion NAVTEX con SDR
 After=network.target
 
 [Service]

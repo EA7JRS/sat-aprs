@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Mensajes de tsunami de tsunami.gov (NOAA): los feeds Atom del
+// S.A.T.-APRS+ · Mensajes de tsunami de tsunami.gov (NOAA): los feeds Atom del
 // PTWC (Pacífico, Caribe y resto del mundo) y del NTWC (EE. UU. y Canadá).
 // Es el mismo lector que el de la app Android y el plotter APRS LoRa+
 // (OfficialAlerts.tsunamiEntry). La categoría la da el centro de alerta:
@@ -82,7 +82,7 @@ export async function descargarTsunami(): Promise<MensajeTsunami[]> {
   let fallos = 0;
   for (const url of URL_TSUNAMI) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+      const r = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
       if (!r.ok) throw new Error(String(r.status));
       todos.push(...leerFeedTsunami(await r.text()));
     } catch { fallos++; }

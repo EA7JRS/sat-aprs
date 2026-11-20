@@ -128,7 +128,7 @@ export default function TelemetryStatus({ gpsd, ntp, config, configVerification,
 
   const handleLoadTemplate = () => {
     const defaultDirewolf = `# =====================================================================
-# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T. DEBIAN 13)
+# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T.-APRS+ DEBIAN 13)
 # =====================================================================
 ADEVICE plughw:1,0
 CHANNEL 0
@@ -136,11 +136,11 @@ MYCALL EA1URG-13
 MODEM 1200
 PTT /dev/ttyUSB0 RTS
 GPSD localhost
-CBEACON dest=APDIW1 info="S.A.T. NODO DE ALERTA VHF [Debian 13 Core]" every=10
+CBEACON dest=APDIW1 info="S.A.T.-APRS+ NODO DE ALERTA VHF [Debian 13 Core]" every=10
 `;
 
     const defaultAprx = `# ===============================================
-# ARCHIVO DE CONFIGURACIÓN APRX S.A.T. EMERGENCIAS
+# ARCHIVO DE CONFIGURACIÓN APRX S.A.T.-APRS+ EMERGENCIAS
 # ===============================================
 mycall      EA1URG-10
 myloc       lat 4025.00N lon 00342.00W
@@ -208,7 +208,7 @@ myloc       lat 4025.00N lon 00342.00W
             <Layers className="text-pink-400 stroke-[1.5]" size={20} />
             <div>
               <h2 className="font-sans font-black text-sm tracking-wider uppercase text-pink-400 flex items-center gap-1.5">
-                Sincronizador de Archivos de Configuración S.A.T.
+                Sincronizador de Archivos de Configuración S.A.T.-APRS+
               </h2>
               <p className="text-[10px] text-slate-500 font-mono mt-0.5 leading-none">
                 Verificación automática de existencia y validez de ficheros tras reinicios del NUC

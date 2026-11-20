@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lo que aprx da de verdad, para su pantalla.
+// S.A.T.-APRS+ · Lo que aprx da de verdad, para su pantalla.
 //
 //  · aprx.conf: indicativo, conexión a APRS-IS, interfaces, digipeater, balizas.
 //  · Su registro de radio (opción rflog de <logging>): una línea por trama,

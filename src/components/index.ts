@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
-// Unified public exports for S.A.T. APRS Dashboard components
+// Unified public exports for S.A.T.-APRS+ components
 
 // Emergency & Response System Components
 

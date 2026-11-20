@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 /**
- * TYPES FOR APRS S.A.T. NUC EMER CONSOLE
+ * TYPES FOR S.A.T.-APRS+ NUC EMER CONSOLE
  * Civil Protection Emergency & Radiocommunication Console
  * Expanded with: AIS (aiscatcher) & Pat (AX.25 Winlink)
  */

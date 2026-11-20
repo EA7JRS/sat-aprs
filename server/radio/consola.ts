@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Consola de comandos de Radio · Principal.
+// S.A.T.-APRS+ · Consola de comandos de Radio · Principal.
 //
 // Todo lo que hacen los paneles también se puede escribir: «módulo orden
 // argumentos». Aquí está la lectura de la línea y la ayuda; quien ejecuta es

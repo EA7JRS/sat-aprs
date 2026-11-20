@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 #
-# S.A.T.-APRS · Instala aprx desde el fork EA7JRS/aprx (compila en Debian 13).
+# S.A.T.-APRS+ · Instala aprx desde el fork EA7JRS/aprx (compila en Debian 13).
 #
 # Compila el paquete .deb del fork, lo instala en lugar del aprx de Debian
 # (respetando /etc/aprx.conf si ya existe), lo retiene para que apt no lo

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Modelo común de aviso.
+// S.A.T.-APRS+ · Modelo común de aviso.
 //
 // Toda fuente (oficial de Internet o recibida por RF) entrega sus avisos en
 // este formato. A partir de aquí el sistema ya no sabe de dónde vienen: las

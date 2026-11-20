@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Conexión permanente con APRS-IS.
+// S.A.T.-APRS+ · Conexión permanente con APRS-IS.
 //
 // Una sola sesión para recibir (con filtro de servidor) y para emitir. Tener
 // una única sesión importa: los servidores APRS-IS cierran la sesión anterior

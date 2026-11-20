@@ -451,7 +451,7 @@ export default function UserProfileManager({
       name: prName.trim(),
       callsign: prCallsign.trim().toUpperCase(),
       ssid: prSsid,
-      aprsStatusComment: prBeacon.trim() || '📡 S.A.T. Estación Auxiliar • REMER',
+      aprsStatusComment: prBeacon.trim() || '📡 S.A.T.-APRS+ Estación Auxiliar • REMER',
       updatedAt: new Date().toISOString()
     };
 
@@ -521,10 +521,10 @@ export default function UserProfileManager({
         createdAt: new Date().toISOString()
       },
       {
-        name: 'iGate Redundante S.A.T.',
+        name: 'iGate Redundante S.A.T.-APRS+',
         callsign: 'EA4SAT',
         ssid: '10',
-        aprsStatusComment: '📡 PILAR IV: Red S.A.T. • iGate RX/TX Internet Gateway Activo',
+        aprsStatusComment: '📡 PILAR IV: Red S.A.T.-APRS+ • iGate RX/TX Internet Gateway Activo',
         createdAt: new Date().toISOString()
       },
       {
@@ -1253,7 +1253,7 @@ export default function UserProfileManager({
               <form onSubmit={handleSavePreset} className="bg-slate-900/40 border-2 border-emerald-500/10 rounded-xl p-4 space-y-4 animate-fade-in" id="preset-creation-form">
                 <div className="text-emerald-400 font-black flex items-center gap-1.5 text-[10px] uppercase border-b border-slate-900 pb-2">
                   <PlusCircle size={14} />
-                  {editingPresetId ? 'Modificar Preset de Estación' : 'Crear Nuevo Preset de Operación S.A.T.'}
+                  {editingPresetId ? 'Modificar Preset de Estación' : 'Crear Nuevo Preset de Operación S.A.T.-APRS+'}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1314,7 +1314,7 @@ export default function UserProfileManager({
                         required
                         value={prBeacon}
                         onChange={(e) => setPrBeacon(e.target.value)}
-                        placeholder="e.g. 📡 S.A.T. Nodo iGate Activo | Soporte Comunicaciones Emergencia"
+                        placeholder="e.g. 📡 S.A.T.-APRS+ Nodo iGate Activo | Soporte Comunicaciones Emergencia"
                         maxLength={64}
                         className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500/30 placeholder-slate-800"
                       />
@@ -1324,9 +1324,9 @@ export default function UserProfileManager({
                     <div className="pt-2 flex flex-wrap gap-1.5">
                       <span className="text-[9px] text-slate-500 uppercase flex items-center font-bold">Plantillas Rápidas:</span>
                       {[
-                        "📡 PILAR IV: Red S.A.T. • Operativo en Emergencias",
+                        "📡 PILAR IV: Red S.A.T.-APRS+ • Operativo en Emergencias",
                         "🚒 EMCOM Unidad Móvil de Despliegue Rápido",
-                        "⛈️ S.A.T. WX Nodo Meteorológico de Respaldo",
+                        "⛈️ S.A.T.-APRS+ WX Nodo Meteorológico de Respaldo",
                         "⛺ CECOP Coordinación y Telecomunicaciones Civiles REMER"
                       ].map((tpl) => (
                         <button

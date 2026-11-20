@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Estado real del servidor de hora (ntpsec).
+// S.A.T.-APRS+ · Estado real del servidor de hora (ntpsec).
 //
 // La estación es además el servidor NTP de la red, disciplinado por el GPS
 // (gpsd + PPS). Aquí se consulta el estado real con `ntpq`; si no se puede

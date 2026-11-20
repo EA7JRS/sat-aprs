@@ -1,4 +1,4 @@
-# S.A.T.-APRS · Permisos del usuario de servicio (lo instala tools/instalar.sh
+# S.A.T.-APRS+ · Permisos del usuario de servicio (lo instala tools/instalar.sh
 # en /etc/sudoers.d/sat-aprs, cambiando USUARIO por el usuario real).
 #
 # Lo justo para que la consola lea y escriba la configuración de los servicios

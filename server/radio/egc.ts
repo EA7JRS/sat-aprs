@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Inmarsat-C EGC (SafetyNET) recibido con un SDR propio.
+// S.A.T.-APRS+ · Inmarsat-C EGC (SafetyNET) recibido con un SDR propio.
 //
 // El descodificador va fuera de la consola: InmarScope (GPL-3.0, RTL-SDR,
 // SDRplay, Airspy…) manda cada mensaje EGC por UDP como una línea JSON, el

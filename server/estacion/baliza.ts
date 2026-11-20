@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Baliza de posición de la propia estación.
+// S.A.T.-APRS+ · Baliza de posición de la propia estación.
 //
 // Construye, a partir del perfil de la estación, la trama de posición APRS
 // («!lat/lon» + símbolo + extensión PHG + comentario). Funciones puras: quién

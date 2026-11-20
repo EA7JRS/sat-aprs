@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Tramas APRS: todo lo que entra y sale, en una lista.
+// S.A.T.-APRS+ · Tramas APRS: todo lo que entra y sale, en una lista.
 //
 //  · Entra por radio (KISS de Direwolf) y por APRS-IS; sale por la cola de
 //    emisión (con el resultado: emitida o por qué no).

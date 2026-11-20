@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · EFFIS (Sistema Europeo de Información sobre Incendios
+// S.A.T.-APRS+ · EFFIS (Sistema Europeo de Información sobre Incendios
 // Forestales, Copernicus EMS). Datos CC BY 4.0, sin clave.
 //
 //  · Peligro de incendio: el índice FWI oficial de hoy y de los dos días
@@ -114,7 +114,7 @@ export function eventosPeligroIncendio(dias: PeligroDia[], estacion: { lat: numb
 }
 
 async function pedir(url: string, ms: number): Promise<{ tipo: string; cuerpo: Buffer }> {
-  const r = await fetch(url, { signal: AbortSignal.timeout(ms), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(url, { signal: AbortSignal.timeout(ms), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`EFFIS respondió ${r.status}`);
   return { tipo: r.headers.get('content-type') ?? '', cuerpo: Buffer.from(await r.arrayBuffer()) };
 }

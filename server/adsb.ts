@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lectura de ADS-B en formato SBS-1 (BaseStation).
+// S.A.T.-APRS+ · Lectura de ADS-B en formato SBS-1 (BaseStation).
 //
 // Es el texto que readsb, dump1090 y derivados sirven en el puerto 30003:
 // una línea «MSG,n,...» por mensaje. Cada tipo trae una parte (matrícula de

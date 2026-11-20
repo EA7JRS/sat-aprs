@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lectura de AIS (sentencias NMEA !AIVDM / !AIVDO).
+// S.A.T.-APRS+ · Lectura de AIS (sentencias NMEA !AIVDM / !AIVDO).
 //
 // Es lo que entregan AIS-catcher, rtl_ais, un receptor AIS o un servidor como
 // AISHub, por UDP o TCP. Se leen los mensajes de posición (1, 2, 3, 18, 19 y

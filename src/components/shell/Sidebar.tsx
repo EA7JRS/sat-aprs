@@ -28,7 +28,7 @@ export default function Sidebar({ actual, onIr, avisosActivos, version }: Props)
       <div className="flex items-center gap-2.5 px-1 lg:px-2 shrink-0">
         <img src="/aprs-lora-plus.png" alt="" className="h-8 w-8 rounded-md" />
         <div className="hidden sm:block leading-tight">
-          <div className="font-bold text-lg tracking-wide text-slate-100">S.A.T.-APRS</div>
+          <div className="font-bold text-lg tracking-wide text-slate-100">S.A.T.-APRS+</div>
           <div className="text-xs text-slate-400">APRS LoRa+</div>
         </div>
       </div>

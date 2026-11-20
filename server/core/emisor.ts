@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Cola única de emisión.
+// S.A.T.-APRS+ · Cola única de emisión.
 //
 // Todas las transmisiones de la consola pasan por aquí, de una en una y con
 // una pausa entre ellas, para no pisar el canal de radio con ráfagas cuando

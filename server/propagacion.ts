@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Estado de las bandas de HF.
+// S.A.T.-APRS+ · Estado de las bandas de HF.
 //
 // A partir de tres frecuencias se decide qué bandas sirven ahora:
 //   - foF2: frecuencia crítica de la capa F2 medida por una ionosonda. Lo que
@@ -159,7 +159,7 @@ export function ionosondaCercana(
 /** Descarga las ionosondas. null si el servicio no responde. */
 export async function descargarIonosondas(): Promise<Ionosonda[] | null> {
   try {
-    const res = await fetch(URL_IONOSONDAS, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(12000) });
+    const res = await fetch(URL_IONOSONDAS, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' }, signal: AbortSignal.timeout(12000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const lista = leerIonosondas(await res.json());
     return lista.length > 0 ? lista : null;

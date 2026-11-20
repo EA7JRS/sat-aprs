@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Cliente de cluster DX (telnet).
+// S.A.T.-APRS+ · Cliente de cluster DX (telnet).
 //
 // Se conecta a un nodo de cluster (DXSpider, AR-Cluster, CC Cluster), se
 // identifica con el indicativo de la estación y recoge los spots según

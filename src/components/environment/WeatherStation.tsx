@@ -221,7 +221,7 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
             </div>
 
             <div className="mt-3 p-2 bg-slate-950 rounded border border-slate-850 text-[9px] text-slate-500 leading-normal">
-              * Nota: El modelo regional Harmonie-Arome de AEMET opera con celdas de 2.5km. Las discrepancias menores con la estación física local se deben al gradiente térmico de la ladera del centro operativo S.A.T.
+              * Nota: El modelo regional Harmonie-Arome de AEMET opera con celdas de 2.5km. Las discrepancias menores con la estación física local se deben al gradiente térmico de la ladera del centro operativo S.A.T.-APRS+
             </div>
           </div>
         </div>
@@ -535,7 +535,7 @@ export default function WeatherStation({ weather, iqair }: WeatherProps) {
 
               <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-[10px] text-slate-400 leading-normal">
                 <span className="text-amber-500 font-bold block mb-0.5 font-sans">Origen API unificado:</span>
-                <span>WeeWX unifica los datos de <strong>OpenWeatherMap</strong> y <strong>IQAir</strong> para simular una estación física local robusta en el nodo Debian 13 del S.A.T.</span>
+                <span>WeeWX unifica los datos de <strong>OpenWeatherMap</strong> y <strong>IQAir</strong> para simular una estación física local robusta en el nodo Debian 13 del S.A.T.-APRS+</span>
               </div>
             </div>
 

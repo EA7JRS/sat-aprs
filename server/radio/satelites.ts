@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Satélites: elementos orbitales (TLE), posición y pasos.
+// S.A.T.-APRS+ · Satélites: elementos orbitales (TLE), posición y pasos.
 //
 // Usa el mismo archivo que el tracker y la app APRS LoRa+ (`sats_all.txt`, en
 // la rama `satdata` del repositorio APRS-LoRa-Plus): se genera cada día con

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Lectura de la posición de una trama APRS recibida.
+// S.A.T.-APRS+ · Lectura de la posición de una trama APRS recibida.
 //
 // Entiende los formatos con posición del protocolo: posición sin comprimir y
 // comprimida (con o sin hora), objetos, ítems, Mic-E y tramas de terceros.

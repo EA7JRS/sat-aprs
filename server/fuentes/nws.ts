@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Avisos del Servicio Meteorológico Nacional de EE. UU. (NWS):
+// S.A.T.-APRS+ · Avisos del Servicio Meteorológico Nacional de EE. UU. (NWS):
 // https://api.weather.gov/alerts/active?point=lat,lon (GeoJSON, sin clave).
 // Son los avisos en vigor para el punto de la estación: tornados, tormentas
 // severas, huracanes, inundaciones… Solo cubre EE. UU. y sus territorios; en
@@ -45,7 +45,7 @@ export function eventosNws(j: any, estacion: { lat: number; lon: number }, ahora
 }
 
 export async function descargarNws(lat: number, lon: number): Promise<any> {
-  const r = await fetch(URL_NWS(lat, lon), { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS (github.com/EA7JRS/sat-aprs)', Accept: 'application/geo+json' } });
+  const r = await fetch(URL_NWS(lat, lon), { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS+ (github.com/EA7JRS/sat-aprs)', Accept: 'application/geo+json' } });
   // Fuera de su zona de cobertura la API rechaza el punto: no es un fallo, es que no hay avisos
   if (r.status === 400 || r.status === 404) return { features: [], fueraDeCobertura: true };
   if (!r.ok) throw new Error(`NWS respondió ${r.status}`);

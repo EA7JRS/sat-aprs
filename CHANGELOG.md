@@ -2,6 +2,13 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.45.0] - 2026-11-20
+### El proyecto pasa a llamarse S.A.T.-APRS+
+- Nombre visible nuevo en la consola, el README, el manual, la arquitectura y los textos por defecto: **S.A.T.-APRS+**, en línea con el ecosistema APRS LoRa+.
+- No cambia nada de la instalación: el repositorio, el servicio `sat-aprs`, la carpeta `/opt/sat-aprs`, los archivos `sat_*.json` y la identificación ante APRS-IS (`vers SAT-APRS`) siguen igual. Basta con actualizar.
+
+---
+
 ## [v1.44.7] - 2026-11-20
 ### WeeWX en modo simulador no cuenta como estación
 - En la primera prueba real, WeeWX estaba con el controlador `Simulator` y la consola tomaba sus valores inventados como medida propia. Ahora, si `weewx.conf` dice `station_type = Simulator`, la consola **no usa** esos datos (ni en el parte meteorológico, ni en los umbrales, ni como observación propia), lo anota en el registro y lo avisa en rojo en Estación → WeeWX.

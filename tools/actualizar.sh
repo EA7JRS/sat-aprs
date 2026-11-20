@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 #
-# S.A.T.-APRS · Actualiza la consola con una orden (pensada para SSH).
+# S.A.T.-APRS+ · Actualiza la consola con una orden (pensada para SSH).
 #
 #   sudo sh tools/actualizar.sh               actualiza a lo último de la rama
 #   sudo sh tools/actualizar.sh --comprobar   dice si hay versión nueva y no toca nada

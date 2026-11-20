@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Primitivas del protocolo APRS / AX.25 / KISS para la consola.
+// S.A.T.-APRS+ · Primitivas del protocolo APRS / AX.25 / KISS para la consola.
 // Funciones puras (sin red ni estado) para poder probarlas de forma aislada.
 
 /** Destino (TOCALL). «APZxxx» es el rango reservado a software experimental. */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Seguimiento del rotor, con la estación fija o en movimiento.
+// S.A.T.-APRS+ · Seguimiento del rotor, con la estación fija o en movimiento.
 //
 // Mismo planteamiento que la caja APRS LoRa+ Rotor, el tracker y la app:
 //  · Los ángulos se calculan desde la posición actual de la estación: la fija

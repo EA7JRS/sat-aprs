@@ -421,7 +421,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
   const [aprsSmartHighInterval, setAprsSmartHighInterval] = useState<number>(config.aprsSmartHighInterval !== undefined ? config.aprsSmartHighInterval : 5);
   const [aprsSmartTurnAngle, setAprsSmartTurnAngle] = useState<number>(config.aprsSmartTurnAngle !== undefined ? config.aprsSmartTurnAngle : 28);
   const [aprsSmartSlope, setAprsSmartSlope] = useState<number>(config.aprsSmartSlope !== undefined ? config.aprsSmartSlope : 120);
-  const [aprsStatusComment, setAprsStatusComment] = useState<string>(config.aprsStatusComment || '📡 S.A.T. Estación Principal | Coord. Emergencias REMER');
+  const [aprsStatusComment, setAprsStatusComment] = useState<string>(config.aprsStatusComment || '📡 S.A.T.-APRS+ Estación Principal | Coord. Emergencias REMER');
   const [aprsMiceMsgCode, setAprsMiceMsgCode] = useState<number>(config.aprsMiceMsgCode !== undefined ? config.aprsMiceMsgCode : 1);
   const [aprsMiceOffset, setAprsMiceOffset] = useState<boolean>(config.aprsMiceOffset !== undefined ? config.aprsMiceOffset : false);
   const [aprsFilterQuery, setAprsFilterQuery] = useState<string>(config.aprsFilterQuery || 'm/150 t/pms');
@@ -741,7 +741,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
       // Move back to general tab to see changes or files
       setTimeout(() => setMessage(null), 8000);
     } else {
-      setMessage({ type: 'error', text: 'Error al persistir la configuración en la Intel NUC del S.A.T.' });
+      setMessage({ type: 'error', text: 'Error al persistir la configuración en la Intel NUC del S.A.T.-APRS+' });
     }
     setIsSaving(false);
   };
@@ -795,7 +795,7 @@ export default function Configurator({ config, onSaveConfig, gpsd, initialTab }:
   // Generate dynamic direwolf.conf file contents
   const generateDirewolfConf = () => {
     return `# =====================================================================
-# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T. DEBIAN 13)
+# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T.-APRS+ DEBIAN 13)
 # =====================================================================
 # Indicativo del Nodo Operativo: ${callsign.toUpperCase().trim() || 'EA1URG-13'}
 
@@ -832,8 +832,8 @@ LOGDIR /var/log/direwolf
 # =====================================================================
 
 [Station]
-    # Nombre y ubicación de la estación meteorológica del S.A.T.
-    location = "S.A.T. Alerta Temprana"
+    # Nombre y ubicación de la estación meteorológica del S.A.T.-APRS+
+    location = "S.A.T.-APRS+ Alerta Temprana"
     latitude = ${fallbackLat}
     longitude = ${fallbackLon}
     altitude = 450, meter
@@ -899,7 +899,7 @@ LOGDIR /var/log/direwolf
           </div>
           <div>
             <h2 className="font-sans font-black text-xs tracking-widest uppercase text-slate-200">
-              Centro de Configuración y Gestión de Motores S.A.T.
+              Centro de Configuración y Gestión de Motores S.A.T.-APRS+
             </h2>
             <p className="text-[10px] text-slate-500 font-mono mt-0.5">
               Administración de Sockets AX.25 Direwolf • Estaciones de Datos WeeWX • Claves de Enlace
@@ -1540,13 +1540,13 @@ LOGDIR /var/log/direwolf
           <div className="space-y-4 font-sans">
             <div className="flex items-center gap-2 text-slate-400 border-b border-slate-900 pb-2">
               <Info size={14} className="text-amber-500" />
-              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Información de Identidad Operativa S.A.T. (REMER)</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Información de Identidad Operativa S.A.T.-APRS+ (REMER)</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Group Unit Identity info */}
               <div className="bg-slate-900/40 border border-slate-900 p-4 rounded-xl space-y-3.5">
-                <span className="text-[9.5px] text-amber-500 uppercase font-black tracking-widest font-mono block">1. Identificación RF de S.A.T.</span>
+                <span className="text-[9.5px] text-amber-500 uppercase font-black tracking-widest font-mono block">1. Identificación RF de S.A.T.-APRS+</span>
                 
                 <div className="space-y-1.5">
                   <label htmlFor="input-callsign" className="text-slate-400 text-[10px] font-mono">Indicativo de Llamada / Callsign:</label>
@@ -1902,7 +1902,7 @@ LOGDIR /var/log/direwolf
                     <option value="weewx.drivers.fousb">Fine Offset USB (PCE-FWS20 / WH1080)</option>
                     <option value="weewx.drivers.vantage">Davis Vantage Pro2 / Vantage Vue</option>
                     <option value="weewx.drivers.rtldavis">RTL-SDR Davis SDR Raw RF receiver</option>
-                    <option value="weewx.drivers.simulator">Software Simulator (Pruebas de S.A.T.)</option>
+                    <option value="weewx.drivers.simulator">Software Simulator (Pruebas de S.A.T.-APRS+)</option>
                   </select>
                 </div>
 
@@ -1971,7 +1971,7 @@ LOGDIR /var/log/direwolf
           <div className="space-y-4 font-sans">
             <div className="flex items-center gap-2 text-slate-400 border-b border-slate-900 pb-2">
               <Key size={14} className="text-zinc-200" />
-              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Consola de Claves de S.A.T. (API Keys)</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Consola de Claves de S.A.T.-APRS+ (API Keys)</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono">
@@ -2245,7 +2245,7 @@ LOGDIR /var/log/direwolf
           <div className="space-y-4 font-sans text-slate-200">
             <div className="flex items-center gap-2 text-slate-400 border-b border-slate-900 pb-2">
               <Bell size={14} className="text-amber-500" />
-              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Preferencias de Alertas y Notificaciones S.A.T.</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider font-mono">Preferencias de Alertas y Notificaciones S.A.T.-APRS+</span>
             </div>
 
             <div className="bg-slate-900/40 border border-slate-900 p-4 rounded-xl space-y-4">

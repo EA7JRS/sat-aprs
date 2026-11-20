@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Mensajería APRS de la estación.
+// S.A.T.-APRS+ · Mensajería APRS de la estación.
 //
 // Lee los mensajes dirigidos a la estación (por radio o por APRS-IS), contesta
 // con el acuse de recibo, y lleva los que envía el operador: número de

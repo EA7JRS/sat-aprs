@@ -57,7 +57,7 @@ export default function AlarmThresholds({ config, onSaveConfig, currentUser }: A
           </h3>
         </div>
         <span className="bg-red-950/40 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-900/30 font-black tracking-widest uppercase">
-          REMER S.A.T.
+          REMER S.A.T.-APRS+
         </span>
       </div>
 
@@ -216,7 +216,7 @@ export default function AlarmThresholds({ config, onSaveConfig, currentUser }: A
               Emitir Boletín de Pronóstico Meteorológico (BLN3)
             </label>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              Transmite periódicamente un boletín con el pronóstico de previsión de 3 a 5 días (<span className="text-blue-400 font-semibold font-mono">::BLN3</span>) para operadores civiles de la red REMER S.A.T.
+              Transmite periódicamente un boletín con el pronóstico de previsión de 3 a 5 días (<span className="text-blue-400 font-semibold font-mono">::BLN3</span>) para operadores civiles de la red REMER S.A.T.-APRS+
             </p>
           </div>
         </div>

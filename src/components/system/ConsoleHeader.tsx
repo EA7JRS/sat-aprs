@@ -273,7 +273,7 @@ export default function ConsoleHeader({
         />
         <div>
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <h1 className="font-sans font-extrabold text-lg tracking-wider text-emerald-400">APRS S.A.T.</h1>
+            <h1 className="font-sans font-extrabold text-lg tracking-wider text-emerald-400">S.A.T.-APRS+</h1>
             <span className="text-[10px] bg-slate-950 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/40 rounded font-mono font-bold tracking-widest">NUC v3.0 DEBIAN 13</span>
             {isAdmin ? (
               <span className="text-[9.5px] bg-emerald-950/80 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/40 rounded font-mono font-bold tracking-wide flex items-center gap-1">
@@ -429,7 +429,7 @@ export default function ConsoleHeader({
                     ? 'bg-emerald-950/50 text-emerald-400 border-emerald-900/50' 
                     : 'bg-slate-900 text-slate-500 border-slate-800'
                 }`}>
-                  {isRealData ? '🛰️ FEED REAL S.A.T.' : '🔮 SIMULADO'}
+                  {isRealData ? '🛰️ FEED REAL S.A.T.-APRS+' : '🔮 SIMULADO'}
                 </span>
               </div>
               

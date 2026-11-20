@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Fuente oficial de avisos meteorológicos (AEMET, Meteoalerta).
+// S.A.T.-APRS+ · Fuente oficial de avisos meteorológicos (AEMET, Meteoalerta).
 //
 // AEMET publica sus avisos de fenómenos adversos como documentos CAP 1.2, uno
 // por zona y fenómeno, y un índice RSS que los enlaza. No hace falta clave.
@@ -201,7 +201,7 @@ export function avisoAEvento(a: AvisoAemet): Evento {
 
 async function descargarTexto(url: string, tiempoMs: number): Promise<string> {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' },
     signal: AbortSignal.timeout(tiempoMs),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

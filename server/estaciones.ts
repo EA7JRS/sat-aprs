@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Estaciones y objetos APRS oídos, para la capa APRS del mapa.
+// S.A.T.-APRS+ · Estaciones y objetos APRS oídos, para la capa APRS del mapa.
 //
 // Guarda la última posición de cada uno, por dónde llegó (RF o APRS-IS) y
 // cuándo. Vive en memoria: es una foto de lo que se oye, no un archivo.

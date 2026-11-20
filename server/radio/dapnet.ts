@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Envío de mensajes a buscapersonas por DAPNET (hampager.de).
+// S.A.T.-APRS+ · Envío de mensajes a buscapersonas por DAPNET (hampager.de).
 //
 // DAPNET es la red de buscapersonas de radioaficionados. Se envía con la
 // cuenta del operador (usuario y contraseña de hampager.de). Un mensaje admite

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Servicio de emisión NMEA 2000: envuelve EmisorN2k y TransporteSocketCan, expone estado y API, y toma los
+// S.A.T.-APRS+ · Servicio de emisión NMEA 2000: envuelve EmisorN2k y TransporteSocketCan, expone estado y API, y toma los
 // datos de la estación (posición de gpsd, meteo de la estación/Internet) por funciones que le pasa server.ts.
 
 import express from 'express';

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Boyas y estaciones costeras más cercanas, en tiempo real.
+// S.A.T.-APRS+ · Boyas y estaciones costeras más cercanas, en tiempo real.
 //
 // El NDBC de la NOAA publica, sin clave, la última observación de todas las
 // boyas y estaciones costeras que distribuye (las suyas y las de otros países

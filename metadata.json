@@ -1,5 +1,5 @@
 {
-  "name": "S.A.T. APRS Dashboard",
+  "name": "S.A.T.-APRS+",
   "description": "Consola avanzada para telecomunicaciones de emergencia por radio APRS y telemetría para radioaficionados integrados en IARU / ITU.",
   "requestFramePermissions": [
     "geolocation"

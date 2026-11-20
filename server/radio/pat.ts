@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Winlink a través de Pat (getpat.io).
+// S.A.T.-APRS+ · Winlink a través de Pat (getpat.io).
 //
 // Pat ya hace todo el trabajo (buzón, sesiones B2F, ARDOP, VARA, AX.25,
 // telnet a los CMS); aquí solo se habla con su API HTTP («pat http», de

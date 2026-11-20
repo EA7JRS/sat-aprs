@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Autenticación de la API.
+// S.A.T.-APRS+ · Autenticación de la API.
 //
 // La consola gobierna una estación de radio y escribe en el disco del equipo,
 // así que el servidor comprueba quién es el administrador; nunca se confía en

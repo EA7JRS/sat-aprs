@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Radiactividad ambiental de EURDEP (red europea de intercambio
+// S.A.T.-APRS+ · Radiactividad ambiental de EURDEP (red europea de intercambio
 // de datos radiológicos), publicada como datos abiertos por la Oficina Federal
 // de Protección Radiológica de Alemania (BfS):
 //   WFS https://www.imis.bfs.de/ogc/opendata/ows, capa opendata:eurdep_latestValue
@@ -88,7 +88,7 @@ export async function descargarEurdep(paises: string[]): Promise<Sonda[]> {
     service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: 'opendata:eurdep_latestValue',
     outputFormat: 'application/json', maxFeatures: '5000', CQL_FILTER: ps.length > 1 ? `(${filtro})` : filtro,
   });
-  const r = await fetch(`${URL_EURDEP}?${q}`, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(`${URL_EURDEP}?${q}`, { signal: AbortSignal.timeout(30_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`EURDEP (BfS) respondió ${r.status}`);
   return leerEurdep(await r.json());
 }

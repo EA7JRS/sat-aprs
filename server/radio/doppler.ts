@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Corrección de Doppler continua durante un paso de satélite.
+// S.A.T.-APRS+ · Corrección de Doppler continua durante un paso de satélite.
 //
 // Con el transmisor elegido, el equipo se resintoniza mientras dura el paso:
 // la bajada a f·(1 − v/c) y, si el equipo acepta subida separada (split), la

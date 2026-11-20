@@ -428,7 +428,7 @@ let config: TelemetryConfig = {
   aprsSmartHighInterval: 5,
   aprsSmartTurnAngle: 28,
   aprsSmartSlope: 120,
-  aprsStatusComment: '📡 S.A.T. Estación Principal | Coord. Emergencias REMER',
+  aprsStatusComment: '📡 S.A.T.-APRS+ Estación Principal | Coord. Emergencias REMER',
   aprsMiceMsgCode: 1, // M1: In Service
   aprsMiceOffset: false,
   aprsFilterQuery: 'm/150 t/pms' // Filter stations in 150km, only position/messages/weather
@@ -1715,7 +1715,7 @@ function generateWxPayload(w: WeatherTelemetry): string {
   const bPress = Math.round(w.pressureHpa * 10).toString().padStart(5, '0');
   const press = `b${bPress}`;
   
-  return `_${dir}/${speed}${gust}${tempStr}${rain1}${rain24}${hum}${press} (REMER S.A.T. Telemetría WX)`;
+  return `_${dir}/${speed}${gust}${tempStr}${rain1}${rain24}${hum}${press} (REMER S.A.T.-APRS+ Telemetría WX)`;
 }
 
 // Distancia en km con la fórmula común del ecosistema (server/formulas/geo.ts)
@@ -1756,7 +1756,7 @@ function generateEarthquakePacket(eq: EarthquakeEvent): string {
 }
 
 // Init simulated state logs
-addLog('SYS', 'SYSTEM', 'LOCAL', 'REMERAPI', 'Inicializando Consola de Telemetría APRS S.A.T.', true, 'Sistema en red');
+addLog('SYS', 'SYSTEM', 'LOCAL', 'REMERAPI', 'Inicializando Consola de Telemetría S.A.T.-APRS+', true, 'Sistema en red');
 addLog('SYS', 'NTPSEC', 'LOCAL', 'HARDWARE', 'Sincronizado con PPS GPS (Estrato 1, offset: 0.004ms)', true, 'Bajo nivel');
 addLog('SYS', 'GPSD', 'LOCAL', 'USB0', 'GPSD receptor detectado. Fix 3D Activo standard', true, 'Tasa 1Hz');
 
@@ -1802,7 +1802,7 @@ function broadcastForecastBulletin(forecast: ForecastDay[]) {
     return `${dStr} ${Math.round(day.tempMax)}C ${term}`;
   }).join('; ');
   
-  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3    :NUEVO PRONOSTICO PROSPECCION: ${summaryDays}. REMER S.A.T.`;
+  const packetStr = `${config.callsign}>APRS,TCPIP*,qAC,GATEWAY::BLN3    :NUEVO PRONOSTICO PROSPECCION: ${summaryDays}. REMER S.A.T.-APRS+`;
   addLog('TX', config.callsign, 'APRS-IS', `${config.serverIp}:${config.aprscPort}`, packetStr, true, 'Boletín APRS de pronóstico (3 días).');
 }
 
@@ -6561,7 +6561,7 @@ app.get('/api/files/configs', (req, res) => {
   };
 
   const defaultDirewolf = `# =====================================================================
-# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T. DEBIAN 13)
+# CONFIGURACIÓN GENERADA DE DIREWOLF SOFTWARE TNC (S.A.T.-APRS+ DEBIAN 13)
 # =====================================================================
 ADEVICE plughw:1,0
 CHANNEL 0
@@ -6577,7 +6577,7 @@ LOGDIR /var/log/direwolf
 `;
 
   const defaultAprx = `# ===============================================
-# ARCHIVO DE CONFIGURACIÓN APRX S.A.T. EMERGENCIAS
+# ARCHIVO DE CONFIGURACIÓN APRX S.A.T.-APRS+ EMERGENCIAS
 # ===============================================
 mycall      EA1URG-10
 myloc       lat 4025.00N lon 00342.00W
@@ -6625,7 +6625,7 @@ myloc       lat 4025.00N lon 00342.00W
 }`;
 
   const defaultAxports = `# =====================================================================
-# /etc/ax25/axports - CONFIGURACIÓN DE PUERTOS AX.25 DEBIAN 13 S.A.T.
+# /etc/ax25/axports - CONFIGURACIÓN DE PUERTOS AX.25 DEBIAN 13 S.A.T.-APRS+
 # =====================================================================
 # name  callsign   speed  paclen  window  description
 wl0     EA1URG-10  19200  255     7       Puerto Winlink VHF (144.850 MHz)
@@ -7142,7 +7142,7 @@ async function initServer() {
   }
 
   app.listen(PORT, HOST, () => {
-    console.log(`[APRS S.A.T. SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[S.A.T.-APRS+ SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
     console.log(TX_ENABLED
       ? `[APRS TX] Emisión ACTIVADA para ${config.callsign}${isValidCallsign(config.callsign) ? '' : ' (indicativo no válido: no se transmitirá hasta configurarlo)'}.`
       : '[APRS TX] Emisión DESACTIVADA: la consola no transmite. Active SAT_APRS_TX=on en .env para emitir.');

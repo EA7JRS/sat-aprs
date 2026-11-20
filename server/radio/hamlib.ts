@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Equipo de radio (CAT) y rotor por los demonios de Hamlib.
+// S.A.T.-APRS+ · Equipo de radio (CAT) y rotor por los demonios de Hamlib.
 //
 // `rigctld` y `rotctld` hablan un protocolo de texto por TCP (puertos 4532 y
 // 4533). Aquí se usa su «protocolo de respuesta extendida» (la orden va

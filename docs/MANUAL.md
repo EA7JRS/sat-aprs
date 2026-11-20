@@ -1,4 +1,4 @@
-# Manual de uso de S.A.T.-APRS
+# Manual de uso de S.A.T.-APRS+
 
 © 2026 Manuel - EA7JRS · versión de la consola: **v1.36.0**
 
@@ -25,7 +25,7 @@ Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué h
 
 ### Una estación real
 
-Lo que emite S.A.T.-APRS sale al aire y a la red APRS-IS mundial **con su indicativo**. La consola nunca transmite datos simulados o de prueba, pero lo real sí: un aviso, un mensaje, una baliza o el PTT del equipo. Por eso:
+Lo que emite S.A.T.-APRS+ sale al aire y a la red APRS-IS mundial **con su indicativo**. La consola nunca transmite datos simulados o de prueba, pero lo real sí: un aviso, un mensaje, una baliza o el PTT del equipo. Por eso:
 
 - **La emisión viene apagada.** Se activa en el archivo `.env` con `SAT_APRS_TX=on` y reiniciando el servicio. Mientras esté apagada, la consola funciona igual pero avisa de que «no sale al aire».
 - **Sin un indicativo válido no se emite nada**, y sin el passcode correcto no se envía nada a APRS-IS.

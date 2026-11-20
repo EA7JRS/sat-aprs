@@ -1092,7 +1092,7 @@ export default function NotificationPanel({
                       </span>
                     </div>
                     <span className="text-[8.5px] font-mono text-emerald-400 uppercase font-black px-1.5 py-0.5 bg-emerald-950/60 border border-emerald-500/30 rounded animate-pulse">
-                      S.A.T. Activo
+                      S.A.T.-APRS+ Activo
                     </span>
                   </div>
 
@@ -1299,7 +1299,7 @@ export default function NotificationPanel({
               </div>
 
               <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                Define criterios de alerta personalizados para múltiples amenazas (sísmica, meteorológica, radiológica y marítima) según tus necesidades operativas. El S.A.T. evaluará las condiciones actuales frente a estos umbrales y disparará alertas visuales y del sistema operativo al instante.
+                Define criterios de alerta personalizados para múltiples amenazas (sísmica, meteorológica, radiológica y marítima) según tus necesidades operativas. El S.A.T.-APRS+ evaluará las condiciones actuales frente a estos umbrales y disparará alertas visuales y del sistema operativo al instante.
               </p>
 
               {/* ACTIVE ALERT OVERVIEW BAR */}

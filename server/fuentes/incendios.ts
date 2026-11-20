@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Focos de calor vistos desde satélite (NASA FIRMS).
+// S.A.T.-APRS+ · Focos de calor vistos desde satélite (NASA FIRMS).
 //
 // FIRMS publica las anomalías térmicas que detectan los sensores VIIRS y
 // MODIS en las últimas 24 horas. Un foco NO es un incendio confirmado: puede
@@ -127,7 +127,7 @@ export async function descargarFocos(centro: { lat: number; lon: number }, radio
   let descargados = 0;
   for (const url of URLS_FIRMS) {
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(20000) });
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' }, signal: AbortSignal.timeout(20000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       for (const f of leerCsvFirms(await res.text())) {
         if (gcDistanceKm(centro, f) <= radioKm) cercanos.push(f);

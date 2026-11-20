@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Historial en SQLite (sat_historial.db).
+// S.A.T.-APRS+ · Historial en SQLite (sat_historial.db).
 //
 // Lo que antes se perdía al reiniciar:
 //  · tramas APRS que entran y salen (Radio · Tramas APRS);

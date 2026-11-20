@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Reglas de difusión de avisos.
+// S.A.T.-APRS+ · Reglas de difusión de avisos.
 //
 // Deciden, para cada aviso, si debe emitirse ahora: que sea real, que esté
 // vigente, que caiga dentro del radio de la estación (fija o móvil), que

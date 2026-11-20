@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Fuente oficial de clima espacial (NOAA SWPC).
+// S.A.T.-APRS+ · Fuente oficial de clima espacial (NOAA SWPC).
 //
 // El Centro de Predicción del Clima Espacial de la NOAA publica el estado
 // actual de sus tres escalas: R (apagones de radio en HF), S (tormentas de
@@ -70,7 +70,7 @@ export function escalaAEvento(n: NivelEscala, ahora = Date.now(), vigenciaMs = 4
 /** Descarga el estado de las escalas. null si la NOAA no responde (se conserva lo anterior). */
 export async function descargarClimaEspacial(registrar: RegistroFuente = () => {}): Promise<NivelEscala[] | null> {
   try {
-    const res = await fetch(URL_ESCALAS_NOAA, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS)' }, signal: AbortSignal.timeout(10000) });
+    const res = await fetch(URL_ESCALAS_NOAA, { headers: { 'User-Agent': 'Mozilla/5.0 (S.A.T.-APRS+)' }, signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const niveles = leerEscalasNoaa(await res.json());
     if (niveles.length === 0) throw new Error('formato no reconocido');

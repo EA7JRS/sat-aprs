@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Sismos de fuera de España: EMSC-CSEM (SeismicPortal, CC BY 4.0).
+// S.A.T.-APRS+ · Sismos de fuera de España: EMSC-CSEM (SeismicPortal, CC BY 4.0).
 //
 // Servicio FDSN del Centro Sismológico Euro-Mediterráneo, sin clave:
 //   https://www.seismicportal.eu/fdsnws/event/1/query?format=json&…
@@ -61,7 +61,7 @@ export function eventosEmsc(sismos: SismoEmsc[], estacion: { lat: number; lon: n
 }
 
 export async function descargarEmsc(lat: number, lon: number): Promise<SismoEmsc[]> {
-  const r = await fetch(URL_EMSC(lat, lon, Date.now() - 24 * 3600_000), { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(URL_EMSC(lat, lon, Date.now() - 24 * 3600_000), { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (r.status === 204) return [];   // FDSN: sin sismos en la consulta
   if (!r.ok) throw new Error(`EMSC respondió ${r.status}`);
   const texto = await r.text();

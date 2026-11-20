@@ -1,6 +1,6 @@
 <p align="center"><a href="https://ea7jrs.github.io/APRS-LoRa-Plus/"><img src="assets/aprs-lora-plus-banner.jpg" alt="APRS LoRa+ · Tracker · APRS · Map · Alerts" width="100%"></a></p>
 
-# S.A.T. - APRS
+# S.A.T.-APRS+
 ### Servicio de Alerta Temprana por APRS 
 
 [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
@@ -10,7 +10,7 @@
 [![Licencia GPL v3](https://img.shields.io/badge/Licencia-GPL_v3-blue?style=for-the-badge)](LICENSE)
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 
-**S.A.T.-APRS** (Servicio de Alerta Temprana por APRS) convierte un PC pequeño con Debian (un Intel NUC, por ejemplo) en una **estación APRS de emergencias desatendida, 24/7**, para radioaficionados y grupos de voluntariado de emergencias.
+**S.A.T.-APRS+** (Servicio de Alerta Temprana por APRS) convierte un PC pequeño con Debian (un Intel NUC, por ejemplo) en una **estación APRS de emergencias desatendida, 24/7**, para radioaficionados y grupos de voluntariado de emergencias.
 
 - Vigila **fuentes oficiales** (IGN, AEMET, NOAA, NASA FIRMS, Copernicus CAMS y, si se encienden, MeteoAlarm, los ciclones del NHC y la radiactividad de EURDEP…) y, cuando algo ocurre dentro del radio que elijas alrededor de la estación (fija o móvil), emite un **objeto APRS** en el lugar del suceso y un **boletín de emergencia**, por radio y por APRS-IS.
 - Funciona como **estación APRS y meteorológica**: baliza de posición, parte meteorológico, mensajería con acuse, grupo de estaciones (ARTS) y emergencia remota (EAI).
@@ -18,7 +18,7 @@
 
 Todo con datos reales. Lo que se usa para ensayar (sucesos de prueba) se ve en pantalla pero **nunca sale al aire**.
 
-S.A.T.-APRS forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) (tracker, app Android, Display, Rotor, plotter, pasarela NMEA 2000) y comparte con él fórmulas, órdenes y formatos.
+S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) (tracker, app Android, Display, Rotor, plotter, pasarela NMEA 2000) y comparte con él fórmulas, órdenes y formatos.
 
 📘 **[Manual de uso](docs/MANUAL.md)** · 🏗️ [Arquitectura](docs/ARQUITECTURA.md) · 📝 [Cambios por versión](CHANGELOG.md)
 
@@ -121,7 +121,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)
 
-S.A.T.-APRS es una estación real: lo que emite llega a la red APRS-IS mundial y al aire con su indicativo. Por eso el sistema aplica estas reglas y **no hay forma de saltárselas desde la interfaz**:
+S.A.T.-APRS+ es una estación real: lo que emite llega a la red APRS-IS mundial y al aire con su indicativo. Por eso el sistema aplica estas reglas y **no hay forma de saltárselas desde la interfaz**:
 
 1. **Nada simulado sale al aire.** Lo que se inyecta desde «Pruebas y simulación» (un sismo o un aviso de prueba) se muestra en pantalla pero nunca se transmite. En el registro aparecen marcados como `[NO EMITIDO: datos simulados o de prueba]`.
 2. **Sin indicativo válido no se transmite.** Con el indicativo de plantilla (`N0CALL`) o uno mal formado, el sistema no emite ni por Internet ni por radio.
@@ -239,7 +239,7 @@ sudo nano /etc/systemd/system/sat-aprs.service
 ```
 ```ini
 [Unit]
-Description=S.A.T.-APRS Consola Web
+Description=S.A.T.-APRS+ Consola Web
 After=network-online.target
 Wants=network-online.target
 
@@ -348,7 +348,7 @@ Esta consola promueve el uso ético del espectro electromagnético. Las tramas q
 ---
 
 ## ☕ Apoya el proyecto
-S.A.T.-APRS es un proyecto personal de EA7JRS. Si te resulta útil, puedes invitarme a un café:
+S.A.T.-APRS+ es un proyecto personal de EA7JRS. Si te resulta útil, puedes invitarme a un café:
 
 [![Donar con PayPal](https://img.shields.io/badge/Donar-PayPal.me%2Fea7jrs-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/ea7jrs)
 

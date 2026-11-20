@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Sucesos naturales abiertos de NASA EONET (Earth Observatory
+// S.A.T.-APRS+ · Sucesos naturales abiertos de NASA EONET (Earth Observatory
 // Natural Event Tracker, dominio público):
 //   https://eonet.gsfc.nasa.gov/api/v3/events?status=open&days=N&category=…
 // Inundaciones, tormentas severas, volcanes… con su última posición. Mismo
@@ -50,7 +50,7 @@ export function eventosEonet(j: any, categoria: string, ahora = Date.now()): Eve
 }
 
 export async function descargarEonet(categoria: string, dias = 20): Promise<any> {
-  const r = await fetch(URL_EONET(categoria, dias), { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(URL_EONET(categoria, dias), { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`EONET (${categoria}) respondió ${r.status}`);
   return r.json();
 }

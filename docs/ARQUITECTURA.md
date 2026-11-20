@@ -1,8 +1,8 @@
-# Arquitectura de S.A.T.-APRS
+# Arquitectura de S.A.T.-APRS+
 
 © 2026 Manuel - EA7JRS · v1.36.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
-S.A.T.-APRS es una estación APRS de alerta temprana: recoge avisos de fuentes
+S.A.T.-APRS+ es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
 y los retransmite por RF y a un servidor APRS-IS. Además funciona como estación
 APRS y meteorológica, y muestra en un mapa todo lo que tiene coordenadas.
@@ -24,10 +24,10 @@ actual, así que el radio de avisos acompaña a la estación si se mueve.
 
 ## Programas con los que convive
 
-El NUC es una estación de radio completa. S.A.T.-APRS no sustituye a estos
+El NUC es una estación de radio completa. S.A.T.-APRS+ no sustituye a estos
 programas: se conecta a ellos por sus interfaces de red.
 
-| Programa | Papel | Enlace con S.A.T.-APRS |
+| Programa | Papel | Enlace con S.A.T.-APRS+ |
 | :--- | :--- | :--- |
 | gpsd | Posición GPS, fija o móvil | TCP 2947 (JSON) |
 | ntpsec | Servidor de hora de la red | `ntpq` |

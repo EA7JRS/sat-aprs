@@ -502,7 +502,7 @@ export default function App() {
   const nightModeAuto = tema.elegido === 'auto';
   const tactico = COLORES_TACTICO.find((c) => c.id === tema.colorTactico) ?? COLORES_TACTICO[0];
 
-  // Automatic Version Updates S.A.T.
+  // Automatic Version Updates S.A.T.-APRS+
   const APP_VERSION = '2.4.0';
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [changelog, setChangelog] = useState<string>('');
@@ -513,7 +513,7 @@ export default function App() {
   // Sesión de administrador local (token de la estación)
   const adminSession = useAdminSession();
   
-  // --- SINCRONIZADOR DE CONFIGURACIONES Y MONITOREO DE REINICIOS S.A.T. ---
+  // --- SINCRONIZADOR DE CONFIGURACIONES Y MONITOREO DE REINICIOS S.A.T.-APRS+ ---
   const [configVerification, setConfigVerification] = useState<any>(null);
   const [prevUptime, setPrevUptime] = useState<string | null>(null);
 
@@ -828,7 +828,7 @@ export default function App() {
         <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-full text-emerald-400 animate-spin">
           <Radio size={28} />
         </div>
-        <p className="text-xs uppercase tracking-widest animate-pulse">Enlazando terminal con el bus APRS S.A.T....</p>
+        <p className="text-xs uppercase tracking-widest animate-pulse">Enlazando terminal con el bus S.A.T.-APRS+...</p>
         {errorMessage && (
           <p className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/20 px-3 py-1.5 rounded max-w-md text-center mt-2">
             {errorMessage}
@@ -940,7 +940,7 @@ export default function App() {
               </span>
               <span>
                 {isEmergencyBroadcastActive 
-                  ? 'Boletín de Emergencia Especial emitido en 144.800 MHz: Atención a todas las estaciones REMER S.A.T.'
+                  ? 'Boletín de Emergencia Especial emitido en 144.800 MHz: Atención a todas las estaciones REMER S.A.T.-APRS+'
                   : `Detectados ${rangeHazards} eventos sísmicos críticos dentro del perímetro de cobertura de ${data.config.filterRadiusKm} km de la estación.`}
               </span>
             </div>
@@ -1259,7 +1259,7 @@ export default function App() {
                       ? 'bg-red-950/90 border-red-500 text-red-200 animate-pulse' 
                       : 'bg-slate-950/90 border-slate-850 text-red-400 hover:bg-slate-900'
                   }`}
-                  title="Emisión de Emergencia S.A.T. (144.800 MHz)"
+                  title="Emisión de Emergencia S.A.T.-APRS+ (144.800 MHz)"
                 >
                   <Megaphone size={18} className={isEmergencyBroadcastActive ? 'animate-bounce' : ''} />
                 </button>
@@ -1275,7 +1275,7 @@ export default function App() {
                     const nextState = !isAlarmsSilenced;
                     setIsAlarmsSilenced(nextState);
                     if (nextState) {
-                      showToast('Alarmas acústicas silenciadas en consola S.A.T.');
+                      showToast('Alarmas acústicas silenciadas en consola S.A.T.-APRS+');
                     } else {
                       showToast('Canal sonoro restablecido.');
                       // play beep feedback
@@ -1414,7 +1414,7 @@ export default function App() {
               {/* BUTTON 7: Guía & Soporte */}
               <div className="flex items-center gap-2 group">
                 <span className="bg-slate-950 border border-amber-500/30 text-amber-400 text-[9px] font-bold px-2 py-1 rounded shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider font-mono">
-                  GUÍA INTERACTIVA S.A.T.
+                  GUÍA INTERACTIVA S.A.T.-APRS+
                 </span>
                 <button
                   onClick={() => {
@@ -1424,7 +1424,7 @@ export default function App() {
                   }}
                   id="fab-action-interactive-guide"
                   className="w-11 h-11 rounded-full bg-slate-950/90 border border-slate-850 text-amber-400 hover:text-amber-300 hover:bg-slate-900 hover:border-amber-500/55 flex items-center justify-center cursor-pointer transition-all duration-300 shadow-xl"
-                  title="Abrir Guía Operativa de Consola S.A.T."
+                  title="Abrir Guía Operativa de Consola S.A.T.-APRS+"
                 >
                   <BookOpen size={18} className="animate-pulse text-amber-400" />
                 </button>
@@ -1443,13 +1443,13 @@ export default function App() {
             }}
             className="w-12 h-12 rounded-full bg-slate-900 hover:bg-slate-850 hover:border-amber-500/50 border border-slate-800 text-amber-400 hover:text-amber-300 flex items-center justify-center cursor-pointer transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.1)] focus:outline-none active:scale-95 group relative"
             id="fab-help-trigger"
-            title="Guía Operativa Interactiva S.A.T."
+            title="Guía Operativa Interactiva S.A.T.-APRS+"
           >
             <HelpCircle size={18} className="animate-pulse" />
             
             {/* Slide-out helper tooltip */}
             <span className="absolute right-14 bg-slate-950 border border-amber-500/30 text-amber-400 text-[10px] font-bold px-2.5 py-1.5 rounded-xl shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider whitespace-nowrap">
-              Guía S.A.T. (Manual)
+              Guía S.A.T.-APRS+ (Manual)
             </span>
           </button>
 
@@ -1465,7 +1465,7 @@ export default function App() {
                 : 'bg-slate-900 hover:bg-slate-850 hover:border-emerald-500/50 border-slate-800 text-slate-200'
             }`}
             id="fab-main-trigger"
-            title="Consola de Acceso Rápido S.A.T."
+            title="Consola de Acceso Rápido S.A.T.-APRS+"
           >
             {fabOpen ? (
               <X size={18} />
@@ -1517,7 +1517,7 @@ export default function App() {
                     ACTUALIZACIÓN DE CONSOLA REQUERIDA
                   </h3>
                   <span className="text-[10px] text-amber-500 font-mono block">
-                    COHESIÓN DE SISTEMA S.A.T. • v{latestVersion}
+                    COHESIÓN DE SISTEMA S.A.T.-APRS+ • v{latestVersion}
                   </span>
                 </div>
               </div>
@@ -1751,7 +1751,7 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-slate-950 border-t border-slate-900 py-3 text-center text-[10px] text-slate-500 font-mono flex flex-col lg:flex-row items-center justify-between px-4 gap-2 gap-y-3">
         <span>
-          S.A.T.-APRS · © 2026 Manuel - EA7JRS · GPL-3.0-or-later ·{' '}
+          S.A.T.-APRS+ · © 2026 Manuel - EA7JRS · GPL-3.0-or-later ·{' '}
           <a
             href="https://paypal.me/ea7jrs"
             target="_blank"
@@ -1765,7 +1765,7 @@ export default function App() {
         
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-          S.A.T.-APRS • v{pkg.version}
+          S.A.T.-APRS+ • v{pkg.version}
         </span>
       </footer>
       </div>

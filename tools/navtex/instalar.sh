@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (c) 2026 Manuel - EA7JRS
 #
-# S.A.T.-APRS · Instala el descodificador NAVTEX (fventuri/navtex, GPL-3.0,
+# S.A.T.-APRS+ · Instala el descodificador NAVTEX (fventuri/navtex, GPL-3.0,
 # basado en el de fldigi) y el servicio sat-navtex. Uso: sudo sh tools/navtex/instalar.sh
 set -eu
 [ "$(id -u)" = 0 ] || { echo "Ejecútelo con sudo" >&2; exit 1; }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Meteorología sin clave (Open-Meteo).
+// S.A.T.-APRS+ · Meteorología sin clave (Open-Meteo).
 //
 // Fuente real de último recurso para la meteorología de la consola: cuando no
 // hay clave de OpenWeatherMap ni de AEMET, o estas no responden, se consulta

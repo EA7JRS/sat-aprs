@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Medidores de calidad del aire más cercanos, en tiempo real.
+// S.A.T.-APRS+ · Medidores de calidad del aire más cercanos, en tiempo real.
 //
 // La red Sensor.Community publica, sin clave, las lecturas de los últimos
 // minutos de miles de medidores de partículas. Son medidores ciudadanos, no
@@ -100,7 +100,7 @@ export async function descargarMedidoresAire(
   let ultimo: { medidores: MedidorAire[]; radioKm: number } | null = null;
   for (const radioKm of radios) {
     try {
-      const res = await fetch(urlMedidoresAire(pos.lat, pos.lon, radioKm), { headers: { 'User-Agent': 'S.A.T.-APRS' }, signal: AbortSignal.timeout(12000) });
+      const res = await fetch(urlMedidoresAire(pos.lat, pos.lon, radioKm), { headers: { 'User-Agent': 'S.A.T.-APRS+' }, signal: AbortSignal.timeout(12000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       ultimo = { medidores: leerMedidoresAire(await res.json(), pos), radioKm };
       if (ultimo.medidores.length >= minimo) break;

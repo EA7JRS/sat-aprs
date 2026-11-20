@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Avisos meteorológicos de MeteoAlarm (EUMETNET).
+// S.A.T.-APRS+ · Avisos meteorológicos de MeteoAlarm (EUMETNET).
 //
 // MeteoAlarm reúne los avisos oficiales de los servicios meteorológicos
 // europeos (AEMET en España, IPMA en Portugal, Météo-France…) en un feed Atom
@@ -124,7 +124,7 @@ export function eventosMeteoAlarm(avisos: AvisoMeteoAlarm[], zonas: string, esta
 }
 
 export async function descargarMeteoAlarm(pais: string): Promise<AvisoMeteoAlarm[]> {
-  const r = await fetch(URL_METEOALARM(pais), { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'S.A.T.-APRS' } });
+  const r = await fetch(URL_METEOALARM(pais), { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
   if (!r.ok) throw new Error(`MeteoAlarm (${pais}) respondió ${r.status}`);
   return leerFeedMeteoAlarm(await r.text(), pais);
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Manuel - EA7JRS
 //
-// S.A.T.-APRS · Fórmulas de comportamiento del fuego.
+// S.A.T.-APRS+ · Fórmulas de comportamiento del fuego.
 //
 // Velocidad de propagación de un incendio de superficie según el modelo de
 // Rothermel (1972), simplificado, y la «regla de los 30» (viento de 30 km/h

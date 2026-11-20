@@ -11,7 +11,7 @@ APRS y meteorológica, y muestra en un mapa todo lo que tiene coordenadas.
 
 | Flujo | Entra | Sale |
 | :--- | :--- | :--- |
-| **1. Avisos de emergencia** | Fuentes oficiales: IGN, AEMET, NOAA, NASA FIRMS y CAMS (previstas: MeteoAlarm, Protección Civil, radiación; y por RF, NAVTEX e Inmarsat) | Objeto APRS con la posición y los datos + boletín de emergencia, por RF y APRS-IS |
+| **1. Avisos de emergencia** | Fuentes oficiales: IGN, AEMET, MeteoAlarm, NOAA (clima espacial y ciclones), NASA FIRMS, CAMS y EURDEP; y por RF con SDR propio, NAVTEX e Inmarsat-C | Objeto APRS con la posición y los datos + boletín de emergencia, por RF y APRS-IS |
 | **2. Estación APRS y meteorológica** | GPS (posición fija o móvil), estación meteorológica propia, datos de Internet (OWM, IQAir, AEMET) | Baliza de posición y parte meteorológico APRS, según el perfil de usuario |
 | **3. Mapa** | AIS, ADS-B, APRS recibido, tráfico de carreteras y cualquier dato con coordenadas | Capas sobre el mapa base de la consola. **No se retransmite.** |
 
@@ -134,7 +134,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
 | Estación meteorológica: parte APRS con datos propios (WeeWX, wxnow.txt) o de Internet | Hecho (`server/estacion/meteo.ts`) |
-| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: sin fuente; sus datos de ejemplo se retiraron en la v1.20.0. Inmarsat-C: se conserva la entrada por UDP, sin pantalla |
+| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX desde la v1.39.0: SDR → `tools/navtex/navtex.sh` (rtl_fm o rx_fm + navtex_rx_from_file) → archivo que lee `server/radio/navtex.ts`. Inmarsat-C EGC desde la v1.39.0: InmarScope por UDP (JSON) → `server/radio/egc.ts`. Fuera la entrada UDP antigua (puerto 9999), que inventaba área y emisor |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
 | Configuración de Direwolf/aprx desde la consola | Hecho: generador de `direwolf.conf` (sin `CBEACON`, con `LOGDIR`) y editor de archivos `.conf` |
 | Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |

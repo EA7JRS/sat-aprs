@@ -1,0 +1,12 @@
+# S.A.T.-APRS · Recepción NAVTEX (tools/navtex/navtex.sh)
+# Equipo: rtlsdr (rtl_fm) o soapy (rx_fm: SDRplay RSPdx-R2 y otros)
+SDR=rtlsdr
+FRECUENCIA=518000
+PPM=0
+GANANCIA=
+# RTL-SDR Blog V3: DIRECTO=2 (muestreo directo, entrada Q). V4: vacío.
+DIRECTO=
+# SoapySDR
+SOAPY=driver=sdrplay
+ANTENA=
+SALIDA=/var/lib/sat-aprs/navtex.txt

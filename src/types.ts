@@ -255,6 +255,18 @@ export interface TelemetryConfig {
   radiacionPaises?: string;
   radiacionRadioKm?: number;
   radiacionUmbral?: number;
+  /** NAVTEX por SDR: archivo del descodificador, estaciones (letra B1) que se siguen, radio y nivel. */
+  navtexEnabled?: boolean;
+  navtexArchivo?: string;
+  navtexEstaciones?: string;
+  navtexRadioKm?: number;
+  navtexGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
+  /** Inmarsat-C EGC: InmarScope manda los mensajes por UDP a esta dirección y puerto. */
+  egcEnabled?: boolean;
+  egcEscucha?: string;
+  egcPuerto?: number;
+  egcRadioKm?: number;
+  egcGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';
   /** La consola emite la baliza de posición de la estación. */
   aprsBeaconEnabled?: boolean;
   /** Titular de la estación (dato del perfil, no se emite). */
@@ -366,18 +378,6 @@ export interface DgtIncident {
   sentido?: string;
 }
 
-export interface InmarsatMessage {
-  id: string;
-  time: string;
-  c2Code: string;
-  typeText: string;
-  priority: 'CRÍTICO' | 'ALERTA' | 'INFORMACIÓN';
-  sender: string;
-  area: string;
-  payload: string;
-  rawHex?: string;
-  isCritical: boolean;
-}
 
 export interface ERDDAPDataset {
   id: string;
@@ -512,7 +512,6 @@ export interface ServerTelemetryData {
   tsunamiAlerts?: TsunamiAlert[];
   csnStations?: CsnReaStation[];
   dgtIncidents?: DgtIncident[];
-  inmarsatMessages?: InmarsatMessage[];
   erddapBuoys?: ERDDAPBuoy[];
   portusStations?: OceanStation[];
   aemetAlerts?: AemetWeatherAlert[];
@@ -572,11 +571,12 @@ export interface ScheduledNotification {
 
 export interface NavareaWarning {
   id: string; // e.g., "NAV3-0145/26"
-  navareaType: 'NAVAREA III' | 'Armada Española' | 'NAVTEX';
-  category: 'Gunnery / Ejercicios' | 'Navigational Hazard' | 'Cable Laying' | 'Search & Rescue' | 'Rig Move' | 'Military Operations';
+  navareaType: 'NAVTEX' | 'Inmarsat-C';
+  /** Qué es: «NAVTEX GA12», «EGC Urgencia»… */
+  category: string;
   title: string;
-  lat: number;
-  lon: number;
+  lat?: number;
+  lon?: number;
   areaDescription: string;
   originator: string; // e.g. "IHM Cadiz", "NAVAREA III Coordinator"
   broadcastTime: string;

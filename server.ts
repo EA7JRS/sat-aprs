@@ -57,6 +57,8 @@ import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './server/fuentes/meteoalarm';
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
+import { ColaArchivo, MensajeNavtex, TEMAS_NAVTEX, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex } from './server/radio/navtex';
+import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { aireAEvento, descargarCalidadAire } from './server/fuentes/calidadAire';
 import { MedidorAire, clasePm25, descargarMedidoresAire } from './server/fuentes/estacionesAire';
 import { EstacionesOidas } from './server/estaciones';
@@ -87,7 +89,6 @@ import {
   RarRanStatus,
   TsunamiAlert,
   DgtIncident,
-  InmarsatMessage,
   ERDDAPBuoy,
   OceanStation,
   AemetWeatherAlert,
@@ -341,6 +342,18 @@ let config: TelemetryConfig = {
   radiacionPaises: 'ES,PT',
   radiacionRadioKm: 100,
   radiacionUmbral: 0.3,
+  // NAVTEX con SDR propio: archivo que escribe tools/navtex/navtex.sh
+  navtexEnabled: false,
+  navtexArchivo: '/var/lib/sat-aprs/navtex.txt',
+  navtexEstaciones: '',
+  navtexRadioKm: 400,
+  navtexGravedadMinima: 'naranja',
+  // Inmarsat-C EGC (SafetyNET): InmarScope manda los mensajes por UDP (JSON)
+  egcEnabled: false,
+  egcEscucha: '127.0.0.1',
+  egcPuerto: 5556,
+  egcRadioKm: 500,
+  egcGravedadMinima: 'naranja',
   // Parte meteorológico de la estación por APRS. Apagado por defecto: actívelo solo
   // si WeeWX, Direwolf o aprx no emiten ya el parte con este indicativo.
   wxBeaconEnabled: false,
@@ -1434,21 +1447,7 @@ let dgtIncidentsList: DgtIncident[] = [];
 // true solo si la lista procede de la descarga real de la DGT (no del respaldo de demostración)
 let dgtDatosReales = false;
 
-// Dictionary for identifying Inmarsat SafetyNet C2 codes
-const TIPOS_ALERTA: Record<string, string> = {
-  "14": "🚨 RETRANSMISIÓN DE SOCORRO (DISTRESS RELAY)",
-  "34": "🚁 COORDINACIÓN SAR (BÚSQUEDA Y RESCATE)",
-  "44": "🚁 COORDINACIÓN SAR (BÚSQUEDA Y RESCATE)",
-  "04": "⚠️ AVISO A LOS NAVEGANTES (NAVIGATIONAL WARNING)",
-  "24": "⛈️ ALERTA METEOROLÓGICA (METEOROLOGICAL WARNING)",
-  "31": "💨 PRONÓSTICO METEOROLÓGICO (MET FORECAST)",
-  "13": "⚓ AVISO COSTERO (COASTAL WARNING)"
-};
-
-const CODIGOS_CRITICOS = new Set(["04", "13", "14", "24", "31", "34", "44"]);
-
-// Mensajes Inmarsat-C recibidos por UDP de un descodificador real (ya no hay mensajes de ejemplo)
-let inmarsatMessages: InmarsatMessage[] = [];
+// NAVTEX e Inmarsat-C (EGC): ver «NAVTEX e Inmarsat-C por SDR» más abajo
 
 
 // Intel NUC 5i3 CPU Broadwell Core i3-5010U, dual-core - robust server status
@@ -1578,8 +1577,6 @@ setInterval(runSchedulerTick, 10000);
 
 let earthquakes: EarthquakeEvent[] = [];
 
-// Radioavisos náuticos: sin fuente real conectada todavía (ya no hay avisos de ejemplo)
-let navareaWarnings: NavareaWarning[] = [];
 
 // Sin datos de ejemplo: las boyas reales más cercanas salen de server/fuentes/boyas.ts
 let erddapBuoys: ERDDAPBuoy[] = [];
@@ -3063,7 +3060,6 @@ app.get('/api/telemetry', async (req, res) => {
     // Sin fuente real de vigilancia radiológica: lista vacía (antes, valores modelados)
     csnStations: [],
     dgtIncidents: dgtIncidentsList,
-    inmarsatMessages,
     erddapBuoys,
     portusStations,
     aemetAlerts,
@@ -3071,7 +3067,7 @@ app.get('/api/telemetry', async (req, res) => {
     meteoFuente,
     propagation: propagationData && propagationData.completa ? propagationData : undefined,
     propagacionFaltan: propagationData ? propagationData.faltan : ['todas las fuentes'],
-    navareas: navareaWarnings
+    navareas: radioavisosParaPaneles(),
   });
 });
 
@@ -4563,6 +4559,149 @@ async function descargarRadiacionAvisos() {
   difundirAvisos(eventosRadiacionLista, politicaRadiacion());
 }
 
+// ---------------------------------------------------------------------------
+// NAVTEX e Inmarsat-C por SDR (server/radio/navtex.ts y egc.ts)
+// ---------------------------------------------------------------------------
+let mensajesNavtex: MensajeNavtex[] = historial.leerEstado<MensajeNavtex[]>('navtex') ?? [];
+let mensajesEgc: MensajeEgc[] = historial.leerEstado<MensajeEgc[]>('egc') ?? [];
+let colaNavtex: ColaArchivo | null = null;
+let restoNavtex = '';
+let navtexAbiertoDesde = 0;
+let navtexCaracteres = 0;
+let udpEgc: dgram.Socket | null = null;
+let udpEgcClave = '';
+let udpEgcError = '';
+let egcUltimo = 0;
+let egcLineas = 0;
+const VIGENCIA_RADIOAVISO = 12 * 3600_000;
+const estacionesNavtex = () => new Set(String(config.navtexEstaciones ?? '').toUpperCase().replace(/[^A-Z]/g, '').split(''));
+
+function politicaNavtex(): Politica {
+  return {
+    radioKm: Math.min(2000, Math.max(10, Number(config.navtexRadioKm ?? 400))), gravedadMinima: gravedadDe(config.navtexGravedadMinima, 'naranja'),
+    vigenciaMs: VIGENCIA_RADIOAVISO, repetirCadaMs: 240 * 60_000, boletin: true,
+  };
+}
+function politicaEgc(): Politica {
+  return {
+    radioKm: Math.min(5000, Math.max(10, Number(config.egcRadioKm ?? 500))), gravedadMinima: gravedadDe(config.egcGravedadMinima, 'naranja'),
+    vigenciaMs: VIGENCIA_RADIOAVISO, repetirCadaMs: 240 * 60_000, boletin: true,
+  };
+}
+const navtexVigentes = (ahora = Date.now()) => mensajesNavtex.filter((m) => ahora - m.recibido < VIGENCIA_RADIOAVISO);
+function eventosNavtexLista(): Evento[] {
+  if (config.navtexEnabled !== true) return [];
+  const est = estacionesNavtex();
+  return navtexVigentes().filter((m) => !est.size || est.has(m.estacion)).map((m) => eventoNavtex(m, VIGENCIA_RADIOAVISO)).filter((e): e is Evento => !!e);
+}
+function eventosEgcLista(): Evento[] {
+  if (config.egcEnabled !== true) return [];
+  const ahora = Date.now();
+  return mensajesEgc.filter((m) => ahora - m.recibido < VIGENCIA_RADIOAVISO).map((m) => eventoEgc(m, VIGENCIA_RADIOAVISO));
+}
+/** Lo recibido, en el formato de la lista de radioavisos de las notificaciones. */
+function radioavisosParaPaneles(): NavareaWarning[] {
+  const urg = (g: Gravedad) => (g === 'rojo' ? 'ALERTA CRÍTICA' : g === 'naranja' ? 'PRECAUCIÓN' : 'INFORMATIVO') as NavareaWarning['urgency'];
+  return [
+    ...eventosNavtexLista().map((e) => ({ id: e.id, navareaType: 'NAVTEX', category: e.detalle ?? 'NAVTEX', title: e.titulo, urgency: urg(e.gravedad), lat: e.lat, lon: e.lon, originator: e.fuente, broadcastTime: new Date(e.inicio).toISOString(), rawText: '', areaDescription: '' })),
+    ...eventosEgcLista().map((e) => ({ id: e.id, navareaType: 'Inmarsat-C', category: e.detalle ?? 'EGC', title: e.titulo, urgency: urg(e.gravedad), lat: e.lat, lon: e.lon, originator: e.fuente, broadcastTime: new Date(e.inicio).toISOString(), rawText: '', areaDescription: '' })),
+  ] as unknown as NavareaWarning[];
+}
+
+function anotarNavtex(nuevos: MensajeNavtex[]) {
+  let cambios = false;
+  for (const m of nuevos) {
+    const clave = claveNavtex(m);
+    const i = mensajesNavtex.findIndex((x) => claveNavtex(x) === clave);
+    if (i >= 0) { mensajesNavtex[i] = { ...mensajesNavtex[i], recibido: m.recibido, incompleto: mensajesNavtex[i].incompleto && m.incompleto }; }
+    else {
+      mensajesNavtex.unshift(m);
+      addLog('RX', `NAVTEX ${m.estacion}`, 'NAVTEX', `ZCZC ${m.cabecera}`, m.texto.slice(0, 300), true, `NAVTEX ${m.cabecera} · ${TEMAS_NAVTEX[m.tema] ?? m.tema}${m.incompleto ? ' · cortado' : ''}`);
+    }
+    cambios = true;
+  }
+  if (cambios) {
+    mensajesNavtex = mensajesNavtex.slice(0, 300);
+    historial.guardarEstado('navtex', mensajesNavtex);
+    difundirAvisos(eventosNavtexLista(), politicaNavtex());
+  }
+}
+function leerNavtex() {
+  if (config.systemPower === false || config.navtexEnabled !== true) { colaNavtex = null; return; }
+  const ruta = String(config.navtexArchivo || '').trim();
+  if (!ruta) return;
+  if (!colaNavtex || colaNavtex.ruta !== ruta) { colaNavtex = new ColaArchivo(ruta); restoNavtex = ''; }
+  const nuevo = colaNavtex.leerNuevo();
+  const ahora = Date.now();
+  if (nuevo) {
+    navtexCaracteres += nuevo.length;
+    const r = separarNavtex(restoNavtex + nuevo, ahora);
+    restoNavtex = r.resto;
+    if (r.mensajes.length) anotarNavtex(r.mensajes);
+    navtexAbiertoDesde = /ZCZC [A-Z]{2}\d\d/.test(restoNavtex) ? (navtexAbiertoDesde || ahora) : 0;
+  }
+  const cortado = navtexAbiertoDesde ? cerrarPendiente(restoNavtex, navtexAbiertoDesde, ahora) : null;
+  if (cortado) { restoNavtex = ''; navtexAbiertoDesde = 0; anotarNavtex([cortado]); }
+}
+
+/** Abre, cambia o cierra la escucha UDP de InmarScope según la configuración. */
+function ajustarEgc() {
+  const host = /^[0-9.]+$/.test(String(config.egcEscucha ?? '')) ? String(config.egcEscucha) : '127.0.0.1';
+  const puerto = config.systemPower !== false && config.egcEnabled === true ? puertoValido(config.egcPuerto) : 0;
+  const clave = puerto ? `${host}:${puerto}` : '';
+  if (clave === udpEgcClave) return;
+  if (udpEgc) { try { udpEgc.close(); } catch { /* ya cerrado */ } udpEgc = null; }
+  udpEgcClave = clave;
+  udpEgcError = '';
+  if (!puerto) return;
+  const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  udpEgc = s;
+  s.on('message', (datos) => {
+    let cambios = false;
+    for (const l of datos.toString('utf8').split(/\r?\n/)) {
+      if (!l.trim()) continue;
+      egcLineas++;
+      const m = leerEgc(l);
+      if (!m) continue;
+      egcUltimo = Date.now();
+      const nuevo = !mensajesEgc.some((x) => x.clave === m.clave);
+      mensajesEgc = juntarEgc(mensajesEgc, m);
+      if (nuevo) addLog('RX', 'Inmarsat-C', 'EGC', m.mhz ? `${m.mhz.toFixed(4)} MHz` : 'UDP', m.texto.slice(0, 300), true, `EGC ${prioridadEs(m.prioridad)} · ${m.servicio}`);
+      cambios = true;
+    }
+    if (cambios) {
+      historial.guardarEstado('egc', mensajesEgc);
+      difundirAvisos(eventosEgcLista(), politicaEgc());
+    }
+  });
+  s.on('error', (e) => {
+    if (udpEgc !== s) return;
+    udpEgcError = e.message;
+    addLog('SYS', 'Inmarsat-C', 'LOCAL', 'UDP', `No se puede escuchar EGC en ${host}:${puerto}: ${e.message}.`, false, 'Entrada EGC');
+    try { s.close(); } catch { /* ya cerrado */ }
+    udpEgc = null;
+  });
+  s.bind(puerto, host);
+}
+
+app.get('/api/maritimo', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const ahora = Date.now();
+  res.json({
+    navtex: {
+      activo: config.navtexEnabled === true, archivo: config.navtexArchivo ?? '', estaciones: String(config.navtexEstaciones ?? ''),
+      error: config.navtexEnabled === true ? colaNavtex?.error ?? null : null, ultimoDato: colaNavtex?.ultimoDato || null, caracteres: navtexCaracteres,
+      abierto: navtexAbiertoDesde ? /ZCZC ([A-Z]{2}\d\d)/.exec(restoNavtex)?.[1] ?? null : null,
+      temas: TEMAS_NAVTEX,
+      mensajes: mensajesNavtex.slice(0, 150).map((m) => ({ ...m, clave: claveNavtex(m), vigente: ahora - m.recibido < VIGENCIA_RADIOAVISO })),
+    },
+    egc: {
+      activo: config.egcEnabled === true, escucha: udpEgcClave || null, error: udpEgcError || null, ultimoDato: egcUltimo || null, lineas: egcLineas,
+      mensajes: mensajesEgc.slice(0, 150).map((m) => ({ ...m, prioridadEs: prioridadEs(m.prioridad), vigente: ahora - m.recibido < VIGENCIA_RADIOAVISO })),
+    },
+  });
+});
+
 function programarOtrasFuentes() {
   const seguro = (f: () => Promise<void>) => () => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
   setInterval(seguro(descargarClimaEspacialAvisos), 5 * 60_000);
@@ -4581,6 +4720,8 @@ function programarOtrasFuentes() {
   setTimeout(seguro(descargarMeteoAlarmAvisos), 28000);
   setTimeout(seguro(descargarCiclonesAvisos), 31000);
   setTimeout(seguro(descargarRadiacionAvisos), 34000);
+  setInterval(leerNavtex, 2000);
+  ajustarEgc();
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
   setInterval(() => {
     difundirAvisos(eventosEspacio, politicaEspacio());
@@ -4591,6 +4732,8 @@ function programarOtrasFuentes() {
     difundirAvisos(eventosMeteoAlarmLista, politicaMeteoAlarm());
     difundirAvisos(eventosCiclonesLista, politicaCiclones());
     difundirAvisos(eventosRadiacionLista, politicaRadiacion());
+    difundirAvisos(eventosNavtexLista(), politicaNavtex());
+    difundirAvisos(eventosEgcLista(), politicaEgc());
   }, 60_000);
 }
 
@@ -4682,6 +4825,8 @@ function gruposDeAvisos(): Array<{ eventos: Evento[]; politica: Politica; activo
     { eventos: eventosMeteoAlarmLista, politica: politicaMeteoAlarm(), activo: config.meteoalarmEnabled === true, grupo: 'meteoalarm' },
     { eventos: eventosCiclonesLista, politica: politicaCiclones(), activo: config.ciclonesEnabled === true },
     { eventos: eventosRadiacionLista, politica: politicaRadiacion(), activo: config.radiacionEnabled === true },
+    { eventos: eventosNavtexLista(), politica: politicaNavtex(), activo: config.navtexEnabled === true, grupo: 'navtex' },
+    { eventos: eventosEgcLista(), politica: politicaEgc(), activo: config.egcEnabled === true, grupo: 'egc' },
   ];
 }
 
@@ -5928,6 +6073,20 @@ app.post('/api/config', (req, res) => {
     if (updated.radiacionPaises !== undefined) { config.radiacionPaises = String(updated.radiacionPaises).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60); fuentesCambiadas = true; }
     if (numEn(updated.radiacionRadioKm, 5, 1000) !== undefined) config.radiacionRadioKm = Math.round(numEn(updated.radiacionRadioKm, 5, 1000)!);
     if (numEn(updated.radiacionUmbral, 0.05, 100) !== undefined) { config.radiacionUmbral = numEn(updated.radiacionUmbral, 0.05, 100)!; fuentesCambiadas = true; }
+    if (updated.navtexEnabled !== undefined) config.navtexEnabled = !!updated.navtexEnabled;
+    if (updated.navtexEstaciones !== undefined) config.navtexEstaciones = String(updated.navtexEstaciones).toUpperCase().replace(/[^A-Z,\s]/g, '').slice(0, 60);
+    if (numEn(updated.navtexRadioKm, 10, 2000) !== undefined) config.navtexRadioKm = Math.round(numEn(updated.navtexRadioKm, 10, 2000)!);
+    if (updated.navtexGravedadMinima !== undefined && GRAVEDADES.includes(updated.navtexGravedadMinima as Gravedad)) config.navtexGravedadMinima = updated.navtexGravedadMinima;
+    if (updated.egcEnabled !== undefined) config.egcEnabled = !!updated.egcEnabled;
+    if (numEn(updated.egcRadioKm, 10, 5000) !== undefined) config.egcRadioKm = Math.round(numEn(updated.egcRadioKm, 10, 5000)!);
+    if (updated.egcGravedadMinima !== undefined && GRAVEDADES.includes(updated.egcGravedadMinima as Gravedad)) config.egcGravedadMinima = updated.egcGravedadMinima;
+    // Archivo, dirección y puerto del propio equipo: solo el administrador
+    if (isAuthorizedRequest(req)) {
+      if (updated.navtexArchivo !== undefined) config.navtexArchivo = String(updated.navtexArchivo).trim().slice(0, 300);
+      if (updated.egcEscucha !== undefined && /^[0-9.]{7,15}$/.test(String(updated.egcEscucha).trim())) config.egcEscucha = String(updated.egcEscucha).trim();
+      if (updated.egcPuerto !== undefined && puertoValido(updated.egcPuerto)) config.egcPuerto = puertoValido(updated.egcPuerto);
+    }
+    ajustarEgc();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
       setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); }, 500);
@@ -6817,106 +6976,6 @@ app.get('/api/system/journal', (req, res) => {
     return res.json({ success: true, simulated: false, logs: stdout || stderr || 'Sin registros en el journal' });
   });
 });
-
-// UDP Server for Inmarsat SafetyNet II
-const UDP_PORT = 9999;
-const UDP_IP = "0.0.0.0";
-
-const udpServer = dgram.createSocket('udp4');
-
-function decodeInmarsatUDPPayload(buffer: Buffer): InmarsatMessage {
-  const content = buffer.toString('utf8').trim();
-  const rawHex = buffer.toString('hex').match(/.{1,2}/g)?.join(' ') || '';
-  
-  let c2Code = "04";
-  let sender = "LES-NUC-UDP";
-  let area = "NAVAREA III";
-  let payload = content;
-  
-  try {
-    if (content.startsWith('{') && content.endsWith('}')) {
-      const parsed = JSON.parse(content);
-      if (parsed.c2Code) c2Code = String(parsed.c2Code);
-      if (parsed.sender) sender = String(parsed.sender);
-      if (parsed.area) area = String(parsed.area);
-      if (parsed.payload) payload = String(parsed.payload);
-    } else if (content.includes(';')) {
-      const parts = content.split(';');
-      if (parts.length >= 4) {
-        c2Code = parts[0].trim();
-        sender = parts[1].trim();
-        area = parts[2].trim();
-        payload = parts.slice(3).join(';').trim();
-      } else if (parts.length === 2) {
-        c2Code = parts[0].trim();
-        payload = parts[1].trim();
-      }
-    } else {
-      const match = content.match(/\b(04|13|14|24|31|34|44)\b/);
-      if (match) {
-        c2Code = match[1];
-      }
-    }
-  } catch (e) {
-    // ignore parsing failure
-  }
-
-  const typeText = TIPOS_ALERTA[c2Code] || `❓ CÓDIGO INVERSO INMARSAT (${c2Code})`;
-  const isCritical = CODIGOS_CRITICOS.has(c2Code);
-  
-  let priority: 'CRÍTICO' | 'ALERTA' | 'INFORMACIÓN' = 'INFORMACIÓN';
-  if (c2Code === "14" || c2Code === "34" || c2Code === "44") {
-    priority = 'CRÍTICO';
-  } else if (c2Code === "24" || c2Code === "04" || c2Code === "13") {
-    priority = 'ALERTA';
-  }
-
-  return {
-    id: `inm-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    time: new Date().toISOString(),
-    c2Code,
-    typeText,
-    priority,
-    sender,
-    area,
-    payload,
-    rawHex,
-    isCritical
-  };
-}
-
-udpServer.on('message', (msg, rinfo) => {
-  try {
-    const decoded = decodeInmarsatUDPPayload(msg);
-    inmarsatMessages.unshift(decoded);
-    if (inmarsatMessages.length > 50) {
-      inmarsatMessages = inmarsatMessages.slice(0, 50);
-    }
-    addLog(
-      'RX', 
-      `UDP:${rinfo.address}:${rinfo.port}`, 
-      'INMARSAT-NUC', 
-      'PORT-9999', 
-      `C2:${decoded.c2Code} (${decoded.typeText}) - Msg: ${decoded.payload}`, 
-      true, 
-      `Mensaje Inmarsat SafetyNet II capturado de forma remota via UDP.`
-    );
-  } catch (err: any) {
-    console.error('Error processing Inmarsat UDP message:', err);
-  }
-});
-
-udpServer.on('error', (err) => {
-  console.error('[Inmarsat UDP Server Error]', err);
-});
-
-try {
-  udpServer.bind(UDP_PORT, UDP_IP, () => {
-    console.log(`[Inmarsat UDP Server] Listening on ${UDP_IP}:${UDP_PORT}`);
-  });
-} catch (e) {
-  console.error('[Inmarsat UDP] Could not bind socket:', e);
-}
 
 // Serve compiled build assets, router setup for development environment
 async function initServer() {

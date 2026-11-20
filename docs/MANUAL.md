@@ -314,6 +314,29 @@ El correo por radio que lleva **Pat**, a través de su API HTTP (`pat http`, de 
 
 El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `config.json` o su propia web).
 
+### 7.7 NAVTEX e Inmarsat
+
+Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apagados y se encienden en esta misma pantalla (con la sesión de administrador).
+
+**NAVTEX** (518 kHz; también 490 kHz o 4209,5 kHz):
+
+1. Instale el descodificador y el servicio: `sudo sh tools/navtex/instalar.sh`. Compila `navtex_rx_from_file` de [fventuri/navtex](https://github.com/fventuri/navtex) (GPL-3.0; es el descodificador NAVTEX de fldigi) e instala `sat-navtex`.
+2. Ajuste `/etc/default/sat-navtex`:
+   - **RTL-SDR** (`SDR=rtlsdr`, con `rtl_fm`): la RTL-SDR Blog V3 necesita muestreo directo para 518 kHz (`DIRECTO=2`, entrada Q); la V4 sintoniza HF por sí sola.
+   - **SDRplay RSPdx-R2** y otros equipos SoapySDR (`SDR=soapy`, con `rx_fm` de rx_tools y SoapySDRPlay3): `SOAPY=driver=sdrplay` y, si hace falta, `ANTENA`.
+   - `FRECUENCIA`, `PPM`, `GANANCIA` y `SALIDA` (de serie `/var/lib/sat-aprs/navtex.txt`).
+3. Arránquelo: `sudo systemctl enable --now sat-navtex`.
+4. En la pantalla, encienda NAVTEX con el mismo archivo. Con «Estaciones que se siguen» (las letras B1, por ejemplo `GX`) se dejan fuera las lejanas que entran de noche.
+
+La consola lee el archivo según crece y separa los mensajes `ZCZC B1B2B3B4 … NNNN`: estación, tema y número, el grupo fecha-hora y la primera posición que aparezca en el texto. Si llega otra cabecera sin el `NNNN`, o pasan 15 minutos, el mensaje queda como «cortado». Los temas **A, B, D y L** (los que un receptor no puede rechazar) pasan a Avisos: D (salvamento) rojo, B (meteorológico) naranja, A y L (navegantes) amarillo; de serie se difunden desde naranja. Con posición, el objeto APRS va allí y cuenta el radio (400 km); sin posición, solo boletín.
+
+**Inmarsat-C EGC** (SafetyNET, banda L):
+
+- El descodificador es [InmarScope](https://github.com/SarahRoseLives/InmarScope) (GPL-3.0; RTL-SDR, SDRplay, Airspy…; necesita una antena de banda L hacia el satélite). En su salida de mensajes, active el envío por **UDP** a `127.0.0.1:5556` con formato **JSON** (5556 es su puerto de serie).
+- La consola junta los trozos de un mismo mensaje y da su prioridad: **Socorro** rojo, **Urgencia** naranja, **Seguridad** amarillo y **Rutina** solo se muestra. Con posición en el texto, el objeto va allí y cuenta el radio (500 km).
+
+Los mensajes de los dos receptores se guardan en el historial y valen 12 horas desde la última vez que se reciben. Radio, nivel mínimo y repetición se cambian desde el aviso, en Avisos.
+
 ---
 
 ## 8. Sistema
@@ -518,6 +541,8 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 | Pat | Winlink | HTTP 8080 (`pat http`) |
 | AIS-catcher / rtl_ais | AIS | UDP 10110 (o TCP) |
 | readsb / dump1090 | ADS-B | SBS TCP 30003 |
+| `sat-navtex` (tools/navtex) | NAVTEX con SDR | Archivo `/var/lib/sat-aprs/navtex.txt` |
+| InmarScope | Inmarsat-C EGC | UDP 5556 (JSON) |
 | WeeWX | Estación meteorológica | Parte por `wxnow.txt` o su base de datos |
 | SocketCAN | NMEA 2000 | `can0`, 250 kbit/s |
 

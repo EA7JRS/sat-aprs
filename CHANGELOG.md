@@ -2,6 +2,17 @@
 
 Este archivo registra el historial de versiones progresivas y cambios realizados en la consola de emergencias civiles y telecomunicaciones de emergencia REMER.
 
+## [v1.39.0] - 2026-11-20
+### NAVTEX e Inmarsat-C con SDR
+- **Radio → NAVTEX e Inmarsat**, pantalla nueva: estado de los dos receptores, mensajes con su tema o prioridad, texto completo y ajustes.
+- **NAVTEX** (`server/radio/navtex.ts`, `tools/navtex/`): `navtex.sh` sintoniza 1 kHz por debajo de 518 kHz en USB con `rtl_fm` (RTL-SDR; V3 con muestreo directo) o `rx_fm` (SoapySDR: SDRplay RSPdx-R2 y otros) y pasa el audio a `navtex_rx_from_file` de fventuri/navtex (el descodificador de fldigi), que escribe en `/var/lib/sat-aprs/navtex.txt`. `instalar.sh` lo compila e instala el servicio `sat-navtex`. La consola lee el archivo según crece y separa los mensajes `ZCZC … NNNN` (estación, tema, número, fecha-hora y posición). Probado con la grabación real de Mondolfo del propio descodificador, remuestreada a 12 kHz.
+- **Inmarsat-C EGC** (`server/radio/egc.ts`): escucha por UDP (127.0.0.1:5556, el puerto de serie de InmarScope) las líneas JSON de InmarScope, completas o compactas; junta los trozos de un mismo mensaje.
+- Los dos pasan a **Avisos** (grupos «navtex» y «egc»): NAVTEX por tema (D rojo, B naranja, A y L amarillo), EGC por prioridad (Socorro, Urgencia, Seguridad). La primera posición del texto (`36-05.2N 005-21.0W` y variantes, `server/core/posicionTexto.ts`) sitúa el objeto APRS y aplica el radio; sin posición, solo boletín. Vienen apagados; de serie se difunde desde naranja.
+- Los mensajes se guardan en el historial y alimentan la lista de radioavisos de las notificaciones del navegador.
+- **Fuera la entrada UDP antigua de Inmarsat** (puerto 9999, en todas las interfaces): ponía «NAVAREA III» y «LES-NUC-UDP» cuando el mensaje no traía área ni emisor, y daba descripciones erróneas de los códigos de servicio.
+
+---
+
 ## [v1.38.0] - 2026-11-20
 ### Tres fuentes nuevas sin clave
 - **MeteoAlarm** (`server/fuentes/meteoalarm.ts`): los avisos oficiales de los servicios meteorológicos europeos, del feed Atom de cada país (`feeds.meteoalarm.org`). El feed no trae el contorno de las zonas: la estación sigue las que se le indiquen, por código EMMA_ID o por nombre, y en pantalla aparecen las zonas que han tenido aviso para elegirlas. Con AEMET activado no repite las zonas de España. Objeto en la estación con nombre estable por zona y fenómeno (`PT014VI`).

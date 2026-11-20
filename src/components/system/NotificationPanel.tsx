@@ -24,7 +24,7 @@ export type WeatherRule = ThreatRule;
 
 interface NavareaWarning {
   id: string;
-  navareaType: 'NAVAREA III' | 'Armada Española' | 'NAVTEX';
+  navareaType: string;
   category: string;
   title: string;
   urgency: string;

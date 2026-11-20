@@ -22,7 +22,7 @@ const QUE_HAY: Record<string, string> = {
   avisos: 'Todos los avisos de la cadena: los que se difunden y los que no, con el motivo y sus tramas APRS, y las reglas de cada tipo. Plan Meteosalud.',
   estacion: 'Meteorología de la estación, calidad del aire cercana, perfil APRS (indicativo, posición, símbolo, baliza, parte meteorológico) y WeeWX con sus 24 h.',
   mapa: 'Capas con todo lo que llega con coordenadas: estación, avisos, APRS, AIS, ADS-B y tráfico de la DGT. Boyas cercanas. Nada del mapa se retransmite.',
-  radio: 'Equipo por CAT, rotor, satélites con Doppler, cluster DX, grupo ARTS y EAI, mensajería APRS y DAPNET, consola de comandos; Direwolf, aprx, tramas APRS, HF y Winlink.',
+  radio: 'Equipo por CAT, rotor, satélites con Doppler, cluster DX, grupo ARTS y EAI, mensajería APRS y DAPNET, consola de comandos; Direwolf, aprx, tramas APRS, HF, Winlink, y NAVTEX e Inmarsat-C con un SDR.',
   sistema: 'Estado del equipo y de los enlaces, configuración y archivos .conf, salida NMEA 2000 y herramientas de prueba (nada de ellas se emite).',
 };
 

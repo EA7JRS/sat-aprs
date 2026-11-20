@@ -60,7 +60,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
 | Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
-| NAVTEX e Inmarsat | Sin fuente real conectada (los datos de ejemplo se han retirado) |
+| Radio · NAVTEX e Inmarsat: NAVTEX con RTL-SDR o SDRplay (`tools/navtex/`) e Inmarsat-C EGC desde InmarScope por UDP; sus avisos, por APRS | Operativo desde la v1.39.0; la cadena NAVTEX probada con una grabación real, sin probar aún con el SDR en la estación |
 | Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; sin probar aún contra las fuentes reales |
 | Tornados, Protección Civil | Sin fuente pública utilizable: el SPC de la NOAA solo cubre EE. UU.; no se conoce un feed público de los avisos de Protección Civil (ES-Alert llega por difusión celular a los móviles) |
 
@@ -113,7 +113,7 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/propagacion.ts`, `server/sistema/` | HF y propagación; estado del equipo (ntpsec) |
 | `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
 | `src/` | Consola web: React 19, Vite y Tailwind CSS (`src/pages/` una pantalla por archivo, `src/navigation.ts` las secciones) |
-| `tools/` | `instalar-aprx.sh` (aprx desde el fork) y `canboat/` (comprobación de los PGN de NMEA 2000) |
+| `tools/` | `instalar-aprx.sh` (aprx desde el fork), `navtex/` (receptor NAVTEX con SDR) y `canboat/` (comprobación de los PGN de NMEA 2000) |
 | `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y radio |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)

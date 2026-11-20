@@ -88,6 +88,14 @@ const REGLAS: Record<string, { titulo: string; campos: CampoRegla[] }> = {
     { clave: 'radiacionRadioKm', rotulo: 'Radio', unidad: 'km', porDefecto: 100 },
     { clave: 'radiacionUmbral', rotulo: 'Umbral', unidad: 'µSv/h', porDefecto: 0.3 },
   ] },
+  navtex: { titulo: 'los avisos NAVTEX', campos: [
+    { clave: 'navtexRadioKm', rotulo: 'Radio (si traen posición)', unidad: 'km', porDefecto: 400 },
+    { clave: 'navtexGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
+  egc: { titulo: 'los avisos Inmarsat-C', campos: [
+    { clave: 'egcRadioKm', rotulo: 'Radio (si traen posición)', unidad: 'km', porDefecto: 500 },
+    { clave: 'egcGravedadMinima', rotulo: 'Nivel mínimo', unidad: 'nivel', porDefecto: 'naranja' },
+  ] },
   pronostico: { titulo: 'el pronóstico de WeatherAPI', campos: [
     { clave: 'thresholdWindKts', rotulo: 'Viento previsto', unidad: 'kn', porDefecto: 25 },
     { clave: 'thresholdTempMinC', rotulo: 'Helada', unidad: '°C', porDefecto: 0 },

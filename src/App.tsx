@@ -13,6 +13,7 @@ import Direwolf from './pages/Direwolf';
 import Aprx from './pages/Aprx';
 import Winlink from './pages/Winlink';
 import TramasAprs from './pages/TramasAprs';
+import Maritimo from './pages/Maritimo';
 import Weewx from './pages/Weewx';
 import type { AprsPacket } from './utils/aprsPaquete';
 import Nmea2000Card from './components/Nmea2000Card';
@@ -1039,6 +1040,8 @@ export default function App() {
           </motion.div>
         ) : activeTab === 'aprs-adaptor' ? (
           <TramasAprs />
+        ) : activeTab === 'maritimo' ? (
+          <Maritimo config={data.config} onGuardar={(cambios) => handleSaveConfig(cambios as TelemetryConfig)} />
         ) : activeTab === 'pat-pillar' ? (
           /* Radio · Winlink (Pat) */
           <motion.div

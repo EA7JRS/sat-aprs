@@ -117,3 +117,23 @@ export function ejecutarVoacap(dir: string, e: EntradaVoacap): Promise<SalidaVoa
     });
   });
 }
+
+/**
+ * Número de manchas solares para VOACAP a partir de los índices solares diarios del SWPC (daily-solar-indices.txt:
+ * año mes día flujo manchas…): la media de los días que trae el archivo (unos 30), más estable que el valor de un día.
+ * Si no hay número de manchas, se estima con el flujo de 10,7 cm: (flujo − 64) × 0,9. Lo mismo hace Wefax
+ * (tools/actualizar-manchas.sh). No es el suavizado de 12 meses, sino la media observada del último mes.
+ */
+export function manchasParaVoacap(texto: string): { manchas: number; dias: number; hasta: string; de: 'manchas' | 'flujo' } | null {
+  let s = 0, n = 0, f = 0, m = 0, hasta = '';
+  for (const linea of String(texto ?? '').split('\n')) {
+    const p = linea.trim().split(/\s+/);
+    if (p.length < 5 || !/^\d{4}$/.test(p[0])) continue;
+    hasta = `${p[0]}-${p[1]}-${p[2]}`;
+    if (/^\d+$/.test(p[4]) && Number(p[4]) <= 400) { s += Number(p[4]); n++; }
+    if (/^\d+$/.test(p[3]) && Number(p[3]) >= 50 && Number(p[3]) <= 500) { f += Number(p[3]); m++; }
+  }
+  if (n >= 5) return { manchas: Math.min(300, Math.round(s / n)), dias: n, hasta, de: 'manchas' };
+  if (m >= 5) return { manchas: Math.min(300, Math.max(0, Math.round((f / m - 64) * 0.9))), dias: m, hasta, de: 'flujo' };
+  return null;
+}

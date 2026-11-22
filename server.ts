@@ -60,7 +60,7 @@ import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './serv
 import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, recortarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
 import { BANDAS_CIRCUITO_KHZ, leerCartas, leerCircuito, rutaCircuito } from './server/radio/wefax';
 import { maidenheadToLatLon } from './server/formulas/radio';
-import { ejecutarVoacap, voacapDisponible } from './server/radio/voacap';
+import { ejecutarVoacap, manchasParaVoacap, voacapDisponible } from './server/radio/voacap';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -3074,6 +3074,7 @@ let cachedNoaaForecast: any = null;
 let lastFetchTime: number = 0;
 
 let cachedNoaaSolarIndices: any = null;
+let manchasVoacap: ReturnType<typeof manchasParaVoacap> = null;
 let lastSolarFetch: number = 0;
 
 async function fetchNoaaSolarIndices() {
@@ -3089,6 +3090,8 @@ async function fetchNoaaSolarIndices() {
     clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
     const text = await res.text();
+    // para VOACAP: la media de los días del archivo, no el valor de un día
+    manchasVoacap = manchasParaVoacap(text) ?? manchasVoacap;
     const lines = text.trim().split('\n');
     let latestData = null;
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -4970,16 +4973,17 @@ async function circuitoHf(req: express.Request, res: express.Response) {
     if (!aqui) return res.json({ error: 'la consola no tiene posición: sin ella no hay circuito', circuito: null });
     // VOACAP pide el número de manchas suavizado del mes. Si no se ha escrito, se usa el del día y se avisa.
     const escrito = Number(config.voacapManchas);
-    const delDia = Number((await fetchNoaaSolarIndices())?.ssn);
+    await fetchNoaaSolarIndices();
+    const delDia = manchasVoacap ? manchasVoacap.manchas : NaN;
     const hayEscrito = String(config.voacapManchas ?? '').trim() !== '' && Number.isFinite(escrito) && escrito >= 0 && escrito <= 300;
     const manchas = hayEscrito ? escrito : (Number.isFinite(delDia) && delDia >= 0 && delDia <= 300 ? delDia : NaN);
-    if (!Number.isFinite(manchas)) return res.json({ error: 'falta el número de manchas solares: escríbalo en Marítimo > NAVTEX (no se pudo leer el del día)', circuito: null });
+    if (!Number.isFinite(manchas)) return res.json({ error: 'falta el número de manchas solares: no se pudo leer de la NOAA; escríbalo en Marítimo > NAVTEX', circuito: null });
     const d = new Date();
     try {
       const s = await ejecutarVoacap(DIR_VOACAP, { txLat: pos.lat, txLon: pos.lon, rxLat: aqui.lat, rxLon: aqui.lon, kw, khz, anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1, manchas, ruido: 145, umbral: 40 });
       return res.json({
         error: null, destino: pos, origen: 'local',
-        aviso: hayEscrito ? '' : 'Con el número de manchas del día, no el suavizado del mes que pide VOACAP: escriba este en Marítimo > NAVTEX para afinar.',
+        aviso: hayEscrito ? '' : `Manchas solares: media de ${manchasVoacap?.dias ?? '?'} días hasta el ${manchasVoacap?.hasta ?? '?'} (NOAA${manchasVoacap?.de === 'flujo' ? ', estimada con el flujo' : ''}).`,
         circuito: { ok: true, motivo: '', km: gcDistanceKm({ lat: aqui.lat, lon: aqui.lon }, { lat: pos.lat, lon: pos.lon }), manchas, mes: d.getUTCMonth() + 1, ruido: 145, umbral: 40, khz, fiabilidad: s.fiabilidad, senal: s.senal },
       });
     } catch (e: any) {

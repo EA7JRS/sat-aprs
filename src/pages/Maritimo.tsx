@@ -469,8 +469,8 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
               <label className="flex flex-col gap-1 text-sm text-slate-300">Dirección de Wefax (radiofacsímil y predicción de onda corta; vacío, sin él)
                 <input className={`${campo} font-mono`} value={v.wefaxUrl} onChange={(e) => setV({ ...v, wefaxUrl: e.target.value })} placeholder="http://127.0.0.1:8081" id="input-wefax-url" />
               </label>
-              <label className="flex flex-col gap-1 text-sm text-slate-300">Manchas solares suavizadas del mes, para VOACAP en este equipo (vacío, las del día)
-                <input className={`${campo} font-mono`} value={v.voacapManchas} onChange={(e) => setV({ ...v, voacapManchas: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })} placeholder="las del día" inputMode="numeric" id="input-voacap-manchas" />
+              <label className="flex flex-col gap-1 text-sm text-slate-300">Manchas solares para VOACAP en este equipo (vacío: la media del mes, de la NOAA)
+                <input className={`${campo} font-mono`} value={v.voacapManchas} onChange={(e) => setV({ ...v, voacapManchas: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })} placeholder="automático" inputMode="numeric" id="input-voacap-manchas" />
               </label>
               <label className="flex flex-col gap-1 text-sm text-slate-300">Estaciones que se siguen (letras; vacío, todas)
                 <input className={`${campo} font-mono`} value={v.navtexEstaciones} onChange={(e) => setV({ ...v, navtexEstaciones: e.target.value })} placeholder="todas" id="input-navtex-estaciones" />

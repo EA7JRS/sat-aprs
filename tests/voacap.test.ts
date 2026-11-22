@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
-import { EntradaVoacap, ejecutarVoacap, entradaVoacap, leerSalidaVoacap, voacapDisponible } from '../server/radio/voacap';
+import { EntradaVoacap, ejecutarVoacap, entradaVoacap, leerSalidaVoacap, manchasParaVoacap, voacapDisponible } from '../server/radio/voacap';
 
 const base: EntradaVoacap = { txLat: 53.67, txLon: 9.8, rxLat: 36.53, rxLon: -6.29, kw: 10, khz: [3855, 7880, 13882.5], anio: 2026, mes: 11, manchas: 80, ruido: 145, umbral: 40 };
 
@@ -42,4 +42,17 @@ test('lectura de una salida real de voacapl', () => {
 test('sin el programa no hay predicción propia', async () => {
   assert.equal(voacapDisponible('/no/existe'), false);
   await assert.rejects(ejecutarVoacap('/no/existe', base), /no está instalado/);
+});
+
+test('el número de manchas para VOACAP: la media de los días del archivo de la NOAA', () => {
+  // archivo de muestra con la forma de daily-solar-indices.txt (cifras inventadas para la prueba)
+  const cab = ':Product: Daily Solar Data\n#  Date   10.7cm  Number\n#----\n';
+  const dias = [[150, 90], [155, 80], [148, 70], [152, 85], [149, 75]];
+  const texto = cab + dias.map(([f, s], i) => `2026 11 ${18 + i}  ${f}     ${s}      500      1    -999      *   3  0`).join('\n');
+  assert.deepEqual(manchasParaVoacap(texto), { manchas: 80, dias: 5, hasta: '2026-11-22', de: 'manchas' });
+  // sin número de manchas, por el flujo: (150,8 − 64) × 0,9 = 78
+  const sinManchas = cab + dias.map(([f], i) => `2026 11 ${18 + i}  ${f}     -1      500`).join('\n');
+  assert.deepEqual(manchasParaVoacap(sinManchas), { manchas: 78, dias: 5, hasta: '2026-11-22', de: 'flujo' });
+  assert.equal(manchasParaVoacap(cab + '2026 11 22  150  90  500  1'), null);    // con menos de cinco días no hay media
+  assert.equal(manchasParaVoacap('no es el archivo'), null);
 });

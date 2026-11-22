@@ -341,11 +341,22 @@ Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apa
 1. En ese equipo, instale Navtex y sus servicios como dice su README (`sudo sh tools/instalar-servicios.sh`) y abra el puerto de su interfaz (8080) a la red local.
 2. En esta pantalla, en **Entradas**, encienda NAVTEX y escriba su dirección, por ejemplo `http://sdr.local:8080`.
 
+Qué versión de Navtex hace falta para cada cosa:
+
+| En la consola | Navtex |
+| :--- | :--- |
+| Mensajes, estado y ajustes de los receptores, estaciones, posición compartida | 1.1.0 |
+| Borrar, exportar, repeticiones, calidad de la recepción y turno; conservación y salida `NRX` | 1.2.0 |
+| Alarma de búsqueda y salvamento; forma de la sentencia `NRX` | 1.3.0 |
+| Conservar siempre | 1.5.0 |
+
+Con un Navtex más antiguo lo demás sigue funcionando. La versión instalada sale en la tarjeta de estado de NAVTEX. La interfaz propia de Navtex está en español e inglés; la consola, de momento, solo en español.
+
 La pantalla tiene cuatro vistas:
 
 - **NAVTEX**: los mensajes recibidos, por tema. Los de los temas A, B, D y L de las estaciones que se siguen pasan a Avisos. Al abrir uno se ve cuántos caracteres llegaron mal y si llegó fuera del turno de su letra, y se puede **borrar**. Debajo de la lista: **guardar todos** en un archivo de texto o CSV, y **borrar todos**.
 - **Estaciones**: las próximas emisiones de las estaciones que se siguen y la tabla de estaciones de cada frecuencia, ordenada por distancia a la posición de la consola, con el alcance que declara cada una y su próxima hora. Con «Se sigue / No» se elige de qué letras pasan los avisos; «Seguir solo las que quedan en alcance» lo hace de una vez. La letra vale para las tres frecuencias y para todas las estaciones que la comparten. Los datos son la Tabla 4 de la UIT (2017) y, para 4209,5 kHz, la lista de Wikipedia: tómelos como referencia, no como horario oficial.
-- **Receptores**: estado y ajustes de los dos receptores de Navtex (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección y alimentación de la antena). Cada cambio se guarda al momento y el receptor lo aplica solo en unos segundos. Solo con la sesión de administrador.
+- **Receptores**: estado y ajustes de los dos receptores de Navtex (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección y alimentación de la antena), y debajo la conservación de los mensajes y la salida NMEA 0183 del receptor (destino UDP, puerto TCP y forma de la sentencia `NRX`). Cada cambio se guarda al momento y el receptor lo aplica solo en unos segundos. Solo con la sesión de administrador.
 - **Inmarsat-C**: ver más abajo.
 
 **Qué pasa con los mensajes.**

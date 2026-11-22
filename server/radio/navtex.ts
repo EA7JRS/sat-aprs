@@ -93,7 +93,7 @@ export function separarNavtex(buffer: string, recibido = Date.now()): { mensajes
  * Mensajes del receptor NAVTEX en red (fork EA7JRS/Navtex), tal como los da
  * su API `GET /api/messages?since=<id>`:
  *   {"id":5,"bbbb":"EE39","freq":490,"received":"2026-11-22T07:38:00Z","complete":false,"message":"ZCZC EE39\n…"}
- * Recibe 518 y 490 kHz a la vez. Devuelve los mensajes y el mayor id visto,
+ * Recibe 518 y 490 kHz a la vez, o 4209,5 kHz (onda corta) si se le pide. Devuelve los mensajes y el mayor id visto,
  * para pedir la próxima vez solo los nuevos.
  */
 export interface MensajeNavtexRed extends MensajeNavtex { freq: number | null }
@@ -113,7 +113,8 @@ export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: 
     const recibido = Number.isFinite(cuando) && cuando <= ahora + 5 * 60_000 && cuando > ahora - 7 * 86400_000 ? cuando : ahora;
     const m = mensaje(cab, cuerpo, recibido, x?.complete === false);
     const freq = Number(x?.freq);
-    if (m) mensajes.push({ ...m, freq: freq === 518 || freq === 490 ? freq : null });
+    // 4209 es el canal de onda corta, 4209,5 kHz
+    if (m) mensajes.push({ ...m, freq: freq === 518 || freq === 490 || freq === 4209 ? freq : null });
   }
   return { mensajes, ultimoId };
 }

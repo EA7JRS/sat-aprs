@@ -130,6 +130,9 @@ test('NAVTEX en red: mensajes de la API del receptor EA7JRS/Navtex', () => {
   // Una hora del receptor en el futuro no se cree
   assert.equal(s.recibido, ahora);
   assert.deepEqual(mensajesDeReceptor({ error: 'x' }, ahora), { mensajes: [], ultimoId: 0 });
+  // Onda corta: 4209 es 4209,5 kHz; otra frecuencia no se cree
+  const hf = mensajesDeReceptor([{ id: 1, bbbb: 'EE39', freq: 4209, complete: true, message: 'ZCZC EE39\nWEATHER FORECAST FOR THE AREA' }, { id: 2, bbbb: 'EE40', freq: 7000, complete: true, message: 'ZCZC EE40\nWEATHER FORECAST FOR THE AREA' }], ahora);
+  assert.deepEqual(hf.mensajes.map((m) => m.freq), [4209, null]);
 });
 
 test('NAVTEX en red: solo se admite la dirección del equipo', () => {

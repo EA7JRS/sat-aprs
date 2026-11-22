@@ -2,6 +2,11 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.46.1] - 2026-11-22
+- NAVTEX desde un receptor en la red: se reconoce el canal de onda corta, 4209,5 kHz, que el receptor EA7JRS/Navtex puede escuchar en lugar de 518 y 490 kHz.
+
+---
+
 ## [v1.46.0] - 2026-11-22
 ### NAVTEX desde un receptor en la red
 - Radio → NAVTEX e Inmarsat: nuevo origen «Receptor Navtex en la red», además del descodificador en el propio equipo. La consola pregunta cada minuto a un receptor del fork [EA7JRS/Navtex](https://github.com/EA7JRS/Navtex) (SDRplay o RTL-SDR, en otro equipo) por los mensajes nuevos. Ese receptor escucha 518 y 490 kHz a la vez, y cada mensaje dice por cuál llegó.

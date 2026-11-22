@@ -79,7 +79,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
       <section aria-label="Estado" className="flex flex-wrap gap-3">
         <Estado id="mar-navtex" titulo="NAVTEX (SDR)" ok={!n.activo ? null : navtexVivo}
           texto={!n.activo ? 'Apagado' : enRed
-            ? (n.error ? 'Sin receptor' : navtexVivo ? 'Escuchando 518 y 490 kHz' : n.red?.consulta ? 'Receptor parado' : 'Consultando…')
+            ? (n.error ? 'Sin receptor' : navtexVivo ? 'Escuchando' : n.red?.consulta ? 'Receptor parado' : 'Consultando…')
             : (n.error ? 'Sin descodificador' : navtexVivo ? (n.abierto ? `Recibiendo ${n.abierto}` : 'Escuchando') : 'Sin caracteres')}
           detalle={!n.activo ? 'se enciende abajo' : enRed
             ? (n.error ? `${n.url || 'sin dirección'}: ${n.error}` : `${n.url}${nombreReceptor ? ` · ${nombreReceptor}` : ''}${n.ultimoDato ? ` · recibiendo muestras ${haceCuanto(n.ultimoDato, ahora)}` : ' · el receptor contesta, pero no está recibiendo'}`)
@@ -112,7 +112,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                   <button type="button" className="w-full text-left p-3 cursor-pointer hover:bg-slate-800/50 flex flex-wrap items-baseline gap-x-3 gap-y-1" onClick={() => setAbierto(abierto === m.clave ? null : m.clave)} aria-expanded={abierto === m.clave}>
                     <span className={`border rounded px-1.5 font-mono text-xs font-bold ${COLOR_TEMA[m.tema] ?? 'border-slate-600 text-slate-300'}`}>{m.cabecera}</span>
                     <span className="text-slate-100 font-semibold">{n.temas[m.tema] ?? m.tema}</span>
-                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
+                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq === 4209 ? '4209,5' : m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
                     <span className="basis-full text-[13px] text-slate-300 truncate">{m.texto.split('\n').find((l) => l.trim() && !/^\d{6} ?UTC/.test(l)) ?? ''}</span>
                   </button>
                   {abierto === m.clave && <pre className="px-3 pb-3 text-[13px] text-slate-200 whitespace-pre-wrap break-words font-mono">{m.texto}</pre>}
@@ -171,7 +171,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
             </div>
             {v.navtexOrigen === 'red' ? (
               <p className="text-[13px] text-slate-400">
-                El receptor es el programa <span className="font-mono">Navtex</span> del fork EA7JRS/Navtex, en otro equipo de la red (SDRplay o RTL-SDR): recibe 518 y 490 kHz a la vez y la consola le pregunta cada minuto por los mensajes nuevos. De noche llegan estaciones lejanas: indique las letras de las que le interesan.
+                El receptor es el programa <span className="font-mono">Navtex</span> del fork EA7JRS/Navtex, en otro equipo de la red (SDRplay o RTL-SDR): recibe 518 y 490 kHz a la vez (o 4209,5 kHz, en onda corta) y la consola le pregunta cada minuto por los mensajes nuevos. De noche llegan estaciones lejanas: indique las letras de las que le interesan.
               </p>
             ) : (
               <p className="text-[13px] text-slate-400">

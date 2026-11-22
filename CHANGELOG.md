@@ -2,6 +2,10 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.51.0] - 2026-11-22
+- NAVTEX: **los mensajes ya no se pueden borrar a mano** (OMI MSC.508(105), 6.1.1: el usuario no debe poder borrar mensajes de la memoria). Fuera «Borrar este mensaje» y «Borrar todos»; `/api/navtex/borrar` contesta 410. Salen solos al cumplir su plazo. Va con Navtex 1.7.0, que hace lo mismo.
+- NAVTEX · Receptores: ajuste **Gestión de alertas del puente** de la salida NMEA 0183 del receptor (`nrx.bam`; sentencias `ALF`, `ALC`, `HBT` y orden `ACN`; Navtex 1.7.0).
+
 ## [v1.50.0] - 2026-11-22
 - NAVTEX: **«Conservar siempre»** en cada mensaje (OMI MSC.508(105), 6.1.2). Lo marca en la consola y en el receptor, no se borra al cumplir el plazo y «Borrar todos» lo respeta. Hasta 50. Pide Navtex 1.5.0 o posterior para que el receptor también lo conserve.
 - Probado contra el servidor real de Navtex 1.6.0.

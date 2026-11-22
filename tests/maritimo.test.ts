@@ -184,6 +184,7 @@ test('NAVTEX: repeticiones (heard), calidad, exportación y trozos para NMEA 200
   assert.equal(trozosNavtexN2k({ cabecera: 'GA12', texto: 'A '.repeat(4000) }).length, 30);
   assert.ok(ajusteReceptorValido('retention_hours', '168') && ajusteReceptorValido('nrx.udp', '192.168.1.255:10110') && ajusteReceptorValido('nrx.udp', '') && ajusteReceptorValido('nrx.tcp', '0'));
   assert.ok(ajusteReceptorValido('nrx.format', 'iec') && ajusteReceptorValido('nrx.format', 'furuno') && !ajusteReceptorValido('nrx.format', 'x'));
+  assert.ok(ajusteReceptorValido('nrx.bam', 'on') && ajusteReceptorValido('nrx.bam', 'off') && !ajusteReceptorValido('nrx.bam', '1'));
   assert.ok(!ajusteReceptorValido('retention_hours', '24') && !ajusteReceptorValido('nrx.udp', 'equipo') && !ajusteReceptorValido('nrx.udp', 'a:0') && !ajusteReceptorValido('nrx.tcp', '80'));
 });
 

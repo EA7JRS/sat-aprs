@@ -180,14 +180,6 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
     const nuevas = actuales.includes(letra) ? actuales.filter((l) => l !== letra) : [...actuales, letra];
     void seguir(nuevas.length === 26 ? '' : nuevas.sort().join(''));
   };
-  const borrar = async (que: { clave: string } | { todos: true }) => {
-    try {
-      const r = await customFetch('/api/navtex/borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(que) });
-      const j = await r.json().catch(() => ({}));
-      if (r.ok) setD((x) => (x ? { ...x, navtex: { ...x.navtex, mensajes: 'todos' in que ? x.navtex.mensajes.filter((m) => m.conservado) : x.navtex.mensajes.filter((m) => m.clave !== que.clave) } } : x));
-      setMsgRx(r.ok ? (j.enReceptor === false ? { ok: false, texto: 'Borrado aquí; el receptor no lo ha borrado (¿es anterior a la versión 1.2?).' } : null) : { ok: false, texto: j.error || 'No se pudo borrar.' });
-    } catch { setMsgRx({ ok: false, texto: 'No se pudo borrar.' }); }
-  };
   const conservar = async (clave: string, si: boolean) => {
     try {
       const r = await customFetch('/api/navtex/conservar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clave, conservar: si }) });
@@ -296,7 +288,6 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button type="button" className={botonMenor} disabled={!isAdmin} onClick={() => void conservar(m.clave, !m.conservado)} id={`conservar-${m.cabecera}`}>{m.conservado ? 'Dejar de conservar' : 'Conservar siempre'}</button>
-                        <button type="button" className={botonMenor} disabled={!isAdmin} onClick={() => void borrar({ clave: m.clave })} id={`borrar-${m.cabecera}`}>Borrar este mensaje</button>
                       </div>
                     </div>
                   )}
@@ -308,8 +299,6 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
             <div className="flex flex-wrap items-center gap-2" id="mar-acciones">
               <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=txt" download id="exportar-txt">Guardar todos como texto</a>
               <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=csv" download id="exportar-csv">Guardar todos como CSV</a>
-              <button type="button" className={botonMenor} disabled={!isAdmin} id="borrar-todos"
-                onClick={() => { if (window.confirm('¿Borrar todos los mensajes NAVTEX, salvo los conservados, aquí y en el receptor? Los que las estaciones repitan en las próximas 72 horas no volverán a aparecer.')) void borrar({ todos: true }); }}>Borrar todos</button>
               {msgRx && ver === 'navtex' && <span className={`text-sm ${msgRx.ok ? 'text-emerald-400' : 'text-amber-300'}`} role="status">{msgRx.texto}</span>}
             </div>
           )}
@@ -418,6 +407,12 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                     <select className={campo} value={rx.ajustes['nrx.format'] === 'iec' ? 'iec' : 'furuno'} onChange={(e) => void poner('nrx.format', e.target.value)} id="ajuste-nrx-format">
                       <option value="furuno">Furuno (la de la app y el plotter APRS LoRa+)</option>
                       <option value="iec">IEC 61097-6 (la de la norma)</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">Gestión de alertas del puente (ALF, ALC, HBT; acepta ACN)
+                    <select className={campo} value={rx.ajustes['nrx.bam'] === 'on' ? 'on' : 'off'} onChange={(e) => void poner('nrx.bam', e.target.value)} id="ajuste-nrx-bam">
+                      <option value="off">Apagada (solo ALR y ACK)</option>
+                      <option value="on">Encendida (Navtex 1.7.0 o posterior)</option>
                     </select>
                   </label>
                   <p className="md:col-span-3 text-[13px] text-slate-400">Las sentencias NRX llevan el texto entero de cada mensaje nuevo. La alarma de búsqueda y salvamento sale además en la sentencia ALR cada 30 segundos hasta que se reconoce. La salida no tiene contraseña: si hay cortafuegos, abra el puerto TCP solo a la red local.</p>

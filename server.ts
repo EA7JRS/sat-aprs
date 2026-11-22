@@ -4931,26 +4931,9 @@ app.get('/api/navtex/exportar', (req, res) => {
   res.set('Content-Disposition', `attachment; filename="navtex.${csv ? 'csv' : 'txt'}"`);
   res.send(exportarNavtex(mensajesNavtex as MensajeNavtexRed[], csv));
 });
-// Borrar un mensaje o todos: de la consola y del receptor (que recuerda 72 horas lo borrado, para no traerlo otra vez)
-app.post('/api/navtex/borrar', async (req, res) => {
-  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });
-  const todos = req.body?.todos === true;
-  const clave = String(req.body?.clave ?? '');
-  // «Todos» respeta los conservados, como el receptor
-  const fuera = (mensajesNavtex as MensajeNavtexRed[]).filter((m) => (todos ? !m.conservado : claveNavtex(m) === clave));
-  if (!fuera.length) return res.status(404).json({ error: 'Ese mensaje ya no está.' });
-  const base = baseNavtex();
-  let enReceptor = true;
-  if (base) {
-    try {
-      if (todos) await pedirNavtex(base, '/api/messages/delete/all', 'POST');
-      else for (const m of fuera) if (m.idReceptor) await pedirNavtex(base, `/api/messages/delete/${m.idReceptor}`, 'POST');
-    } catch { enReceptor = false; }   // un receptor anterior a la 1.2 no sabe borrar: se borra aquí igualmente
-  }
-  mensajesNavtex = mensajesNavtex.filter((m) => !fuera.includes(m as MensajeNavtexRed));
-  historial.guardarEstado('navtex', mensajesNavtex);
-  addLog('SYS', config.callsign, 'LOCAL', 'NAVTEX', todos ? `Borrados los ${fuera.length} mensajes NAVTEX.` : `Borrado el mensaje NAVTEX ${fuera[0].cabecera}.`, true, 'Mensajes NAVTEX');
-  res.json({ ok: true, borrados: fuera.length, enReceptor });
+// Los mensajes NAVTEX no se pueden borrar a mano (OMI MSC.508(105), 6.1.1): salen solos al cumplir su plazo
+app.post('/api/navtex/borrar', (_req, res) => {
+  res.status(410).json({ error: 'Los mensajes NAVTEX no se pueden borrar (OMI MSC.508(105), 6.1.1): salen solos al cumplir su plazo.' });
 });
 // Marcar un mensaje para conservarlo siempre, o quitar la marca: en la consola y en el receptor
 app.post('/api/navtex/conservar', async (req, res) => {

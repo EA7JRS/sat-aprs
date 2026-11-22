@@ -1,6 +1,6 @@
 # S.A.T.-APRS+ · Normas, especificaciones y reglamentos
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.50.0** · ediciones comprobadas el 22 de noviembre de 2026 · [Manual](MANUAL.md) · [Arquitectura](ARQUITECTURA.md)
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.51.0** · ediciones comprobadas el 22 de noviembre de 2026 · [Manual](MANUAL.md) · [Arquitectura](ARQUITECTURA.md)
 
 Este documento dice qué normas y especificaciones contempla la consola, qué aplica de cada una y qué no.
 
@@ -56,6 +56,7 @@ Las reglas de un receptor NAVTEX las aplica el programa Navtex; están detallada
 | :--- | :--- | :--- |
 | Los temas A, B, D y L no se pueden rechazar | Manual NAVTEX de la OMI, 5.3.4 | Son los que pasan a Avisos; los demás solo se muestran |
 | Un mensaje ya recibido no se vuelve a presentar | UIT-R M.540-2; OMI MSC.508(105), 6.2 | La repetición no crea otro aviso: solo mantiene vigente el que hay |
+| El usuario no debe poder borrar mensajes de la memoria | OMI MSC.508(105), 6.1.1 | No hay forma de borrarlos, ni en la consola ni en el receptor (desde la v1.51.0 y Navtex 1.7.0) |
 | El usuario puede marcar mensajes para conservarlos siempre | OMI MSC.508(105), 6.1.2 | Botón «Conservar siempre», que lo marca también en el receptor |
 | Recepción buena por debajo del 4 % de errores | OMI MSC.508(105), 6.2.3 | Cada mensaje enseña sus caracteres mal recibidos; una copia buena sustituye a la que llegó con errores |
 | La información de búsqueda y salvamento da una alarma que solo se apaga a mano | OMI MSC.508(105), 7; IEC 61097-6, 4.3.9 | La pantalla enseña la alarma del receptor y permite reconocerla (administrador). El mensaje salta además como aviso rojo |

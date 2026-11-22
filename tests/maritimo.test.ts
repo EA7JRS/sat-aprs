@@ -2,10 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { ColaArchivo, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex, mensajesDeReceptor, urlReceptorValida } from '../server/radio/navtex';
+import { ajusteReceptorValido, claveNavtex, emitiendoAhora, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, proximaEmision, urlReceptorValida } from '../server/radio/navtex';
 import { eventoEgc, juntarEgc, leerEgc } from '../server/radio/egc';
 import { posicionEnTexto } from '../server/core/posicionTexto';
 import { boletinAprs, objetoAprs } from '../server/core/aprsAvisos';
@@ -20,34 +17,11 @@ test('posición en el texto de un radioaviso', () => {
   assert.equal(posicionEnTexto('36-75N 005-21W'), null);   // minutos imposibles
 });
 
-// La cabecera y el principio son la salida real de navtex_rx_from_file con la grabación de Mondolfo (fventuri/navtex)
-const MONDOLFO = '\nZCZC EE39\n062040 UTC NOV 21\nMONDOLFO RADIO\n\nPREVISIONI METEOROLOGICHE PER IL MEDITERRANEO EMESSE DAL CENTRO METEO DI ROMA\n';
-
-test('NAVTEX: separa los mensajes de la corriente de caracteres', () => {
-  // A medias: queda pendiente
-  let r = separarNavtex('ruido' + MONDOLFO, T);
-  assert.equal(r.mensajes.length, 0);
-  assert.ok(r.resto.startsWith('ZCZC EE39'));
-  // Llega el final y otro mensaje entero
-  r = separarNavtex(r.resto + 'NNNN\n\nZCZC GD05\nSAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21.0W.\nALL SHIPS IN VICINITY KEEP SHARP LOOKOUT.\nNNNN\nZCZC GA1', T);
-  assert.deepEqual(r.mensajes.map((m) => m.cabecera), ['EE39', 'GD05']);
-  const [e39, d05] = r.mensajes;
-  assert.equal(e39.dtg, '062040 UTC NOV 21');
-  assert.equal(e39.estacion, 'E');
-  assert.equal(e39.tema, 'E');
-  assert.equal(e39.incompleto, false);
-  assert.deepEqual(d05.posicion, { lat: 36.08667, lon: -5.35 });
-  assert.equal(r.resto, '\nZCZC GA1');
-  // Una cabecera nueva sin NNNN corta la anterior
-  r = separarNavtex('ZCZC GA12\nLIGHT UNLIT AT PUNTA CARNERO.\nZCZC GB13\nGALE WARNING STRAIT OF GIBRALTAR.\nNNNN', T);
-  assert.deepEqual(r.mensajes.map((m) => [m.cabecera, m.incompleto]), [['GA12', true], ['GB13', false]]);
-  // Pendiente demasiado tiempo
-  assert.equal(cerrarPendiente('ZCZC GA14\nTEXTO A MEDIAS SIN FINAL', T, T + 60_000), null);
-  assert.equal(cerrarPendiente('ZCZC GA14\nTEXTO A MEDIAS SIN FINAL', T, T + 16 * 60_000)!.incompleto, true);
-});
+// Mensajes como los da la API del receptor Navtex (uno por cabecera)
+const delReceptor = (textos: string[], cuando = T) => mensajesDeReceptor(textos.map((message, i) => ({ id: i + 1, bbbb: message.slice(5, 9), freq: 518, received: new Date(cuando).toISOString(), complete: true, message })), cuando).mensajes;
 
 test('NAVTEX: aviso con la gravedad del tema y la misma clave al repetirse', () => {
-  const r = separarNavtex('ZCZC GD05\nSAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21.0W.\nNNNN\nZCZC GE40\n201000 UTC NOV 26\nFORECAST FOR STRAIT.\nNNNN\n', T);
+  const r = { mensajes: delReceptor(['ZCZC GD05\nSAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21.0W.\nNNNN', 'ZCZC GE40\n201000 UTC NOV 26\nFORECAST FOR STRAIT.\nNNNN']) };
   const [sar, prevision] = r.mensajes.map((m) => eventoNavtex(m, 12 * 3600_000)!);
   assert.equal(sar.gravedad, 'rojo');
   assert.equal(sar.titulo, 'SAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21');   // 60 caracteres
@@ -58,22 +32,8 @@ test('NAVTEX: aviso con la gravedad del tema y la misma clave al repetirse', () 
   assert.equal(prevision.lat, undefined);
   assert.ok(objetoAprs('EA7JRS-13', sar, T)!.includes(';NTXGD05  *'));
   assert.ok(boletinAprs('EA7JRS-13', sar).includes(':BLN1MARIT:'));
-  const otraVez = separarNavtex('ZCZC GD05\nSAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21.0W.\nNNNN', T + 4 * 3600_000).mensajes[0];
+  const otraVez = delReceptor(['ZCZC GD05\nSAR. MAYDAY RELAY. FISHING VESSEL SINKING IN 36-05.2N 005-21.0W.\nNNNN'], T + 4 * 3600_000)[0];
   assert.equal(claveNavtex(otraVez), claveNavtex(r.mensajes[0]));
-});
-
-test('NAVTEX: lee lo que se añade al archivo, también si se vacía', () => {
-  const ruta = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sat-ntx-')), 'navtex.txt');
-  const c = new ColaArchivo(ruta);
-  assert.equal(c.leerNuevo(), '');
-  assert.match(c.error!, /no existe/);
-  fs.writeFileSync(ruta, 'ZCZC GA');
-  assert.equal(c.leerNuevo(), 'ZCZC GA');
-  fs.appendFileSync(ruta, '12\nTEXTO\n');
-  assert.equal(c.leerNuevo(), '12\nTEXTO\n');
-  assert.equal(c.leerNuevo(), '');
-  fs.writeFileSync(ruta, 'NUEVO');
-  assert.equal(c.leerNuevo(), 'NUEVO');
 });
 
 test('EGC: lee el JSON de InmarScope y junta los trozos', () => {
@@ -142,4 +102,47 @@ test('NAVTEX en red: solo se admite la dirección del equipo', () => {
   for (const mala of ['', 'sdr.local:8080', 'ftp://sdr.local', 'http://u:p@sdr.local', 'http://sdr.local/api/x', 'http://sdr.local/?a=1', 'file:///etc/passwd']) {
     assert.equal(urlReceptorValida(mala), null, mala);
   }
+});
+
+test('NAVTEX: tabla de estaciones del receptor, por distancia y con su próxima emisión', () => {
+  // Filas de la Tabla 4 de la UIT (Oostende, Tarifa y Cabo La Nao) y otras que no encajan, para ver que se descartan
+  const t = estacionesDeReceptor({
+    fuentes: [{ nombre: 'UIT', titulo: 'Tabla 4', fecha: '2017-05-31', url: 'https://www.itu.int/x.pdf' }, { nombre: 'x', titulo: 'y', fecha: '', url: 'javascript:alert(1)' }],
+    estaciones: [
+      { area: 'I', pais: 'Belgium', nombre: 'Oostende Radio', lat: 51.1825, lon: 2.8078, khz: 518, letra: 'T', horas: ['0310', '0710', '1110', '1510', '1910', '2310'], alcance: 55, idioma: 'English', estado: 'activa', fuente: 'UIT' },
+      { area: 'II', pais: 'Spain', nombre: 'Tarifa', lat: 36.0422, lon: -5.5563, khz: 518, letra: 'G', horas: ['0100', '0500', '0900', '1300', '1700', '2100'], alcance: 300, idioma: 'English', estado: 'activa', fuente: 'UIT' },
+      { area: 'III', pais: 'Spain', nombre: 'Cabo La Nao', lat: 38.7178, lon: 0.1758, khz: 518, letra: 'X', horas: ['0350', '0750', '1150', '1550', '1950', '2350'], alcance: 220, idioma: 'English', estado: 'activa', fuente: 'UIT' },
+      { area: 'I', pais: 'Nowhere', nombre: 'Sin posición', lat: null, lon: null, khz: 490, letra: 'Q', horas: ['2500', '0010'], alcance: null, estado: 'prevista' },
+      { nombre: 'Frecuencia rara', khz: 500, letra: 'A' }, { nombre: 'Letra rara', khz: 518, letra: 'AB' },
+    ],
+  });
+  assert.equal(t.estaciones.length, 4);
+  assert.equal(t.fuentes[1].url, '');
+  assert.deepEqual(t.estaciones[3].horas, ['0010']);
+  const cadiz = { lat: 36.53, lon: -6.29 };
+  const v = estacionesPorDistancia(t.estaciones, cadiz, T);   // 10:00 UTC
+  assert.deepEqual(v.map((e) => e.nombre), ['Tarifa', 'Cabo La Nao', 'Oostende Radio', 'Sin posición']);
+  assert.ok(v[0].mn! > 40 && v[0].mn! < 50, `Tarifa a ${v[0].mn} millas`);
+  assert.equal(v[0].enAlcance, true);
+  assert.equal(v[2].enAlcance, false);
+  assert.equal(v[3].km, null);
+  assert.equal(new Date(v[0].proxima!).toISOString(), '2026-11-20T13:00:00.000Z');
+  assert.equal(new Date(v[1].proxima!).toISOString(), '2026-11-20T11:50:00.000Z');
+  // Sin posición de la consola: sin distancias, y nadie «en alcance»
+  assert.ok(estacionesPorDistancia(t.estaciones, null, T).every((e) => e.km === null && !e.enAlcance));
+  // El turno dura diez minutos; el de las 23:50 pasa al día siguiente
+  assert.equal(emitiendoAhora(['0900'], Date.parse('2026-11-20T09:05:00Z')), true);
+  assert.equal(emitiendoAhora(['0900'], Date.parse('2026-11-20T09:10:30Z')), false);
+  assert.equal(new Date(proximaEmision(['2350', '0350'], Date.parse('2026-11-20T23:55:00Z'))!).toISOString(), '2026-11-21T03:50:00.000Z');
+  assert.equal(proximaEmision([], T), null);
+});
+
+test('NAVTEX: ajustes del receptor que la consola acepta mandar', () => {
+  for (const [k, val] of [['rx1.enabled', '1'], ['rx2.source', 'rtlsdr'], ['rx1.band', 'auto'], ['rx1.hf_slots', '0200,0600'], ['rx1.hf_slots', ''], ['rx2.port', 'B'], ['rx2.serial', ''], ['rx2.direct', 'auto'], ['rx2.upconv', '125000000'], ['rx2.gain', '28.0'], ['rx2.gain', 'auto'], ['rx2.ppm', '-12']]) {
+    assert.equal(ajusteReceptorValido(k, val), true, `${k}=${val}`);
+  }
+  for (const [k, val] of [['rx3.enabled', '1'], ['position', '36.5,-6.2'], ['position_source', 'manual'], ['rx1.band', 'vhf'], ['rx1.hf_slots', '2400'], ['rx1.hf_slots', '0200,'], ['rx1.serial', '../x'], ['rx1.gain', '1e3'], ['rx1.ppm', '--1'], ['rx1.enabled/../x', '1'], ['rx1.port', 'D']]) {
+    assert.equal(ajusteReceptorValido(k, val), false, `${k}=${val}`);
+  }
+  assert.equal(posicionParaReceptor(36.53, -6.29), '36.53000,-6.29000');
 });

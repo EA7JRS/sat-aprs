@@ -3,16 +3,15 @@
 //
 // S.A.T.-APRS+ · NAVTEX recibido con un SDR propio.
 //
-// La cadena va fuera de la consola (tools/navtex/navtex.sh): rtl_fm (RTL-SDR)
-// o rx_fm (SoapySDR: SDRplay RSPdx-R2 y otros) en USB a 1 kHz por debajo de
-// 518 kHz, y el descodificador navtex_rx_from_file (fventuri/navtex, el de
-// fldigi) escribiendo los caracteres en un archivo. La consola lee lo que se
-// va añadiendo al archivo y separa los mensajes «ZCZC B1B2B3B4 … NNNN».
+// El receptor es el programa Navtex (github.com/EA7JRS/Navtex), en este equipo
+// o en otro de la red: recibe 518 y 490 kHz a la vez, o 4209,5 kHz, con un
+// SDRplay o un RTL-SDR, y guarda los mensajes «ZCZC B1B2B3B4 … NNNN». La consola
+// le pregunta por su API: mensajes, estado de los dos receptores, ajustes y
+// la tabla de estaciones.
 //
 //   B1 estación transmisora (A–Z), B2 tema, B3B4 número.
 //   Temas que un receptor no puede rechazar: A, B, D y L.
 
-import fs from 'fs';
 import type { Evento, Gravedad } from '../core/evento';
 import { posicionEnTexto } from '../core/posicionTexto';
 
@@ -58,38 +57,6 @@ function mensaje(cab: string, cuerpo: string, recibido: number, incompleto: bool
 }
 
 /**
- * Separa los mensajes de la corriente de caracteres del descodificador.
- * Devuelve los mensajes cerrados y lo que queda pendiente (un mensaje a medias).
- */
-export function separarNavtex(buffer: string, recibido = Date.now()): { mensajes: MensajeNavtex[]; resto: string } {
-  const mensajes: MensajeNavtex[] = [];
-  const re = /ZCZC ([A-Z])([A-Z])(\d\d)[^\n]*\n/g;
-  const cabeceras: Array<{ cab: string; desde: number; inicio: number }> = [];
-  for (const m of buffer.matchAll(re)) cabeceras.push({ cab: m[1] + m[2] + m[3], desde: m.index!, inicio: m.index! + m[0].length });
-  let consumido = 0;
-  for (let i = 0; i < cabeceras.length; i++) {
-    const c = cabeceras[i];
-    const siguiente = cabeceras[i + 1]?.desde ?? buffer.length;
-    const tramo = buffer.slice(c.inicio, siguiente);
-    const fin = tramo.indexOf('NNNN');
-    if (fin >= 0) {
-      const m = mensaje(c.cab, tramo.slice(0, fin), recibido, false);
-      if (m) mensajes.push(m);
-      consumido = c.inicio + fin + 4;
-    } else if (i + 1 < cabeceras.length) {
-      // Llegó otra cabecera sin el final de este: se da por cortado
-      const m = mensaje(c.cab, tramo, recibido, true);
-      if (m) mensajes.push(m);
-      consumido = siguiente;
-    } else {
-      consumido = c.desde;   // el último sigue abierto
-    }
-  }
-  if (!cabeceras.length) consumido = Math.max(0, buffer.length - 64);   // sin cabecera, solo se guarda la cola
-  return { mensajes, resto: buffer.slice(consumido).slice(-20_000) };
-}
-
-/**
  * Mensajes del receptor NAVTEX en red (fork EA7JRS/Navtex), tal como los da
  * su API `GET /api/messages?since=<id>`:
  *   {"id":5,"bbbb":"EE39","freq":490,"received":"2026-11-22T07:38:00Z","complete":false,"message":"ZCZC EE39\n…"}
@@ -130,13 +97,6 @@ export function urlReceptorValida(texto: string): string | null {
   } catch { return null; }
 }
 
-/** Un mensaje que lleva más de 15 minutos abierto se cierra como cortado. */
-export function cerrarPendiente(resto: string, abiertoDesde: number, ahora = Date.now()): MensajeNavtex | null {
-  if (ahora - abiertoDesde < 15 * 60_000) return null;
-  const m = /ZCZC ([A-Z])([A-Z])(\d\d)[^\n]*\n([\s\S]*)$/.exec(resto);
-  return m ? mensaje(m[1] + m[2] + m[3], m[4], abiertoDesde, true) : null;
-}
-
 export function eventoNavtex(m: MensajeNavtex, vigenciaMs: number): Evento | null {
   const gravedad = GRAVEDAD_TEMA[m.tema] ?? 'info';
   // La primera línea con contenido que no es el grupo fecha-hora
@@ -151,37 +111,97 @@ export function eventoNavtex(m: MensajeNavtex, vigenciaMs: number): Evento | nul
   };
 }
 
-/** Lee lo que se va añadiendo a un archivo (como `tail -f`), sin perderse si rota o se vacía. */
-export class ColaArchivo {
-  private posicion = -1;
-  private ino = -1;
-  error: string | null = null;
-  ultimoDato = 0;
-  constructor(readonly ruta: string) {}
+// ---------------------------------------------------------------------------
+// Estaciones NAVTEX (la tabla que publica el receptor: UIT, Tabla 4, y Wikipedia para 4209,5 kHz)
 
-  leerNuevo(): string {
-    try {
-      const st = fs.statSync(this.ruta);
-      if (this.posicion < 0 || st.ino !== this.ino) {
-        // Primera vez: se empieza por el final (lo anterior ya se leyó o es viejo), salvo un archivo recién creado
-        this.posicion = this.posicion < 0 ? Math.max(0, st.size - 64 * 1024) : 0;
-        this.ino = st.ino;
-      }
-      if (st.size < this.posicion) this.posicion = 0;   // se vació
-      if (st.size === this.posicion) { this.error = null; return ''; }
-      const fd = fs.openSync(this.ruta, 'r');
-      try {
-        const n = Math.min(st.size - this.posicion, 1024 * 1024);
-        const buf = Buffer.alloc(n);
-        fs.readSync(fd, buf, 0, n, this.posicion);
-        this.posicion += n;
-        this.error = null;
-        this.ultimoDato = Date.now();
-        return buf.toString('latin1');
-      } finally { fs.closeSync(fd); }
-    } catch (e: any) {
-      this.error = e?.code === 'ENOENT' ? 'no existe el archivo (¿está en marcha el descodificador?)' : String(e?.message ?? e);
-      return '';
-    }
+export interface EstacionNavtex {
+  area: string; pais: string; nombre: string; lat: number | null; lon: number | null;
+  khz: 518 | 490 | 4209; letra: string; horas: string[]; alcanceMn: number | null; idioma: string; activa: boolean; fuente: string;
+}
+export interface FuenteEstaciones { nombre: string; titulo: string; fecha: string; url: string }
+
+const texto = (v: unknown, max: number) => (typeof v === 'string' ? v : '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
+
+/** Lee `estaciones.json` del receptor. Lo que no encaja se descarta: nunca se inventa una estación. */
+export function estacionesDeReceptor(j: unknown): { estaciones: EstacionNavtex[]; fuentes: FuenteEstaciones[] } {
+  const o = (j && typeof j === 'object' ? j : {}) as any;
+  const estaciones: EstacionNavtex[] = [];
+  for (const x of (Array.isArray(o.estaciones) ? o.estaciones : []).slice(0, 2000)) {
+    const khz = Number(x?.khz);
+    const letra = String(x?.letra ?? '').toUpperCase();
+    if ((khz !== 518 && khz !== 490 && khz !== 4209) || !/^[A-Z]$/.test(letra)) continue;
+    const lat = Number(x?.lat), lon = Number(x?.lon);
+    const conPos = x?.lat !== null && x?.lon !== null && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+    const alcance = Number(x?.alcance);
+    estaciones.push({
+      area: texto(x?.area, 8), pais: texto(x?.pais, 60), nombre: texto(x?.nombre, 80),
+      lat: conPos ? lat : null, lon: conPos ? lon : null, khz, letra,
+      horas: (Array.isArray(x?.horas) ? x.horas : []).filter((h: unknown) => typeof h === 'string' && /^([01]\d|2[0-3])[0-5]\d$/.test(h)).slice(0, 48),
+      alcanceMn: x?.alcance !== null && Number.isFinite(alcance) && alcance > 0 ? alcance : null,
+      idioma: texto(x?.idioma, 40), activa: x?.estado === 'activa', fuente: texto(x?.fuente, 20),
+    });
+  }
+  const fuentes = (Array.isArray(o.fuentes) ? o.fuentes : []).slice(0, 8)
+    .map((f: any) => ({ nombre: texto(f?.nombre, 20), titulo: texto(f?.titulo, 160), fecha: texto(f?.fecha, 10), url: /^https:\/\//.test(String(f?.url)) ? texto(f.url, 200) : '' }));
+  return { estaciones, fuentes };
+}
+
+/** Próxima emisión (ms) de una estación con esas horas UTC «HHMM», o null si no tiene. */
+export function proximaEmision(horas: string[], ahora = Date.now()): number | null {
+  const d = new Date(ahora);
+  let mejor: number | null = null;
+  for (const h of horas) {
+    let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Number(h.slice(0, 2)), Number(h.slice(2)));
+    if (t <= ahora) t += 86400_000;
+    if (mejor === null || t < mejor) mejor = t;
+  }
+  return mejor;
+}
+/** ¿Está emitiendo ahora? Cada turno dura 10 minutos. */
+export const emitiendoAhora = (horas: string[], ahora = Date.now()): boolean => {
+  const p = proximaEmision(horas, ahora - 600_000);
+  return p !== null && p <= ahora;
+};
+
+const KM_MN = 1.852;
+export function distanciaKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+export interface EstacionVista extends EstacionNavtex { km: number | null; mn: number | null; enAlcance: boolean; proxima: number | null; emitiendo: boolean }
+/** Las estaciones con su distancia, ordenadas de cerca a lejos (las que no tienen posición, al final). */
+export function estacionesPorDistancia(lista: EstacionNavtex[], pos: { lat: number; lon: number } | null, ahora = Date.now()): EstacionVista[] {
+  return lista.map((e) => {
+    const km = pos && e.lat !== null && e.lon !== null ? distanciaKm(pos, { lat: e.lat, lon: e.lon }) : null;
+    const mn = km === null ? null : km / KM_MN;
+    return { ...e, km: km === null ? null : Math.round(km), mn: mn === null ? null : Math.round(mn), enAlcance: mn !== null && e.alcanceMn !== null && mn <= e.alcanceMn, proxima: proximaEmision(e.horas, ahora), emitiendo: emitiendoAhora(e.horas, ahora) };
+  }).sort((a, b) => (a.km === null ? 1 : 0) - (b.km === null ? 1 : 0) || (a.km ?? 0) - (b.km ?? 0) || a.khz - b.khz || a.letra.localeCompare(b.letra));
+}
+
+// ---------------------------------------------------------------------------
+// Ajustes de los dos receptores. Las mismas reglas que aplica el receptor (valid_setting):
+// la consola no le manda nada que él fuera a rechazar, ni una clave que no sea de un receptor.
+const UNA_DE = (v: string, ...ops: string[]) => ops.includes(v);
+export function ajusteReceptorValido(clave: string, valor: string): boolean {
+  const m = /^rx[12]\.(enabled|source|band|hf_slots|port|bias|serial|direct|upconv|gain|ppm)$/.exec(String(clave));
+  if (!m || typeof valor !== 'string') return false;
+  switch (m[1]) {
+    case 'enabled': case 'bias': return UNA_DE(valor, '0', '1');
+    case 'source': return UNA_DE(valor, 'sdrplay', 'rtlsdr');
+    case 'band': return UNA_DE(valor, 'mf', 'hf', 'auto');
+    case 'hf_slots': return valor === '' || (/^(([01]\d|2[0-3])[0-5]\d)(,([01]\d|2[0-3])[0-5]\d){0,35}$/.test(valor));
+    case 'port': return UNA_DE(valor, 'A', 'B', 'C');
+    case 'serial': return /^[A-Za-z0-9_-]{0,32}$/.test(valor);
+    case 'direct': return UNA_DE(valor, 'auto', '0', '1', '2');
+    case 'upconv': return /^\d{1,10}$/.test(valor);
+    case 'gain': return valor === 'auto' || /^\d{1,2}(\.\d)?$/.test(valor);
+    case 'ppm': return /^-?\d{1,3}$/.test(valor);
+    default: return false;
   }
 }
+
+/** Posición «lat,lon» como la quiere el receptor (5 decimales). */
+export const posicionParaReceptor = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`;

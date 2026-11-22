@@ -57,7 +57,7 @@ import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './server/fuentes/meteoalarm';
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
-import { ColaArchivo, MensajeNavtex, TEMAS_NAVTEX, cerrarPendiente, claveNavtex, eventoNavtex, mensajesDeReceptor, separarNavtex, urlReceptorValida } from './server/radio/navtex';
+import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, ajusteReceptorValido, claveNavtex, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -364,12 +364,11 @@ let config: TelemetryConfig = {
   effisAreasEnabled: false,
   effisAreasRadioKm: 100,
   effisAreasDias: 10,
-  // NAVTEX con SDR propio: archivo que escribe tools/navtex/navtex.sh
+  // NAVTEX con SDR propio: el receptor Navtex (EA7JRS/Navtex), en este equipo o en otro de la red
   navtexEnabled: false,
-  navtexArchivo: '/var/lib/sat-aprs/navtex.txt',
-  // 'archivo': el descodificador de tools/navtex en este equipo; 'red': un receptor EA7JRS/Navtex en la red
-  navtexOrigen: 'archivo',
   navtexUrl: '',
+  // Dar al receptor la posición de la estación cuando él no tiene GPS
+  navtexPosicion: true,
   navtexEstaciones: '',
   navtexRadioKm: 400,
   navtexGravedadMinima: 'naranja',
@@ -4657,17 +4656,17 @@ app.get('/api/fuentes/peligro-incendio', (_req, res) => {
 // ---------------------------------------------------------------------------
 let mensajesNavtex: MensajeNavtex[] = historial.leerEstado<MensajeNavtex[]>('navtex') ?? [];
 let mensajesEgc: MensajeEgc[] = historial.leerEstado<MensajeEgc[]>('egc') ?? [];
-let colaNavtex: ColaArchivo | null = null;
-let restoNavtex = '';
-let navtexAbiertoDesde = 0;
-let navtexCaracteres = 0;
-// Receptor NAVTEX en red (EA7JRS/Navtex)
+// El receptor Navtex (EA7JRS/Navtex), en este equipo o en la red
 let navtexRedUltimoId = Number(historial.leerEstado<number>('navtexRedId') ?? 0) || 0;
 let navtexRedError = '';
 let navtexRedVivo = 0;        // última vez que el receptor dijo estar recibiendo muestras
 let navtexRedConsulta = 0;    // última consulta contestada
 let navtexRedOrigen = '';     // sdrplay, rtlsdr…
 let navtexRedOcupado = false;
+// Lo que el receptor cuenta de sí mismo: estado y ajustes de sus dos receptores, su GPS y su tabla de estaciones
+let navtexReceptor: { base: string; leido: number; estado: Record<string, string>; ajustes: Record<string, string>; gps: any } | null = null;
+let navtexEstacionesLista: { base: string; leido: number; estaciones: EstacionNavtex[]; fuentes: FuenteEstaciones[] } | null = null;
+let navtexPosicionEnviada = '';
 let udpEgc: dgram.Socket | null = null;
 let udpEgcClave = '';
 let udpEgcError = '';
@@ -4726,20 +4725,87 @@ function anotarNavtex(nuevos: MensajeNavtex[]) {
     difundirAvisos(eventosNavtexLista(), politicaNavtex());
   }
 }
-const navtexPorRed = () => config.navtexOrigen === 'red';
+const baseNavtex = () => urlReceptorValida(String(config.navtexUrl ?? ''));
+async function pedirNavtex(base: string, ruta: string, metodo: 'GET' | 'POST' = 'GET'): Promise<any> {
+  const r = await fetch(`${base}${ruta}`, {
+    method: metodo, signal: AbortSignal.timeout(10_000),
+    // El receptor solo acepta cambios con esta cabecera, que un navegador no puede poner desde otra página
+    headers: metodo === 'POST' ? { 'User-Agent': 'S.A.T.-APRS+', 'X-Navtex': '1' } : { 'User-Agent': 'S.A.T.-APRS+' },
+  });
+  if (!r.ok) throw new Error(`el receptor respondió ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+function errorNavtex(e: any): string {
+  const codigo = String(e?.cause?.code ?? '');
+  return e?.name === 'TimeoutError' || codigo === 'ETIMEDOUT' ? 'el receptor no contesta'
+    : codigo === 'ECONNREFUSED' ? 'el equipo rechaza la conexión (¿está en marcha navtex-web y abierto su puerto?)'
+    : codigo === 'ENOTFOUND' || codigo === 'EAI_AGAIN' ? 'no se encuentra ese equipo en la red'
+    : codigo === 'EHOSTUNREACH' || codigo === 'ENETUNREACH' ? 'no hay camino hasta ese equipo'
+    : String(codigo || e?.message || e).slice(0, 120);
+}
+// Solo pares clave-texto cortos: lo que llega de la red no se pasa tal cual al navegador
+function paresDeTexto(j: any): Record<string, string> {
+  const o: Record<string, string> = {};
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return o;
+  for (const [k, v] of Object.entries(j).slice(0, 80)) {
+    if (!/^[A-Za-z0-9_.]{1,40}$/.test(k)) continue;
+    if (typeof v === 'string') o[k] = v.replace(/[\u0000-\u001f]/g, ' ').slice(0, 200);
+    else if (typeof v === 'number' && Number.isFinite(v)) o[k] = String(v);
+    else if (typeof v === 'boolean') o[k] = v ? '1' : '0';
+  }
+  return o;
+}
+function gpsDeReceptor(j: any) {
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const lat = n(j?.lat), lon = n(j?.lon);
+  const conPos = lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && (n(j?.fix) ?? 0) >= 2;
+  return { enabled: j?.enabled === true, connected: j?.connected === true, fix: n(j?.fix), age: n(j?.age), lat: conPos ? lat : null, lon: conPos ? lon : null, used: n(j?.used), visible: n(j?.visible), hdop: n(j?.hdop) };
+}
+/** Estado, ajustes y GPS del receptor; se guarda unos segundos para no preguntarle en cada pintado. */
+async function leerReceptorNavtex(maxMs = 4000): Promise<NonNullable<typeof navtexReceptor>> {
+  const base = baseNavtex();
+  if (!base) throw new Error('falta la dirección del receptor');
+  if (navtexReceptor && navtexReceptor.base === base && Date.now() - navtexReceptor.leido < maxMs) return navtexReceptor;
+  const [estado, ajustes, gps] = await Promise.all([pedirNavtex(base, '/api/status'), pedirNavtex(base, '/api/settings'), pedirNavtex(base, '/api/gps').catch(() => null)]);
+  navtexReceptor = { base, leido: Date.now(), estado: paresDeTexto(estado), ajustes: paresDeTexto(ajustes), gps: gpsDeReceptor(gps) };
+  return navtexReceptor;
+}
+async function leerEstacionesNavtex(): Promise<NonNullable<typeof navtexEstacionesLista>> {
+  const base = baseNavtex();
+  if (!base) throw new Error('falta la dirección del receptor');
+  if (navtexEstacionesLista && navtexEstacionesLista.base === base && Date.now() - navtexEstacionesLista.leido < 6 * 3600_000) return navtexEstacionesLista;
+  const r = estacionesDeReceptor(await pedirNavtex(base, '/estaciones.json'));
+  if (!r.estaciones.length) throw new Error('el receptor no trae tabla de estaciones (¿es una versión anterior a la 1.0?)');
+  navtexEstacionesLista = { base, leido: Date.now(), ...r };
+  return navtexEstacionesLista;
+}
+// La posición de la consola es real si la da el GPS o si se guardó o se fijó alguna vez (no la de fábrica)
+const posicionConsolaReal = () => (!gpsdState.isFallback && gpsdState.mode >= 2) || Math.abs(gpsdState.lat - 40.416775) > 1e-6 || Math.abs(gpsdState.lon + 3.70379) > 1e-6;
+const posicionConsola = () => (posicionConsolaReal() ? { lat: gpsdState.lat, lon: gpsdState.lon } : null);
+/** Si el receptor no tiene GPS, se le da la posición de la estación para que ordene sus estaciones por distancia. */
+async function compartirPosicionNavtex(base: string) {
+  if (config.navtexPosicion === false) return;
+  const pos = posicionConsola();
+  if (!pos) return;
+  const r = await leerReceptorNavtex(30_000);
+  if (r.gps.lat !== null) return;                       // tiene la suya, y es mejor
+  const alli = /^(-?[\d.]+),(-?[\d.]+)$/.exec(r.ajustes.position ?? '');
+  // Menos de unos 200 m de diferencia no merece otra escritura
+  if (alli && Math.abs(Number(alli[1]) - pos.lat) < 0.002 && Math.abs(Number(alli[2]) - pos.lon) < 0.002) return;
+  const valor = posicionParaReceptor(pos.lat, pos.lon);
+  if (valor === navtexPosicionEnviada) return;
+  await pedirNavtex(base, `/api/settings/position/${encodeURIComponent(valor)}`, 'POST');
+  navtexPosicionEnviada = valor;
+  navtexReceptor = null;
+}
 /** Pregunta al receptor en red por los mensajes nuevos y por su estado. */
 async function leerNavtexRed() {
-  if (config.systemPower === false || config.navtexEnabled !== true || !navtexPorRed() || navtexRedOcupado) return;
-  const base = urlReceptorValida(String(config.navtexUrl ?? ''));
-  if (!base) { navtexRedError = 'falta la dirección del receptor (por ejemplo http://sdr.local:8080)'; return; }
+  if (config.systemPower === false || config.navtexEnabled !== true || navtexRedOcupado) return;
+  const base = baseNavtex();
+  if (!base) { navtexRedError = 'falta la dirección del receptor (por ejemplo http://127.0.0.1:8081)'; return; }
   navtexRedOcupado = true;
   try {
-    const pedir = async (ruta: string) => {
-      const r = await fetch(`${base}${ruta}`, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
-      if (!r.ok) throw new Error(`el receptor respondió ${r.status}`);
-      return r.json();
-    };
-    const estado: any = await pedir('/api/status');
+    const estado: any = await pedirNavtex(base, '/api/status');
     // Si el receptor estrenó base de datos, sus identificadores vuelven a empezar
     const ultimoAlli = Number(estado?.last_id);
     if (Number.isFinite(ultimoAlli) && ultimoAlli < navtexRedUltimoId) navtexRedUltimoId = 0;
@@ -4747,7 +4813,7 @@ async function leerNavtexRed() {
     navtexRedVivo = Number.isFinite(vivo) ? vivo : 0;
     navtexRedOrigen = typeof estado?.source === 'string' ? estado.source.slice(0, 20) : '';
     const ahora = Date.now();
-    const r = mensajesDeReceptor(await pedir(`/api/messages?since=${navtexRedUltimoId}`), ahora);
+    const r = mensajesDeReceptor(await pedirNavtex(base, `/api/messages?since=${navtexRedUltimoId}`), ahora);
     navtexRedConsulta = ahora;
     navtexRedError = '';
     if (r.ultimoId > navtexRedUltimoId) { navtexRedUltimoId = r.ultimoId; historial.guardarEstado('navtexRedId', navtexRedUltimoId); }
@@ -4758,31 +4824,11 @@ async function leerNavtexRed() {
       }
       anotarNavtex(r.mensajes);
     }
+    // Lo demás no debe estropear la lectura de mensajes
+    await compartirPosicionNavtex(base).catch((e) => console.warn(`[NAVTEX] posición: ${errorNavtex(e)}`));
   } catch (e: any) {
-    const codigo = String(e?.cause?.code ?? '');
-    navtexRedError = e?.name === 'TimeoutError' || codigo === 'ETIMEDOUT' ? 'el receptor no contesta'
-      : codigo === 'ECONNREFUSED' ? 'el equipo rechaza la conexión (¿está en marcha navtex-web y abierto su puerto?)'
-      : codigo === 'ENOTFOUND' || codigo === 'EAI_AGAIN' ? 'no se encuentra ese equipo en la red'
-      : codigo === 'EHOSTUNREACH' || codigo === 'ENETUNREACH' ? 'no hay camino hasta ese equipo'
-      : String(codigo || e?.message || e).slice(0, 120);
+    navtexRedError = errorNavtex(e);
   } finally { navtexRedOcupado = false; }
-}
-function leerNavtex() {
-  if (config.systemPower === false || config.navtexEnabled !== true || navtexPorRed()) { colaNavtex = null; return; }
-  const ruta = String(config.navtexArchivo || '').trim();
-  if (!ruta) return;
-  if (!colaNavtex || colaNavtex.ruta !== ruta) { colaNavtex = new ColaArchivo(ruta); restoNavtex = ''; }
-  const nuevo = colaNavtex.leerNuevo();
-  const ahora = Date.now();
-  if (nuevo) {
-    navtexCaracteres += nuevo.length;
-    const r = separarNavtex(restoNavtex + nuevo, ahora);
-    restoNavtex = r.resto;
-    if (r.mensajes.length) anotarNavtex(r.mensajes);
-    navtexAbiertoDesde = /ZCZC [A-Z]{2}\d\d/.test(restoNavtex) ? (navtexAbiertoDesde || ahora) : 0;
-  }
-  const cortado = navtexAbiertoDesde ? cerrarPendiente(restoNavtex, navtexAbiertoDesde, ahora) : null;
-  if (cortado) { restoNavtex = ''; navtexAbiertoDesde = 0; anotarNavtex([cortado]); }
 }
 
 /** Abre, cambia o cierra la escucha UDP de InmarScope según la configuración. */
@@ -4830,12 +4876,11 @@ app.get('/api/maritimo', (_req, res) => {
   const ahora = Date.now();
   res.json({
     navtex: {
-      activo: config.navtexEnabled === true, archivo: config.navtexArchivo ?? '', estaciones: String(config.navtexEstaciones ?? ''),
-      origen: navtexPorRed() ? 'red' : 'archivo', url: String(config.navtexUrl ?? ''),
-      red: navtexPorRed() ? { error: navtexRedError || null, consulta: navtexRedConsulta || null, vivo: navtexRedVivo || null, receptor: navtexRedOrigen || null } : null,
-      error: config.navtexEnabled !== true ? null : navtexPorRed() ? navtexRedError || null : colaNavtex?.error ?? null,
-      ultimoDato: navtexPorRed() ? navtexRedVivo || null : colaNavtex?.ultimoDato || null, caracteres: navtexCaracteres,
-      abierto: navtexAbiertoDesde ? /ZCZC ([A-Z]{2}\d\d)/.exec(restoNavtex)?.[1] ?? null : null,
+      activo: config.navtexEnabled === true, estaciones: String(config.navtexEstaciones ?? ''),
+      url: String(config.navtexUrl ?? ''), compartePosicion: config.navtexPosicion !== false,
+      red: { error: navtexRedError || null, consulta: navtexRedConsulta || null, vivo: navtexRedVivo || null, receptor: navtexRedOrigen || null },
+      error: config.navtexEnabled !== true ? null : navtexRedError || null,
+      ultimoDato: navtexRedVivo || null,
       temas: TEMAS_NAVTEX,
       mensajes: mensajesNavtex.slice(0, 150).map((m) => ({ ...m, clave: claveNavtex(m), vigente: ahora - m.recibido < VIGENCIA_RADIOAVISO })),
     },
@@ -4844,6 +4889,47 @@ app.get('/api/maritimo', (_req, res) => {
       mensajes: mensajesEgc.slice(0, 150).map((m) => ({ ...m, prioridadEs: prioridadEs(m.prioridad), vigente: ahora - m.recibido < VIGENCIA_RADIOAVISO })),
     },
   });
+});
+
+// El receptor Navtex visto desde la consola: sus dos receptores, su GPS, sus estaciones.
+app.get('/api/navtex/receptor', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const base = baseNavtex();
+  if (!base) return res.json({ url: '', error: 'falta la dirección del receptor', estado: {}, ajustes: {}, gps: null, leido: null });
+  try {
+    const r = await leerReceptorNavtex();
+    // La posición manual del receptor no sale de la consola sin sesión: es la de la estación
+    const { position, position_source, ...ajustes } = r.ajustes;
+    res.json({ url: base, error: null, estado: r.estado, ajustes, posicionOrigen: position_source === 'manual' ? 'manual' : 'gps', gps: r.gps, leido: r.leido });
+  } catch (e: any) {
+    res.json({ url: base, error: errorNavtex(e), estado: {}, ajustes: {}, gps: null, leido: null });
+  }
+});
+app.get('/api/navtex/estaciones', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const t = await leerEstacionesNavtex();
+    const pos = posicionConsola();
+    res.json({ error: null, conPosicion: !!pos, fuentes: t.fuentes, estaciones: estacionesPorDistancia(t.estaciones, pos) });
+  } catch (e: any) {
+    res.json({ error: errorNavtex(e), conPosicion: false, fuentes: [], estaciones: [] });
+  }
+});
+// Cambiar un ajuste de uno de los dos receptores: solo el administrador, y solo claves y valores conocidos
+app.post('/api/navtex/ajuste', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });
+  const clave = String(req.body?.clave ?? ''), valor = String(req.body?.valor ?? '');
+  if (!ajusteReceptorValido(clave, valor)) return res.status(400).json({ error: 'Ese ajuste o ese valor no valen.' });
+  const base = baseNavtex();
+  if (!base) return res.status(409).json({ error: 'Falta la dirección del receptor.' });
+  try {
+    await pedirNavtex(base, `/api/settings/${clave}/${encodeURIComponent(valor)}`, 'POST');
+    navtexReceptor = null;
+    addLog('SYS', config.callsign, 'LOCAL', 'NAVTEX', `Receptor Navtex: ${clave} = ${valor || '(vacío)'}`, true, 'Ajuste del receptor NAVTEX');
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(502).json({ error: errorNavtex(e) });
+  }
 });
 
 function programarOtrasFuentes() {
@@ -4872,9 +4958,10 @@ function programarOtrasFuentes() {
   setTimeout(seguro(descargarEmscAvisos), 46000);
   setInterval(seguro(descargarEffis), 3 * 3600_000);
   setTimeout(seguro(descargarEffis), 43000);
-  setInterval(leerNavtex, 2000);
   setInterval(() => { void leerNavtexRed(); }, 60_000);
   setTimeout(() => { void leerNavtexRed(); }, 8000);
+  // La tabla de estaciones, para el mapa, sin esperar a que alguien abra la página de NAVTEX
+  setTimeout(() => { if (config.navtexEnabled === true && baseNavtex()) leerEstacionesNavtex().catch(() => { /* se reintenta al abrir la página */ }); }, 15_000);
   ajustarEgc();
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
   setInterval(() => {
@@ -6077,6 +6164,11 @@ app.get('/api/mapa', (_req, res) => {
     })),
     trafico,
     traficoReal: dgtDatosReales,
+    // Estaciones NAVTEX de la tabla del receptor (si está encendido y ya se leyó)
+    navtex: config.navtexEnabled === true && navtexEstacionesLista
+      ? estacionesPorDistancia(navtexEstacionesLista.estaciones, posicionConsola(), ahora).filter((x) => x.lat !== null && x.activa)
+          .map((x) => ({ nombre: x.nombre, pais: x.pais, letra: x.letra, khz: x.khz, lat: x.lat, lon: x.lon, horas: x.horas, alcanceMn: x.alcanceMn, mn: x.mn, enAlcance: x.enAlcance, seguida: !estacionesNavtex().size || estacionesNavtex().has(x.letra) }))
+      : [],
   });
 });
 
@@ -6283,19 +6375,18 @@ app.post('/api/config', (req, res) => {
     if (updated.egcGravedadMinima !== undefined && GRAVEDADES.includes(updated.egcGravedadMinima as Gravedad)) config.egcGravedadMinima = updated.egcGravedadMinima;
     // Archivo, dirección y puerto del propio equipo: solo el administrador
     if (isAuthorizedRequest(req)) {
-      if (updated.navtexArchivo !== undefined) config.navtexArchivo = String(updated.navtexArchivo).trim().slice(0, 300);
-      if (updated.navtexOrigen === 'archivo' || updated.navtexOrigen === 'red') config.navtexOrigen = updated.navtexOrigen;
+      if (updated.navtexPosicion !== undefined) config.navtexPosicion = !!updated.navtexPosicion;
       if (updated.navtexUrl !== undefined) {
         const u = String(updated.navtexUrl).trim();
         const valida = urlReceptorValida(u);
         if (!u) config.navtexUrl = '';
-        else if (valida) { if (valida !== config.navtexUrl) { navtexRedUltimoId = 0; historial.guardarEstado('navtexRedId', 0); } config.navtexUrl = valida; }
+        else if (valida) { if (valida !== config.navtexUrl) { navtexRedUltimoId = 0; historial.guardarEstado('navtexRedId', 0); navtexReceptor = null; navtexEstacionesLista = null; navtexPosicionEnviada = ''; } config.navtexUrl = valida; }
       }
       if (updated.egcEscucha !== undefined && /^[0-9.]{7,15}$/.test(String(updated.egcEscucha).trim())) config.egcEscucha = String(updated.egcEscucha).trim();
       if (updated.egcPuerto !== undefined && puertoValido(updated.egcPuerto)) config.egcPuerto = puertoValido(updated.egcPuerto);
     }
     ajustarEgc();
-    if (navtexPorRed() && config.navtexEnabled === true) void leerNavtexRed();
+    if (config.navtexEnabled === true) void leerNavtexRed();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
       setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); seguro(descargarEffis); seguro(descargarEmscAvisos); }, 500);

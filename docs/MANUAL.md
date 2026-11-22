@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.46.1**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.47.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -328,21 +328,31 @@ El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `c
 
 Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apagados y se encienden en esta misma pantalla (con la sesión de administrador).
 
-**NAVTEX** (518 kHz; también 490 kHz o 4209,5 kHz):
+**NAVTEX** (518 y 490 kHz a la vez, o 4209,5 kHz en onda corta). El receptor es el programa [Navtex](https://github.com/EA7JRS/Navtex) (GPL-3.0-or-later), con un SDRplay o un RTL-SDR. Puede estar en este mismo equipo o en otro de la red; la consola habla con él por su API.
 
-1. Instale el descodificador y el servicio: `sudo sh tools/navtex/instalar.sh`. Compila `navtex_rx_from_file` de [fventuri/navtex](https://github.com/fventuri/navtex) (GPL-3.0; es el descodificador NAVTEX de fldigi) e instala `sat-navtex`.
-2. Ajuste `/etc/default/sat-navtex`:
-   - **RTL-SDR** (`SDR=rtlsdr`, con `rtl_fm`): la RTL-SDR Blog V3 necesita muestreo directo para 518 kHz (`DIRECTO=2`, entrada Q); la V4 sintoniza HF por sí sola.
-   - **SDRplay RSPdx-R2** y otros equipos SoapySDR (`SDR=soapy`, con `rx_fm` de rx_tools y SoapySDRPlay3): `SOAPY=driver=sdrplay` y, si hace falta, `ANTENA`.
-   - `FRECUENCIA`, `PPM`, `GANANCIA` y `SALIDA` (de serie `/var/lib/sat-aprs/navtex.txt`).
-3. Arránquelo: `sudo systemctl enable --now sat-navtex`.
-4. En la pantalla, encienda NAVTEX con el mismo archivo. Con «Estaciones que se siguen» (las letras B1, por ejemplo `GX`) se dejan fuera las lejanas que entran de noche.
+*En este equipo:*
 
-**NAVTEX desde otro equipo de la red.** Si el receptor está en otro equipo (por ejemplo, un NUC dedicado a SDR), no hace falta lo anterior:
+1. `sudo sh tools/instalar-navtex.sh`. Descarga y compila Navtex en `/usr/local/src/Navtex`, instala sus servicios (`navtex-web` y dos receptores), elige un puerto libre para su interfaz (8081 en adelante; solo para este equipo, salvo con `--red`) y enciende NAVTEX en la consola con esa dirección. Si estaba la cadena antigua (`sat-navtex`), la retira. Repetirlo actualiza Navtex.
+2. Para un SDRplay hace falta la API del fabricante ([sdrplay.com/api](https://www.sdrplay.com/api/)) instalada antes; sin ella, Navtex se compila solo con RTL-SDR.
+3. En **Receptores**, elija equipo y banda de cada receptor.
 
-1. En ese equipo, instale el receptor del fork [EA7JRS/Navtex](https://github.com/EA7JRS/Navtex) y sus servicios (`sudo sh tools/instalar-servicios.sh`). Vale con SDRplay o con RTL-SDR, y recibe 518 y 490 kHz a la vez.
-2. Abra allí el puerto de su interfaz web (8080) a la red local.
-3. En esta pantalla, encienda NAVTEX, elija «Receptor Navtex en la red» y escriba su dirección, por ejemplo `http://sdr.local:8080`.
+*En otro equipo de la red* (por ejemplo, un NUC dedicado a SDR):
+
+1. En ese equipo, instale Navtex y sus servicios como dice su README (`sudo sh tools/instalar-servicios.sh`) y abra el puerto de su interfaz (8080) a la red local.
+2. En esta pantalla, en **Entradas**, encienda NAVTEX y escriba su dirección, por ejemplo `http://sdr.local:8080`.
+
+La pantalla tiene cuatro vistas:
+
+- **NAVTEX**: los mensajes recibidos, por tema. Los de los temas A, B, D y L de las estaciones que se siguen pasan a Avisos.
+- **Estaciones**: las próximas emisiones de las estaciones que se siguen y la tabla de estaciones de cada frecuencia, ordenada por distancia a la posición de la consola, con el alcance que declara cada una y su próxima hora. Con «Se sigue / No» se elige de qué letras pasan los avisos; «Seguir solo las que quedan en alcance» lo hace de una vez. La letra vale para las tres frecuencias y para todas las estaciones que la comparten. Los datos son la Tabla 4 de la UIT (2017) y, para 4209,5 kHz, la lista de Wikipedia: tómelos como referencia, no como horario oficial.
+- **Receptores**: estado y ajustes de los dos receptores de Navtex (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección y alimentación de la antena). Cada cambio se guarda al momento y el receptor lo aplica solo en unos segundos. Solo con la sesión de administrador.
+- **Inmarsat-C**: ver más abajo.
+
+**Posición.** Si el receptor tiene su propio GPS, usa esa. Si no, la consola le da la de la estación (se puede quitar en Entradas, «Dar al receptor la posición…»).
+
+**Mapa.** La capa «Estaciones NAVTEX» (apagada de serie) pinta las estaciones activas: rombo relleno si queda en alcance, hueco si no. Los avisos NAVTEX que traen posición salen en la capa de Avisos.
+
+> **Si venía de la v1.46 o anterior con el descodificador en el propio equipo** (`tools/navtex`, servicio `sat-navtex`, archivo `/var/lib/sat-aprs/navtex.txt`): esa cadena se ha retirado. Ejecute `sudo sh tools/instalar-navtex.sh`, que la desinstala y deja Navtex en su lugar. Hasta entonces, NAVTEX dirá «falta la dirección del receptor».
 
 La consola le pregunta cada minuto por los mensajes nuevos. El estado dice si contesta, con qué equipo recibe y si le están llegando muestras.
 
@@ -576,8 +586,7 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 | Pat | Winlink | HTTP 8080 (`pat http`) |
 | AIS-catcher / rtl_ais | AIS | UDP 10110 (o TCP) |
 | readsb / dump1090 | ADS-B | SBS TCP 30003 |
-| `sat-navtex` (tools/navtex) | NAVTEX con SDR | Archivo `/var/lib/sat-aprs/navtex.txt` |
-| `navtex-receiver`, `navtex-web` (EA7JRS/Navtex, en este u otro equipo) | NAVTEX en 518 y 490 kHz | HTTP `8080` (`/api/messages`, `/api/status`) |
+| `navtex-receiver`, `navtex-web` (EA7JRS/Navtex, en este u otro equipo) | NAVTEX en 518 y 490 kHz, o 4209,5 kHz | HTTP `8081` en este equipo (`tools/instalar-navtex.sh`) u `8080` en otro: `/api/messages`, `/api/status`, `/api/settings`, `/api/gps`, `/estaciones.json` |
 | InmarScope | Inmarsat-C EGC | UDP 5556 (JSON) |
 | WeeWX | Estación meteorológica | Parte por `wxnow.txt` o su base de datos |
 | SocketCAN | NMEA 2000 | `can0`, 250 kbit/s |

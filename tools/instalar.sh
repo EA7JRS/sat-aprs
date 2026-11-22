@@ -148,7 +148,7 @@ sh "$DIR/tools/actualizar.sh" --aqui
 paso "Siguientes pasos"
 echo "· Actualizar más adelante:      sudo sh $DIR/tools/actualizar.sh"
 echo "· aprx del fork (si no está):   sudo sh $DIR/tools/instalar-aprx.sh"
-echo "· NAVTEX con SDR (opcional):    sudo sh $DIR/tools/navtex/instalar.sh"
+echo "· NAVTEX con SDR (opcional):    sudo sh $DIR/tools/instalar-navtex.sh"
 if [ -n "$TOKEN_NUEVO" ]; then
   echo "· Token de administrador (guárdelo; se pide en Sistema → Acceso de administrador):"
   echo "    $TOKEN_NUEVO"

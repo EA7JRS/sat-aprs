@@ -274,10 +274,9 @@ export interface TelemetryConfig {
   effisAreasEnabled?: boolean;
   effisAreasRadioKm?: number;
   effisAreasDias?: number;
-  /** NAVTEX por SDR: archivo del descodificador, estaciones (letra B1) que se siguen, radio y nivel. */
+  /** NAVTEX por SDR: dirección del receptor Navtex, estaciones (letra B1) que se siguen, radio y nivel. */
   navtexEnabled?: boolean;
-  navtexArchivo?: string;
-  navtexOrigen?: 'archivo' | 'red';
+  navtexPosicion?: boolean;
   navtexUrl?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

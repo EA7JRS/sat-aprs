@@ -20,6 +20,7 @@ interface Incidencia { id: string; tipo: string; carretera: string; poblacion: s
 interface EstacionAprs { nombre: string; origen: string; clase: 'estacion' | 'objeto' | 'item'; lat: number; lon: number; simbolo: string; comentario: string; via: 'RF' | 'IS'; ultima: number }
 interface BarcoMapa { mmsi: number; nombre: string; clase: string; indicativo: string; destino: string; lat: number; lon: number; sog: number | null; rumbo: number | null; ultima: number }
 interface AvionMapa { hex: string; vuelo: string; lat: number; lon: number; altitud: number | null; velocidad: number | null; rumbo: number | null; squawk: string; emergencia: string; enTierra: boolean; ultima: number }
+interface EstacionNavtexMapa { nombre: string; pais: string; letra: string; khz: number; lat: number; lon: number; horas: string[]; alcanceMn: number | null; mn: number | null; enAlcance: boolean; seguida: boolean }
 interface EstadoEntradas {
   ais: { activo: boolean; udpPuerto: number; udpEscuchando: boolean; udpError: string; tcp: { estado: string; destino: string; detalle: string }; sentencias: number; barcos: number };
   adsb: { activo: boolean; estado: string; destino: string; detalle: string; mensajes: number; aeronaves: number };
@@ -32,9 +33,10 @@ interface DatosMapa {
   adsb: AvionMapa[];
   trafico: Incidencia[];
   traficoReal: boolean;
+  navtex?: EstacionNavtexMapa[];
 }
 
-type IdCapa = 'estacion' | 'avisos' | 'aprs' | 'ais' | 'adsb' | 'trafico';
+type IdCapa = 'estacion' | 'avisos' | 'aprs' | 'ais' | 'adsb' | 'trafico' | 'navtex';
 
 const COLOR_NIVEL: Record<string, string> = { rojo: '#f87171', naranja: '#fb923c', amarillo: '#fde047', info: '#94a3b8' };
 const COLOR_TRAFICO: Record<string, string> = { NEGRO: '#0f172a', ROJO: '#f87171', AMARILLO: '#fde047', VERDE: '#4ade80' };
@@ -152,9 +154,9 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
   const [error, setError] = useState(false);
   const [visibles, setVisibles] = useState<Record<IdCapa, boolean>>(() => {
     try {
-      return { estacion: true, avisos: true, aprs: true, ais: true, adsb: true, trafico: false, ...JSON.parse(localStorage.getItem('sat_mapa_capas') || '{}') };
+      return { estacion: true, avisos: true, aprs: true, ais: true, adsb: true, trafico: false, navtex: false, ...JSON.parse(localStorage.getItem('sat_mapa_capas') || '{}') };
     } catch {
-      return { estacion: true, avisos: true, aprs: true, ais: true, adsb: true, trafico: false };
+      return { estacion: true, avisos: true, aprs: true, ais: true, adsb: true, trafico: false, navtex: false };
     }
   });
 
@@ -167,7 +169,7 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
       attribution: '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
     }).addTo(m);
     L.control.scale({ imperial: false }).addTo(m);
-    grupos.current = { trafico: L.layerGroup(), ais: L.layerGroup(), adsb: L.layerGroup(), aprs: L.layerGroup(), avisos: L.layerGroup(), estacion: L.layerGroup() };
+    grupos.current = { navtex: L.layerGroup(), trafico: L.layerGroup(), ais: L.layerGroup(), adsb: L.layerGroup(), aprs: L.layerGroup(), avisos: L.layerGroup(), estacion: L.layerGroup() };
     mapa.current = m;
     return () => {
       m.remove();
@@ -205,6 +207,7 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
     g.aprs.clearLayers();
     g.ais.clearLayers();
     g.adsb.clearLayers();
+    g.navtex.clearLayers();
 
     const e = datos.estacion;
     L.circle([e.lat, e.lon], { radius: e.radioSismosKm * 1000, color: '#38bdf8', weight: 1, dashArray: '6 6', fill: false, interactive: false }).addTo(g.estacion);
@@ -275,6 +278,22 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
         .addTo(g.trafico);
     }
 
+    // Estaciones NAVTEX: rombo; relleno si queda en alcance, hueco si no; más grande si se sigue su letra
+    for (const n of datos.navtex || []) {
+      const lado = n.seguida ? 18 : 14;
+      const icono = L.divIcon({ className: '', iconSize: [lado, lado], iconAnchor: [lado / 2, lado / 2],
+        html: `<svg viewBox="0 0 24 24" width="${lado}" height="${lado}" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12Z" fill="${n.enAlcance ? '#2dd4bf' : '#0f172a'}" stroke="${n.enAlcance ? '#0f172a' : '#2dd4bf'}" stroke-width="2.4" stroke-linejoin="round"/></svg>` });
+      L.marker([n.lat, n.lon], { icon: icono })
+        .bindPopup(globo(`NAVTEX ${n.letra} · ${n.nombre}`, [
+          `${n.khz === 4209 ? '4209,5' : n.khz} kHz · ${n.pais}`,
+          n.horas.length ? `Emite a las ${n.horas.map((h) => `${h.slice(0, 2)}:${h.slice(2)}`).join(', ')} UTC` : '',
+          [n.mn !== null ? `a ${n.mn} millas` : '', n.alcanceMn !== null ? `alcance ${n.alcanceMn} millas` : '', n.mn !== null && n.alcanceMn !== null ? (n.enAlcance ? 'en alcance' : 'fuera de alcance') : ''].filter(Boolean).join(' · '),
+          n.seguida ? 'Sus avisos pasan a Avisos' : 'Letra no seguida',
+        ]))
+        .bindTooltip(`${n.letra} · ${n.nombre}`)
+        .addTo(g.navtex);
+    }
+
     if (!centrado.current) {
       m.setView([e.lat, e.lon], 8);
       centrado.current = true;
@@ -322,6 +341,7 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
         {casilla('aprs', 'APRS', datos ? `· ${(datos.aprs || []).length}` : '')}
         {casilla('ais', 'AIS', datos ? `· ${(datos.ais || []).length}` : '')}
         {casilla('adsb', 'ADS-B', datos ? `· ${(datos.adsb || []).length}` : '')}
+        {casilla('navtex', 'Estaciones NAVTEX', datos ? ((datos.navtex || []).length ? `· ${(datos.navtex || []).length}` : '· sin receptor') : '')}
       </div>
 
       {error && <p className="text-sm text-amber-300">No se pudieron cargar los datos del mapa.</p>}
@@ -332,6 +352,7 @@ export default function Mapa({ onIr, config, onGuardar }: { onIr: (p: Pantalla) 
           <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 bg-slate-400 mr-1.5" />Objetos (cuadrados)</span>
           <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-sky-400 mr-1.5" />Barcos (AIS)</span>
           <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 mr-1.5" />Aeronaves (ADS-B)</span>
+          <span><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rotate-45 bg-teal-400 mr-1.5" />Estaciones NAVTEX (rellenas: en alcance)</span>
         </p>
       )}
 

@@ -2,6 +2,18 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.47.0] - 2026-11-22
+### Navtex, integrado en la consola
+- **Pantalla completa.** Radio → NAVTEX e Inmarsat muestra ahora lo que antes solo estaba en la interfaz del receptor [Navtex](https://github.com/EA7JRS/Navtex): el estado de sus dos receptores, sus ajustes (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección, alimentación de la antena), la última señal en cada frecuencia y su GPS. Los ajustes se cambian desde la consola, solo con la sesión de administrador; la consola solo manda al receptor claves y valores conocidos.
+- **Estaciones.** Tabla de estaciones de 518, 490 y 4209,5 kHz ordenada por distancia a la posición de la consola, con alcance, próxima emisión y «emitiendo ahora»; próximas emisiones de las estaciones que se siguen; y elegir las letras que se siguen desde la propia tabla, o de una vez las que quedan en alcance. Los datos son los que publica el receptor (UIT, Tabla 4, 2017; Wikipedia para 4209,5 kHz).
+- **Posición compartida.** Si el receptor no tiene GPS, la consola le da la posición de la estación (nunca la de fábrica). Se puede quitar.
+- **Mapa.** Nueva capa «Estaciones NAVTEX»: rombo relleno si la estación queda en alcance, hueco si no.
+- **Instalación.** `sudo sh tools/instalar-navtex.sh` instala o actualiza Navtex en el mismo equipo, elige un puerto libre para su interfaz (8081 en adelante, solo local salvo `--red`), instala sus servicios y enciende NAVTEX en la consola.
+- **Se retira la cadena antigua.** Desaparecen `tools/navtex/` (rtl_fm o rx_fm + descodificador de fldigi), el servicio `sat-navtex` y la lectura del archivo `/var/lib/sat-aprs/navtex.txt`, con sus ajustes `navtexArchivo` y `navtexOrigen`. Navtex es la única vía. Quien la usara: `sudo sh tools/instalar-navtex.sh`, que la desinstala y deja Navtex en su lugar; hasta entonces NAVTEX avisa de que falta la dirección del receptor.
+- Probado con el servidor real de Navtex 1.1.0 y mensajes descodificados de grabaciones de prueba. No probado todavía con el instalador en un equipo con systemd ni con mensajes recibidos por antena.
+
+---
+
 ## [v1.46.1] - 2026-11-22
 - NAVTEX desde un receptor en la red: se reconoce el canal de onda corta, 4209,5 kHz, que el receptor EA7JRS/Navtex puede escuchar en lugar de 518 y 490 kHz.
 

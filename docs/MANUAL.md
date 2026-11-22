@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.45.1**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.46.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -338,6 +338,14 @@ Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apa
 3. Arránquelo: `sudo systemctl enable --now sat-navtex`.
 4. En la pantalla, encienda NAVTEX con el mismo archivo. Con «Estaciones que se siguen» (las letras B1, por ejemplo `GX`) se dejan fuera las lejanas que entran de noche.
 
+**NAVTEX desde otro equipo de la red.** Si el receptor está en otro equipo (por ejemplo, un NUC dedicado a SDR), no hace falta lo anterior:
+
+1. En ese equipo, instale el receptor del fork [EA7JRS/Navtex](https://github.com/EA7JRS/Navtex) y sus servicios (`sudo sh tools/instalar-servicios.sh`). Vale con SDRplay o con RTL-SDR, y recibe 518 y 490 kHz a la vez.
+2. Abra allí el puerto de su interfaz web (8080) a la red local.
+3. En esta pantalla, encienda NAVTEX, elija «Receptor Navtex en la red» y escriba su dirección, por ejemplo `http://sdr.local:8080`.
+
+La consola le pregunta cada minuto por los mensajes nuevos. El estado dice si contesta, con qué equipo recibe y si le están llegando muestras.
+
 La consola lee el archivo según crece y separa los mensajes `ZCZC B1B2B3B4 … NNNN`: estación, tema y número, el grupo fecha-hora y la primera posición que aparezca en el texto. Si llega otra cabecera sin el `NNNN`, o pasan 15 minutos, el mensaje queda como «cortado». Los temas **A, B, D y L** (los que un receptor no puede rechazar) pasan a Avisos: D (salvamento) rojo, B (meteorológico) naranja, A y L (navegantes) amarillo; de serie se difunden desde naranja. Con posición, el objeto APRS va allí y cuenta el radio (400 km); sin posición, solo boletín.
 
 **Inmarsat-C EGC** (SafetyNET, banda L):
@@ -569,6 +577,7 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 | AIS-catcher / rtl_ais | AIS | UDP 10110 (o TCP) |
 | readsb / dump1090 | ADS-B | SBS TCP 30003 |
 | `sat-navtex` (tools/navtex) | NAVTEX con SDR | Archivo `/var/lib/sat-aprs/navtex.txt` |
+| `navtex-receiver`, `navtex-web` (EA7JRS/Navtex, en este u otro equipo) | NAVTEX en 518 y 490 kHz | HTTP `8080` (`/api/messages`, `/api/status`) |
 | InmarScope | Inmarsat-C EGC | UDP 5556 (JSON) |
 | WeeWX | Estación meteorológica | Parte por `wxnow.txt` o su base de datos |
 | SocketCAN | NMEA 2000 | `can0`, 250 kbit/s |

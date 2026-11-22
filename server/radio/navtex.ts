@@ -89,6 +89,46 @@ export function separarNavtex(buffer: string, recibido = Date.now()): { mensajes
   return { mensajes, resto: buffer.slice(consumido).slice(-20_000) };
 }
 
+/**
+ * Mensajes del receptor NAVTEX en red (fork EA7JRS/Navtex), tal como los da
+ * su API `GET /api/messages?since=<id>`:
+ *   {"id":5,"bbbb":"EE39","freq":490,"received":"2026-11-22T07:38:00Z","complete":false,"message":"ZCZC EE39\n…"}
+ * Recibe 518 y 490 kHz a la vez. Devuelve los mensajes y el mayor id visto,
+ * para pedir la próxima vez solo los nuevos.
+ */
+export interface MensajeNavtexRed extends MensajeNavtex { freq: number | null }
+export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: MensajeNavtexRed[]; ultimoId: number } {
+  const mensajes: MensajeNavtexRed[] = [];
+  let ultimoId = 0;
+  for (const x of (Array.isArray(j) ? j : [])) {
+    const id = Number(x?.id);
+    if (Number.isInteger(id) && id > ultimoId) ultimoId = id;
+    const cab = String(x?.bbbb ?? '').toUpperCase();
+    if (!/^[A-Z]{2}\d\d$/.test(cab) || typeof x?.message !== 'string') continue;
+    // El texto llega con su cabecera y, si se cerró, con el NNNN: se quitan
+    const cuerpo = x.message.replace(/\r/g, '').split('\n')
+      .filter((l: string, i: number) => !(i === 0 && /ZCZC/.test(l))).join('\n').replace(/\n?\s*NNNN\s*$/, '');
+    const cuando = Date.parse(String(x?.received ?? ''));
+    // Una hora del receptor en el futuro o absurda no se cree: vale la de la consola
+    const recibido = Number.isFinite(cuando) && cuando <= ahora + 5 * 60_000 && cuando > ahora - 7 * 86400_000 ? cuando : ahora;
+    const m = mensaje(cab, cuerpo, recibido, x?.complete === false);
+    const freq = Number(x?.freq);
+    if (m) mensajes.push({ ...m, freq: freq === 518 || freq === 490 ? freq : null });
+  }
+  return { mensajes, ultimoId };
+}
+
+/** Dirección del receptor en red: solo http(s)://equipo[:puerto], sin ruta ni credenciales. */
+export function urlReceptorValida(texto: string): string | null {
+  const t = String(texto ?? '').trim().replace(/\/+$/, '');
+  if (!t) return null;
+  try {
+    const u = new URL(t);
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password || u.search || u.hash || (u.pathname && u.pathname !== '/')) return null;
+    return `${u.protocol}//${u.host}`;
+  } catch { return null; }
+}
+
 /** Un mensaje que lleva más de 15 minutos abierto se cierra como cortado. */
 export function cerrarPendiente(resto: string, abiertoDesde: number, ahora = Date.now()): MensajeNavtex | null {
   if (ahora - abiertoDesde < 15 * 60_000) return null;

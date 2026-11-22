@@ -277,6 +277,8 @@ export interface TelemetryConfig {
   /** NAVTEX por SDR: archivo del descodificador, estaciones (letra B1) que se siguen, radio y nivel. */
   navtexEnabled?: boolean;
   navtexArchivo?: string;
+  navtexOrigen?: 'archivo' | 'red';
+  navtexUrl?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;
   navtexGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';

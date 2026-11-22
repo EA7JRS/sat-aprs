@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ColaArchivo, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex } from '../server/radio/navtex';
+import { ColaArchivo, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex, mensajesDeReceptor, urlReceptorValida } from '../server/radio/navtex';
 import { eventoEgc, juntarEgc, leerEgc } from '../server/radio/egc';
 import { posicionEnTexto } from '../server/core/posicionTexto';
 import { boletinAprs, objetoAprs } from '../server/core/aprsAvisos';
@@ -101,4 +101,42 @@ test('EGC: lee el JSON de InmarScope y junta los trozos', () => {
   const c = leerEgc(JSON.stringify({ ut: '10:00:00', sv: 'SafetyNET, Shore-to-Ship Distress Alert to Circular Area', pr: 'Distress', f: 1537.7, tx: 'DISTRESS ALERT 36-10N 006-30W' }), T)!;
   assert.equal(eventoEgc(c, 3600_000).gravedad, 'rojo');
   assert.equal(c.recibido, T);
+});
+
+test('NAVTEX en red: mensajes de la API del receptor EA7JRS/Navtex', () => {
+  const ahora = Date.parse('2026-11-22T08:00:00Z');
+  // Respuesta real de GET /api/messages (recepción de Mondolfo Radio, cortada)
+  const api = [
+    { id: 5, bbbb: 'EE39', station: 'E', subject: 'E', number: 39, freq: 490, received: '2026-11-22T07:38:00Z', complete: false,
+      message: 'ZCZC EE39\n062040 UTC NOV 21\nMONDOLFO RADIO\n\nPREVISIONI METEOROLOGICHE PER IL MEDITERRANEO\nBURRASCHE IN CORSO: - EST 7 SU TIRRENO MERIDIONALE' },
+    { id: 6, bbbb: 'PA12', freq: 518, received: '2026-11-22T07:50:00Z', complete: true,
+      message: 'ZCZC PA12\n220740 UTC NOV 26\nNAVIGATIONAL WARNING\nBUOY ADRIFT IN 36-45.5N 006-20.0W\nNNNN' },
+    { id: 7, bbbb: 'mal', message: 'x' }, { id: 8, bbbb: 'QB01', message: 42 }, null,
+    { id: 9, bbbb: 'SB03', freq: 518, received: '2031-01-01T00:00:00Z', complete: true, message: 'ZCZC SB03\nGALE WARNING NORTH FINISTERRE' },
+  ];
+  const r = mensajesDeReceptor(api, ahora);
+  assert.equal(r.ultimoId, 9);
+  assert.deepEqual(r.mensajes.map((m) => m.cabecera), ['EE39', 'PA12', 'SB03']);
+  const [e, p, s] = r.mensajes;
+  assert.equal(e.incompleto, true);
+  assert.equal(e.freq, 490);
+  assert.equal(e.recibido, Date.parse('2026-11-22T07:38:00Z'));
+  assert.ok(e.texto.startsWith('062040 UTC NOV 21'), 'sin la línea ZCZC');
+  assert.equal(e.dtg, '062040 UTC NOV 21');
+  assert.equal(p.incompleto, false);
+  assert.ok(!/NNNN/.test(p.texto), 'sin el NNNN');
+  assert.ok(p.posicion && Math.abs(p.posicion.lat - 36.758) < 0.01 && Math.abs(p.posicion.lon + 6.333) < 0.01);
+  assert.equal(eventoNavtex(p, 3600_000)?.gravedad, 'amarillo');
+  // Una hora del receptor en el futuro no se cree
+  assert.equal(s.recibido, ahora);
+  assert.deepEqual(mensajesDeReceptor({ error: 'x' }, ahora), { mensajes: [], ultimoId: 0 });
+});
+
+test('NAVTEX en red: solo se admite la dirección del equipo', () => {
+  assert.equal(urlReceptorValida('http://sdr.local:8080'), 'http://sdr.local:8080');
+  assert.equal(urlReceptorValida(' http://10.116.117.108:8080/ '), 'http://10.116.117.108:8080');
+  assert.equal(urlReceptorValida('https://navtex.example'), 'https://navtex.example');
+  for (const mala of ['', 'sdr.local:8080', 'ftp://sdr.local', 'http://u:p@sdr.local', 'http://sdr.local/api/x', 'http://sdr.local/?a=1', 'file:///etc/passwd']) {
+    assert.equal(urlReceptorValida(mala), null, mala);
+  }
 });

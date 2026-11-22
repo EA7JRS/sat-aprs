@@ -13,10 +13,10 @@ import { useAdminSession } from '../utils/session';
 import { Estado } from '../components/radio/Piezas';
 import { TelemetryConfig } from '../types';
 
-interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean }
+interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; freq?: number | null; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean }
 interface Egc { clave: string; servicio: string; prioridad: string; prioridadEs: string; msgId: number | null; hora: string | null; mhz: number | null; texto: string; recibido: number; posicion: { lat: number; lon: number } | null; vigente: boolean }
 interface Datos {
-  navtex: { activo: boolean; archivo: string; estaciones: string; error: string | null; ultimoDato: number | null; caracteres: number; abierto: string | null; temas: Record<string, string>; mensajes: Navtex[] };
+  navtex: { activo: boolean; archivo: string; estaciones: string; origen: 'archivo' | 'red'; url: string; red: { error: string | null; consulta: number | null; vivo: number | null; receptor: string | null } | null; error: string | null; ultimoDato: number | null; caracteres: number; abierto: string | null; temas: Record<string, string>; mensajes: Navtex[] };
   egc: { activo: boolean; escucha: string | null; error: string | null; ultimoDato: number | null; lineas: number; mensajes: Egc[] };
 }
 
@@ -36,7 +36,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
   const [tema, setTema] = useState('');
   const [abierto, setAbierto] = useState<string | null>(null);
   const [v, setV] = useState(() => ({
-    navtexEnabled: config.navtexEnabled === true, navtexArchivo: config.navtexArchivo ?? '/var/lib/sat-aprs/navtex.txt', navtexEstaciones: config.navtexEstaciones ?? '',
+    navtexEnabled: config.navtexEnabled === true, navtexArchivo: config.navtexArchivo ?? '/var/lib/sat-aprs/navtex.txt', navtexOrigen: (config.navtexOrigen === 'red' ? 'red' : 'archivo') as 'archivo' | 'red', navtexUrl: config.navtexUrl ?? '', navtexEstaciones: config.navtexEstaciones ?? '',
     egcEnabled: config.egcEnabled === true, egcEscucha: config.egcEscucha ?? '127.0.0.1', egcPuerto: String(config.egcPuerto ?? 5556),
   }));
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -66,7 +66,9 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
     );
   }
   const n = d.navtex; const g = d.egc;
-  const navtexVivo = n.activo && !n.error && !!n.ultimoDato && ahora - n.ultimoDato < 10 * 60_000;
+  const enRed = n.origen === 'red';
+  const navtexVivo = n.activo && !n.error && !!n.ultimoDato && ahora - n.ultimoDato < (enRed ? 5 : 10) * 60_000;
+  const nombreReceptor = n.red?.receptor === 'rtlsdr' ? 'RTL-SDR' : n.red?.receptor === 'sdrplay' ? 'SDRplay' : n.red?.receptor ?? '';
   const egcVivo = g.activo && !g.error && !!g.ultimoDato && ahora - g.ultimoDato < 30 * 60_000;
   const temasVistos = [...new Set(n.mensajes.map((m) => m.tema))].sort();
 
@@ -76,8 +78,12 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
 
       <section aria-label="Estado" className="flex flex-wrap gap-3">
         <Estado id="mar-navtex" titulo="NAVTEX (SDR)" ok={!n.activo ? null : navtexVivo}
-          texto={!n.activo ? 'Apagado' : n.error ? 'Sin descodificador' : navtexVivo ? (n.abierto ? `Recibiendo ${n.abierto}` : 'Escuchando') : 'Sin caracteres'}
-          detalle={!n.activo ? 'se enciende abajo' : n.error ? `${n.archivo}: ${n.error}` : n.ultimoDato ? `${n.archivo} · último carácter ${haceCuanto(n.ultimoDato, ahora)}` : n.archivo} />
+          texto={!n.activo ? 'Apagado' : enRed
+            ? (n.error ? 'Sin receptor' : navtexVivo ? 'Escuchando 518 y 490 kHz' : n.red?.consulta ? 'Receptor parado' : 'Consultando…')
+            : (n.error ? 'Sin descodificador' : navtexVivo ? (n.abierto ? `Recibiendo ${n.abierto}` : 'Escuchando') : 'Sin caracteres')}
+          detalle={!n.activo ? 'se enciende abajo' : enRed
+            ? (n.error ? `${n.url || 'sin dirección'}: ${n.error}` : `${n.url}${nombreReceptor ? ` · ${nombreReceptor}` : ''}${n.ultimoDato ? ` · recibiendo muestras ${haceCuanto(n.ultimoDato, ahora)}` : ' · el receptor contesta, pero no está recibiendo'}`)
+            : (n.error ? `${n.archivo}: ${n.error}` : n.ultimoDato ? `${n.archivo} · último carácter ${haceCuanto(n.ultimoDato, ahora)}` : n.archivo)} />
         <Estado id="mar-egc" titulo="Inmarsat-C EGC" ok={!g.activo ? null : g.error ? false : egcVivo}
           texto={!g.activo ? 'Apagado' : g.error ? 'Sin escucha' : egcVivo ? 'Recibiendo' : 'Escuchando'}
           detalle={!g.activo ? 'se enciende abajo' : g.error ? g.error : `UDP ${g.escucha ?? '—'}${g.ultimoDato ? ` · último mensaje ${haceCuanto(g.ultimoDato, ahora)}` : ' · aún sin mensajes de InmarScope'}`} />
@@ -106,7 +112,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                   <button type="button" className="w-full text-left p-3 cursor-pointer hover:bg-slate-800/50 flex flex-wrap items-baseline gap-x-3 gap-y-1" onClick={() => setAbierto(abierto === m.clave ? null : m.clave)} aria-expanded={abierto === m.clave}>
                     <span className={`border rounded px-1.5 font-mono text-xs font-bold ${COLOR_TEMA[m.tema] ?? 'border-slate-600 text-slate-300'}`}>{m.cabecera}</span>
                     <span className="text-slate-100 font-semibold">{n.temas[m.tema] ?? m.tema}</span>
-                    <span className="text-[13px] text-slate-400">estación {m.estacion} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
+                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
                     <span className="basis-full text-[13px] text-slate-300 truncate">{m.texto.split('\n').find((l) => l.trim() && !/^\d{6} ?UTC/.test(l)) ?? ''}</span>
                   </button>
                   {abierto === m.clave && <pre className="px-3 pb-3 text-[13px] text-slate-200 whitespace-pre-wrap break-words font-mono">{m.texto}</pre>}
@@ -144,16 +150,34 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
           <fieldset className="flex flex-col gap-2" disabled={!isAdmin}>
             <label className="flex items-center gap-2.5 text-slate-100 cursor-pointer"><input type="checkbox" className="w-4 h-4" checked={v.navtexEnabled} onChange={(e) => setV({ ...v, navtexEnabled: e.target.checked })} id="check-navtex" /> NAVTEX</label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label className="md:col-span-2 flex flex-col gap-1 text-sm text-slate-300">Archivo del descodificador
-                <input className={`${campo} font-mono`} value={v.navtexArchivo} onChange={(e) => setV({ ...v, navtexArchivo: e.target.value })} id="input-navtex-archivo" />
+              <label className="flex flex-col gap-1 text-sm text-slate-300">De dónde llegan los mensajes
+                <select className={campo} value={v.navtexOrigen} onChange={(e) => setV({ ...v, navtexOrigen: e.target.value === 'red' ? 'red' : 'archivo' })} id="select-navtex-origen">
+                  <option value="archivo">Descodificador en este equipo</option>
+                  <option value="red">Receptor Navtex en la red</option>
+                </select>
               </label>
+              {v.navtexOrigen === 'red' ? (
+                <label className="flex flex-col gap-1 text-sm text-slate-300">Dirección del receptor
+                  <input className={`${campo} font-mono`} value={v.navtexUrl} onChange={(e) => setV({ ...v, navtexUrl: e.target.value })} placeholder="http://sdr.local:8080" id="input-navtex-url" />
+                </label>
+              ) : (
+                <label className="flex flex-col gap-1 text-sm text-slate-300">Archivo del descodificador
+                  <input className={`${campo} font-mono`} value={v.navtexArchivo} onChange={(e) => setV({ ...v, navtexArchivo: e.target.value })} id="input-navtex-archivo" />
+                </label>
+              )}
               <label className="flex flex-col gap-1 text-sm text-slate-300">Estaciones que se siguen (letra)
                 <input className={`${campo} font-mono`} value={v.navtexEstaciones} onChange={(e) => setV({ ...v, navtexEstaciones: e.target.value })} placeholder="todas" id="input-navtex-estaciones" />
               </label>
             </div>
-            <p className="text-[13px] text-slate-400">
-              El receptor es <span className="font-mono">tools/navtex/navtex.sh</span> (servicio <span className="font-mono">sat-navtex</span>): RTL-SDR con rtl_fm o SDRplay RSPdx-R2 con rx_fm, en USB 1 kHz por debajo de 518 kHz, y el descodificador de fldigi. De noche llegan estaciones lejanas: indique las letras de las que le interesan.
-            </p>
+            {v.navtexOrigen === 'red' ? (
+              <p className="text-[13px] text-slate-400">
+                El receptor es el programa <span className="font-mono">Navtex</span> del fork EA7JRS/Navtex, en otro equipo de la red (SDRplay o RTL-SDR): recibe 518 y 490 kHz a la vez y la consola le pregunta cada minuto por los mensajes nuevos. De noche llegan estaciones lejanas: indique las letras de las que le interesan.
+              </p>
+            ) : (
+              <p className="text-[13px] text-slate-400">
+                El receptor es <span className="font-mono">tools/navtex/navtex.sh</span> (servicio <span className="font-mono">sat-navtex</span>): RTL-SDR con rtl_fm o SDRplay RSPdx-R2 con rx_fm, en USB 1 kHz por debajo de 518 kHz, y el descodificador de fldigi. De noche llegan estaciones lejanas: indique las letras de las que le interesan.
+              </p>
+            )}
           </fieldset>
           <fieldset className="flex flex-col gap-2 border-t border-slate-800 pt-3" disabled={!isAdmin}>
             <label className="flex items-center gap-2.5 text-slate-100 cursor-pointer"><input type="checkbox" className="w-4 h-4" checked={v.egcEnabled} onChange={(e) => setV({ ...v, egcEnabled: e.target.checked })} id="check-egc" /> Inmarsat-C EGC</label>

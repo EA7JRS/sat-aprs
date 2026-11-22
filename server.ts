@@ -57,7 +57,7 @@ import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './server/fuentes/meteoalarm';
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
-import { ColaArchivo, MensajeNavtex, TEMAS_NAVTEX, cerrarPendiente, claveNavtex, eventoNavtex, separarNavtex } from './server/radio/navtex';
+import { ColaArchivo, MensajeNavtex, TEMAS_NAVTEX, cerrarPendiente, claveNavtex, eventoNavtex, mensajesDeReceptor, separarNavtex, urlReceptorValida } from './server/radio/navtex';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -367,6 +367,9 @@ let config: TelemetryConfig = {
   // NAVTEX con SDR propio: archivo que escribe tools/navtex/navtex.sh
   navtexEnabled: false,
   navtexArchivo: '/var/lib/sat-aprs/navtex.txt',
+  // 'archivo': el descodificador de tools/navtex en este equipo; 'red': un receptor EA7JRS/Navtex en la red
+  navtexOrigen: 'archivo',
+  navtexUrl: '',
   navtexEstaciones: '',
   navtexRadioKm: 400,
   navtexGravedadMinima: 'naranja',
@@ -4658,6 +4661,13 @@ let colaNavtex: ColaArchivo | null = null;
 let restoNavtex = '';
 let navtexAbiertoDesde = 0;
 let navtexCaracteres = 0;
+// Receptor NAVTEX en red (EA7JRS/Navtex)
+let navtexRedUltimoId = Number(historial.leerEstado<number>('navtexRedId') ?? 0) || 0;
+let navtexRedError = '';
+let navtexRedVivo = 0;        // última vez que el receptor dijo estar recibiendo muestras
+let navtexRedConsulta = 0;    // última consulta contestada
+let navtexRedOrigen = '';     // sdrplay, rtlsdr…
+let navtexRedOcupado = false;
 let udpEgc: dgram.Socket | null = null;
 let udpEgcClave = '';
 let udpEgcError = '';
@@ -4716,8 +4726,49 @@ function anotarNavtex(nuevos: MensajeNavtex[]) {
     difundirAvisos(eventosNavtexLista(), politicaNavtex());
   }
 }
+const navtexPorRed = () => config.navtexOrigen === 'red';
+/** Pregunta al receptor en red por los mensajes nuevos y por su estado. */
+async function leerNavtexRed() {
+  if (config.systemPower === false || config.navtexEnabled !== true || !navtexPorRed() || navtexRedOcupado) return;
+  const base = urlReceptorValida(String(config.navtexUrl ?? ''));
+  if (!base) { navtexRedError = 'falta la dirección del receptor (por ejemplo http://sdr.local:8080)'; return; }
+  navtexRedOcupado = true;
+  try {
+    const pedir = async (ruta: string) => {
+      const r = await fetch(`${base}${ruta}`, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
+      if (!r.ok) throw new Error(`el receptor respondió ${r.status}`);
+      return r.json();
+    };
+    const estado: any = await pedir('/api/status');
+    // Si el receptor estrenó base de datos, sus identificadores vuelven a empezar
+    const ultimoAlli = Number(estado?.last_id);
+    if (Number.isFinite(ultimoAlli) && ultimoAlli < navtexRedUltimoId) navtexRedUltimoId = 0;
+    const vivo = Date.parse(String(estado?.receiver_alive ?? ''));
+    navtexRedVivo = Number.isFinite(vivo) ? vivo : 0;
+    navtexRedOrigen = typeof estado?.source === 'string' ? estado.source.slice(0, 20) : '';
+    const ahora = Date.now();
+    const r = mensajesDeReceptor(await pedir(`/api/messages?since=${navtexRedUltimoId}`), ahora);
+    navtexRedConsulta = ahora;
+    navtexRedError = '';
+    if (r.ultimoId > navtexRedUltimoId) { navtexRedUltimoId = r.ultimoId; historial.guardarEstado('navtexRedId', navtexRedUltimoId); }
+    if (r.mensajes.length) {
+      // Una copia completa sustituye a la cortada del mismo mensaje recibida hace menos de un día
+      for (const m of r.mensajes) {
+        if (!m.incompleto) mensajesNavtex = mensajesNavtex.filter((x) => !(x.incompleto && x.cabecera === m.cabecera && Math.abs(m.recibido - x.recibido) < 24 * 3600_000));
+      }
+      anotarNavtex(r.mensajes);
+    }
+  } catch (e: any) {
+    const codigo = String(e?.cause?.code ?? '');
+    navtexRedError = e?.name === 'TimeoutError' || codigo === 'ETIMEDOUT' ? 'el receptor no contesta'
+      : codigo === 'ECONNREFUSED' ? 'el equipo rechaza la conexión (¿está en marcha navtex-web y abierto su puerto?)'
+      : codigo === 'ENOTFOUND' || codigo === 'EAI_AGAIN' ? 'no se encuentra ese equipo en la red'
+      : codigo === 'EHOSTUNREACH' || codigo === 'ENETUNREACH' ? 'no hay camino hasta ese equipo'
+      : String(codigo || e?.message || e).slice(0, 120);
+  } finally { navtexRedOcupado = false; }
+}
 function leerNavtex() {
-  if (config.systemPower === false || config.navtexEnabled !== true) { colaNavtex = null; return; }
+  if (config.systemPower === false || config.navtexEnabled !== true || navtexPorRed()) { colaNavtex = null; return; }
   const ruta = String(config.navtexArchivo || '').trim();
   if (!ruta) return;
   if (!colaNavtex || colaNavtex.ruta !== ruta) { colaNavtex = new ColaArchivo(ruta); restoNavtex = ''; }
@@ -4780,7 +4831,10 @@ app.get('/api/maritimo', (_req, res) => {
   res.json({
     navtex: {
       activo: config.navtexEnabled === true, archivo: config.navtexArchivo ?? '', estaciones: String(config.navtexEstaciones ?? ''),
-      error: config.navtexEnabled === true ? colaNavtex?.error ?? null : null, ultimoDato: colaNavtex?.ultimoDato || null, caracteres: navtexCaracteres,
+      origen: navtexPorRed() ? 'red' : 'archivo', url: String(config.navtexUrl ?? ''),
+      red: navtexPorRed() ? { error: navtexRedError || null, consulta: navtexRedConsulta || null, vivo: navtexRedVivo || null, receptor: navtexRedOrigen || null } : null,
+      error: config.navtexEnabled !== true ? null : navtexPorRed() ? navtexRedError || null : colaNavtex?.error ?? null,
+      ultimoDato: navtexPorRed() ? navtexRedVivo || null : colaNavtex?.ultimoDato || null, caracteres: navtexCaracteres,
       abierto: navtexAbiertoDesde ? /ZCZC ([A-Z]{2}\d\d)/.exec(restoNavtex)?.[1] ?? null : null,
       temas: TEMAS_NAVTEX,
       mensajes: mensajesNavtex.slice(0, 150).map((m) => ({ ...m, clave: claveNavtex(m), vigente: ahora - m.recibido < VIGENCIA_RADIOAVISO })),
@@ -4819,6 +4873,8 @@ function programarOtrasFuentes() {
   setInterval(seguro(descargarEffis), 3 * 3600_000);
   setTimeout(seguro(descargarEffis), 43000);
   setInterval(leerNavtex, 2000);
+  setInterval(() => { void leerNavtexRed(); }, 60_000);
+  setTimeout(() => { void leerNavtexRed(); }, 8000);
   ajustarEgc();
   // Entre descargas: repeticiones y cambios de posición de una estación móvil
   setInterval(() => {
@@ -6228,10 +6284,18 @@ app.post('/api/config', (req, res) => {
     // Archivo, dirección y puerto del propio equipo: solo el administrador
     if (isAuthorizedRequest(req)) {
       if (updated.navtexArchivo !== undefined) config.navtexArchivo = String(updated.navtexArchivo).trim().slice(0, 300);
+      if (updated.navtexOrigen === 'archivo' || updated.navtexOrigen === 'red') config.navtexOrigen = updated.navtexOrigen;
+      if (updated.navtexUrl !== undefined) {
+        const u = String(updated.navtexUrl).trim();
+        const valida = urlReceptorValida(u);
+        if (!u) config.navtexUrl = '';
+        else if (valida) { if (valida !== config.navtexUrl) { navtexRedUltimoId = 0; historial.guardarEstado('navtexRedId', 0); } config.navtexUrl = valida; }
+      }
       if (updated.egcEscucha !== undefined && /^[0-9.]{7,15}$/.test(String(updated.egcEscucha).trim())) config.egcEscucha = String(updated.egcEscucha).trim();
       if (updated.egcPuerto !== undefined && puertoValido(updated.egcPuerto)) config.egcPuerto = puertoValido(updated.egcPuerto);
     }
     ajustarEgc();
+    if (navtexPorRed() && config.navtexEnabled === true) void leerNavtexRed();
     if (fuentesCambiadas) {
       const seguro = (f: () => Promise<void>) => { f().catch((e) => console.warn(`[AVISOS] ${e?.message || e}`)); };
       setTimeout(() => { seguro(descargarMeteoAlarmAvisos); seguro(descargarCiclonesAvisos); seguro(descargarRadiacionAvisos); seguro(descargarNwsAvisos); seguro(descargarEonetAvisos); seguro(descargarEffis); seguro(descargarEmscAvisos); }, 500);

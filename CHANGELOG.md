@@ -2,6 +2,17 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.46.0] - 2026-11-22
+### NAVTEX desde un receptor en la red
+- Radio → NAVTEX e Inmarsat: nuevo origen «Receptor Navtex en la red», además del descodificador en el propio equipo. La consola pregunta cada minuto a un receptor del fork [EA7JRS/Navtex](https://github.com/EA7JRS/Navtex) (SDRplay o RTL-SDR, en otro equipo) por los mensajes nuevos. Ese receptor escucha 518 y 490 kHz a la vez, y cada mensaje dice por cuál llegó.
+- Los mensajes entran en la misma cadena que los demás: lista, mapa si traen posición, avisos por APRS y salida NMEA 2000.
+- El estado dice si el receptor contesta, qué equipo usa y si está recibiendo muestras; si no, el motivo (no se encuentra el equipo, rechaza la conexión, no contesta).
+- Una copia completa de un mensaje sustituye a la cortada recibida antes.
+- Solo se admite la dirección del equipo (`http://equipo:puerto`), y solo la cambia el administrador.
+- Probado con el servidor real del fork y una recepción real de Mondolfo Radio; **sin probar aún entre los dos NUC de la estación**.
+
+---
+
 ## [v1.45.1] - 2026-11-20
 ### Documentación al día tras la primera prueba en el equipo real
 - README y arquitectura: la tabla de estado dice qué se comprobó el 20-11-2026 en el NUC contra los servicios reales (IGN, AEMET, NOAA, FIRMS, CAMS, GIRO, Sensor.Community, CelesTrak, tsunami.gov, NHC, EMSC, EFFIS, EONET y Pat) y qué sigue sin probar: MeteoAlarm, EURDEP, NWS, WeatherAPI, y todo lo que necesita radio, GPS, SDR, bus NMEA 2000 o una estación meteorológica.

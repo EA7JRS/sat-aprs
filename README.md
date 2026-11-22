@@ -26,7 +26,7 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.45.1)
+## 📌 Qué hace hoy (v1.46.0)
 
 El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 
@@ -62,7 +62,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
 | Avisos por umbrales de la estación y por el pronóstico de WeatherAPI, en la cadena de avisos (antes en el agente Python, ya retirado) | Operativo desde la v1.36.0; pendiente de validar en la estación |
-| Radio · NAVTEX e Inmarsat: NAVTEX con RTL-SDR o SDRplay (`tools/navtex/`) e Inmarsat-C EGC desde InmarScope por UDP; sus avisos, por APRS | Operativo desde la v1.39.0; la cadena NAVTEX probada con una grabación real, sin probar aún con el SDR en la estación |
+| Radio · NAVTEX e Inmarsat: NAVTEX con RTL-SDR o SDRplay (`tools/navtex/`) o desde un receptor [EA7JRS/Navtex](https://github.com/EA7JRS/Navtex) en la red (518 y 490 kHz a la vez, v1.46.0) e Inmarsat-C EGC desde InmarScope por UDP; sus avisos, por APRS | Operativo desde la v1.39.0; la cadena NAVTEX probada con una grabación real, sin probar aún con el SDR en la estación |
 | Avisos de MeteoAlarm (por zonas), ciclones tropicales (NHC) y radiactividad ambiental (EURDEP), sin clave | Operativo desde la v1.38.0; NHC comprobado en la estación de pruebas (20-11-2026); MeteoAlarm (faltan zonas) y EURDEP, sin probar aún contra la fuente real |
 | Tsunamis de tsunami.gov (PTWC y NTWC), avisos del NWS de EE. UU. (tornados, tormentas severas…) y sucesos de NASA EONET: las fuentes de la app Android APRS LoRa+ | Operativo desde la v1.40.0; tsunami.gov y EONET comprobados en la estación de pruebas (20-11-2026); el NWS solo cubre EE. UU. y no se ha podido probar desde España |
 | Sismos de fuera de España (EMSC), con el nivel por magnitud y distancia de la app Android | Operativo desde la v1.42.0; comprobado contra el servicio real en la estación de pruebas (20-11-2026) |

@@ -26,7 +26,7 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.49.0)
+## 📌 Qué hace hoy (v1.49.1)
 
 El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 
@@ -353,7 +353,7 @@ El detalle, con lo que se aplica de cada norma y lo que no, está en **[docs/NOR
 | :--- | :--- |
 | Emisión de radioaficionado | Reglamento de Radiocomunicaciones de la UIT (artículo 25); en España, Orden IET/1311/2013 |
 | APRS, APRS-IS y radiopaquete | APRS Protocol Reference 1.0.1, APRS-IS, AX.25 2.2 y KISS |
-| NAVTEX | UIT-R M.540-2, OMI MSC.148(77), Manual NAVTEX e IEC 61097-6, a través del receptor [Navtex](https://github.com/EA7JRS/Navtex) |
+| NAVTEX | UIT-R M.540-2, OMI MSC.508(105), Manual NAVTEX de 2023 e IEC 61097-6, a través del receptor [Navtex](https://github.com/EA7JRS/Navtex) |
 | AIS, NMEA 0183 y NMEA 2000 | UIT-R M.1371, IEC 61162-1, IEC 61162-3, ISO 11783-3 y 11783-5; los PGN, contrastados con CANboat |
 | Avisos oficiales | OASIS Common Alerting Protocol 1.2 (AEMET) |
 

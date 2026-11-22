@@ -1,6 +1,6 @@
 # S.A.T.-APRS+ · Normas, especificaciones y reglamentos
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.49.0** · [Manual](MANUAL.md) · [Arquitectura](ARQUITECTURA.md)
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.49.1** · ediciones comprobadas el 22 de noviembre de 2026 · [Manual](MANUAL.md) · [Arquitectura](ARQUITECTURA.md)
 
 Este documento dice qué normas y especificaciones contempla la consola, qué aplica de cada una y qué no.
 
@@ -10,11 +10,11 @@ Este documento dice qué normas y especificaciones contempla la consola, qué ap
 
 | Ámbito | Norma o especificación | Qué se aplica |
 | :--- | :--- | :--- |
-| Emisión de radioaficionado | Reglamento de Radiocomunicaciones de la UIT, artículo 25; en España, Orden IET/1311/2013 | Identificación con el indicativo en cada trama, emisión en claro, y varios seguros que impiden emitir sin indicativo válido |
+| Emisión de radioaficionado | Reglamento de Radiocomunicaciones de la UIT (edición de 2024), artículo 25; en España, Orden IET/1311/2013, en vigor | Identificación con el indicativo en cada trama, emisión en claro, y varios seguros que impiden emitir sin indicativo válido |
 | APRS | APRS Protocol Reference 1.0.1 | Posiciones, objetos, boletines, mensajes con acuse, meteorología y telemetría |
 | APRS-IS | Especificación de APRS-IS (aprs-is.net) | Acceso con indicativo y passcode, ruta `TCPIP*`, construcción «q» del servidor |
 | Radiopaquete | AX.25 versión 2.2 y protocolo KISS | Tramas UI reales hacia Direwolf |
-| NAVTEX | UIT-R M.540-2, OMI MSC.148(77), Manual NAVTEX, IEC 61097-6 | Lo aplica el receptor [Navtex](https://github.com/EA7JRS/Navtex); la consola lo respeta al recoger sus mensajes |
+| NAVTEX | UIT-R M.540-2, OMI MSC.508(105) (la vigente desde 2024), Manual NAVTEX de 2023, IEC 61097-6 | Lo aplica el receptor [Navtex](https://github.com/EA7JRS/Navtex); la consola lo respeta al recoger sus mensajes |
 | AIS | UIT-R M.1371 | Lectura de los mensajes de posición y de datos estáticos; el mensaje 14 de texto de seguridad, dentro de NMEA 2000 |
 | NMEA 0183 | IEC 61162-1 | Sentencias `!AIVDM` / `!AIVDO` de entrada; la salida `NRX` es del receptor Navtex |
 | NMEA 2000 | IEC 61162-3; ISO 11783-3 y 11783-5 | Reclamación de dirección, transporte rápido y nueve PGN, contrastados con CANboat |
@@ -55,9 +55,9 @@ Las reglas de un receptor NAVTEX las aplica el programa Navtex; están detallada
 | Requisito | Norma | En la consola |
 | :--- | :--- | :--- |
 | Los temas A, B, D y L no se pueden rechazar | Manual NAVTEX de la OMI, 5.3.4 | Son los que pasan a Avisos; los demás solo se muestran |
-| Un mensaje ya recibido no se vuelve a presentar | UIT-R M.540-2; OMI MSC.148(77), 6.2 | La repetición no crea otro aviso: solo mantiene vigente el que hay |
-| Recepción buena por debajo del 4 % de errores | OMI MSC.148(77), 6.2.3 | Cada mensaje enseña sus caracteres mal recibidos; una copia buena sustituye a la que llegó con errores |
-| La información de búsqueda y salvamento da una alarma que solo se apaga a mano | OMI MSC.148(77), 7.1; IEC 61097-6, 4.3.9 | La pantalla enseña la alarma del receptor y permite reconocerla (administrador). El mensaje salta además como aviso rojo |
+| Un mensaje ya recibido no se vuelve a presentar | UIT-R M.540-2; OMI MSC.508(105), 6.2 | La repetición no crea otro aviso: solo mantiene vigente el que hay |
+| Recepción buena por debajo del 4 % de errores | OMI MSC.508(105), 6.2.3 | Cada mensaje enseña sus caracteres mal recibidos; una copia buena sustituye a la que llegó con errores |
+| La información de búsqueda y salvamento da una alarma que solo se apaga a mano | OMI MSC.508(105), 7; IEC 61097-6, 4.3.9 | La pantalla enseña la alarma del receptor y permite reconocerla (administrador). El mensaje salta además como aviso rojo |
 | Turno de diez minutos por letra cada cuatro horas | Manual NAVTEX de la OMI, 5.2.5 | Tabla de estaciones con sus horas y próximas emisiones; cada mensaje dice si llegó fuera de su turno |
 | Salida normalizada del mensaje | IEC 61097-6, anexo C (sentencia `NRX`) | La da el receptor; la consola solo la ajusta |
 
@@ -90,13 +90,32 @@ Las demás fuentes (IGN, EMSC, USGS, NOAA, NASA FIRMS, Copernicus…) se leen en
 - **Autorizaciones de la estación.** Son del titular; la consola no las comprueba.
 - **Inmarsat-C EGC (SafetyNET).** Se reciben los mensajes que descodifica InmarScope; no se ha contrastado con el manual SafetyNET de la OMI.
 
+## Ediciones vigentes
+
+Comprobado el 22 de noviembre de 2026:
+
+| Norma | Edición vigente | Observaciones |
+| :--- | :--- | :--- |
+| Reglamento de radioaficionados de España | Orden IET/1311/2013, en vigor | La Resolución de 29 de julio de 2026 (BOE-A-2026-17504) desarrolla su artículo 27, sobre los distintivos con sufijo de una letra; no cambia nada de lo que aplica la consola |
+| Reglamento de Radiocomunicaciones de la UIT | Edición de 2024 | No se ha leído su texto |
+| UIT-R M.540 | M.540-2 (1990), en vigor | Leída |
+| Normas de funcionamiento NAVTEX de la OMI | MSC.508(105), de 2022, para equipos instalados desde el 1 de enero de 2024; antes, MSC.148(77) | Leídas las dos |
+| Manual NAVTEX de la OMI | Edición de 2023 (MSC.1/Circ.1403/Rev.2) | Leído |
+| IEC 61097-6 | Edición 2.2 (2005 con enmiendas de 2011 y 2019) | Leída solo la de 2005; las enmiendas son de pago |
+| IEC 61162-1 | Edición 6 | No se ha leído |
+| APRS Protocol Reference | 1.0.1, con los añadidos 1.1 y 1.2 publicados después en aprs.org | La consola sigue la 1.0.1 |
+| OASIS CAP | 1.2 | Es la que publica AEMET |
+
+Las demás (UIT-R M.1371, IEC 61162-3, ISO 11783, AX.25) no se han comprobado: se citan sin número de edición.
+
 ## Documentos de referencia
 
 - UIT, Reglamento de Radiocomunicaciones, artículos 15 y 25.
 - España: [Orden IET/1311/2013](https://boe.es/buscar/act.php?id=BOE-A-2013-7624), Reglamento de uso del dominio público radioeléctrico por radioaficionados.
 - APRS Protocol Reference, versión 1.0.1; documentación de APRS-IS en aprs-is.net.
 - AX.25 Link Access Protocol for Amateur Packet Radio, versión 2.2; «The KISS TNC».
-- UIT-R M.540-2; OMI MSC.148(77); Manual NAVTEX de la OMI; IEC 61097-6:2005. Enlaces en el documento de normas de Navtex.
+- UIT-R M.540-2; OMI MSC.508(105) y, antes, MSC.148(77); Manual NAVTEX de la OMI, edición de 2023; IEC 61097-6. Enlaces en el documento de normas de Navtex.
+- España: [Resolución de 29 de julio de 2026](https://www.boe.es/boe/dias/2026/08/10/pdfs/BOE-A-2026-17504.pdf), sobre distintivos de llamada con sufijo de una letra.
 - UIT-R M.1371; IEC 61162-1 y 61162-3; ISO 11783-3 y 11783-5; [CANboat](https://canboat.github.io/canboat/).
 - OASIS, Common Alerting Protocol 1.2.
 

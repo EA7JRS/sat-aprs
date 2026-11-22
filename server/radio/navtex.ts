@@ -67,7 +67,7 @@ export interface MensajeNavtexRed extends MensajeNavtex {
   freq: number | null;
   /** Identificador en el receptor, para pedirle que lo borre. */
   idReceptor?: number;
-  /** Caracteres que no se pudieron recibir, y si la recepción se da por buena (menos de un 4 %, OMI MSC.148(77)). */
+  /** Caracteres que no se pudieron recibir, y si la recepción se da por buena (menos de un 4 %, OMI MSC.508(105)). */
   errores?: number | null;
   satisfactorio?: boolean | null;
   /** Si llegó en el turno de su letra. */

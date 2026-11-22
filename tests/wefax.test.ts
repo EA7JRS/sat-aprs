@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BANDAS_CIRCUITO_KHZ, horasBuenas, leerCartas, leerCircuito, rutaCircuito } from '../server/radio/wefax';
+import { BANDAS_CIRCUITO_KHZ, ajusteClimaEspacial, horasBuenas, leerCartas, leerCircuito, rutaCircuito } from '../server/radio/wefax';
 
 const fila = (f: (h: number) => number) => Array.from({ length: 24 }, (_, h) => f(h));
 
@@ -52,4 +52,11 @@ test('las cartas recibidas', () => {
   assert.equal(l[1].titulo, 'x y');
   assert.equal(l[1].completa, false);
   assert.deepEqual(leerCartas({}), []);
+});
+
+test('las escalas de la NOAA para Wefax y Navtex', () => {
+  assert.equal(ajusteClimaEspacial([{ escala: 'R', nivel: 1 }, { escala: 'G', nivel: 2 }, { escala: 'S', nivel: 0 }], 1795370000123), 'R1S0G2T1795370000');
+  assert.equal(ajusteClimaEspacial([], 1795370000000), 'R0S0G0T1795370000');
+  assert.equal(ajusteClimaEspacial([{ escala: 'R', nivel: 9 }], 1795370000000), null);
+  assert.equal(ajusteClimaEspacial([{ escala: 'R', nivel: 1 }], NaN), null);
 });

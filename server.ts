@@ -58,7 +58,7 @@ import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './serve
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
 import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, recortarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
-import { BANDAS_CIRCUITO_KHZ, leerCartas, leerCircuito, rutaCircuito } from './server/radio/wefax';
+import { BANDAS_CIRCUITO_KHZ, ajusteClimaEspacial, leerCartas, leerCircuito, rutaCircuito } from './server/radio/wefax';
 import { maidenheadToLatLon } from './server/formulas/radio';
 import { ejecutarVoacap, manchasParaVoacap, voacapDisponible } from './server/radio/voacap';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
@@ -4428,12 +4428,32 @@ function politicaAire(): Politica {
   return { radioKm: null, gravedadMinima: gravedadDe(config.aireGravedadMinima, 'naranja'), vigenciaMs: 2 * 3600_000, repetirCadaMs: 120 * 60_000, boletin: true };
 }
 
+// Las escalas oficiales, a los receptores de la red: Wefax y Navtex avisan de un apagón de radio o una tormenta, que su
+// predicción de onda corta (mediana del mes) no ve. Solo cuando cambian o cada media hora; si no contestan, no pasa nada.
+let climaEspacialEnviado = { valor: '', cuando: 0 };
+async function compartirClimaEspacial() {
+  if (!escalasOficiales) return;
+  const valor = ajusteClimaEspacial(escalasOficiales.niveles, escalasOficiales.cuando);
+  if (!valor) return;
+  const sinHora = valor.replace(/T\d+$/, '');
+  if (sinHora === climaEspacialEnviado.valor && Date.now() - climaEspacialEnviado.cuando < 30 * 60_000) return;
+  climaEspacialEnviado = { valor: sinHora, cuando: Date.now() };
+  const destinos: Array<[string | null, string]> = [[urlReceptorValida(String(config.wefaxUrl ?? '')), 'X-Wefax'], [urlReceptorValida(String(config.navtexUrl ?? '')), 'X-Navtex']];
+  for (const [base, cabecera] of destinos) {
+    if (!base) continue;
+    try {
+      await fetch(`${base}/api/settings/space.wx/${valor}`, { method: 'POST', signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'S.A.T.-APRS+', [cabecera]: '1' } });
+    } catch { /* el receptor no está: se reintenta en la próxima lectura */ }
+  }
+}
+
 async function descargarClimaEspacialAvisos() {
   if (config.systemPower === false || config.climaEspacialEnabled === false) { eventosEspacio = []; return; }
   const niveles = await descargarClimaEspacial(registrarFuente);
   anotarFuente('espacio', 'Clima espacial · NOAA', niveles !== null, niveles ? niveles.map((n) => `${n.escala}${n.nivel}`).join(' ') : 'Sin respuesta');
   if (niveles) {
     escalasOficiales = { niveles, cuando: Date.now() };
+    void compartirClimaEspacial();
     eventosEspacio = niveles.map((n) => escalaAEvento(n)).filter((e): e is Evento => e !== null);
   }
   difundirAvisos(eventosEspacio, politicaEspacio());

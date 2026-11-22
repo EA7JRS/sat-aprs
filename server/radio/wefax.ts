@@ -91,3 +91,14 @@ export function leerCartas(j: unknown, maximo = 30): CartaWefax[] {
 
 /** Frecuencias de las bandas de aficionado de HF, para pedir un circuito sin elegir frecuencia. */
 export const BANDAS_CIRCUITO_KHZ = [3650, 5360, 7100, 10120, 14150, 18100, 21200, 24930, 28500];
+
+/**
+ * Las escalas oficiales de la NOAA (R apagón de radio, S tormenta de radiación, G tormenta geomagnética, 0 a 5) en el
+ * ajuste «space.wx» que entienden Wefax y Navtex: «R1S0G2T1795370000» (T, hora unix de la lectura). null si no cuadran.
+ */
+export function ajusteClimaEspacial(niveles: Array<{ escala: string; nivel: number }>, cuandoMs: number): string | null {
+  const n = (l: string) => { const v = niveles.find((x) => x.escala === l)?.nivel ?? 0; return Number.isInteger(v) && v >= 0 && v <= 5 ? v : null; };
+  const r = n('R'), sv = n('S'), g = n('G'), t = Math.floor(cuandoMs / 1000);
+  if (r === null || sv === null || g === null || !Number.isFinite(t) || t < 1_000_000_000) return null;
+  return `R${r}S${sv}G${g}T${t}`;
+}

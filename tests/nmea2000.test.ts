@@ -124,3 +124,25 @@ test('emisor: reclama y emite los PGN activados', () => {
   for (const pgn of [129025, 129026, 126992, 130306, 130314, 130316, 129283, 129284]) assert.ok(pgns.includes(pgn), `falta PGN ${pgn}`);
   assert.ok(tramas.every((t) => n2kParseId(t.id).src === 60));
 });
+
+test('NAVTEX al bus: los trozos salen de uno en uno, cada dos segundos, y solo si está pedido', () => {
+  const tramas: TramaCan[] = [];
+  const hacer = (emitirNavtex: boolean) => {
+    const em = new EmisorN2k({ enviar: (t: TramaCan | TramaCan[]) => { tramas.push(...(Array.isArray(t) ? t : [t])); } } as never,
+      { ...CONFIG_N2K_DEFECTO, activo: true, emitirGps: false, emitirMeteo: false, emitirNavegacion: false, emitirNavtex }, {} as never);
+    em.arrancar(0);
+    return em;
+  };
+  const cuenta = () => tramas.filter((t) => n2kParseId(t.id).pgn === 129802 && (t.datos[0] & 0x1f) === 0).length;   // primera trama de cada fast packet
+  const apagado = hacer(false);
+  assert.equal(apagado.encolarTexto(['NAVTEX GA12 1/1 PRUEBA']), false);
+  apagado.tick(1000);
+  assert.equal(cuenta(), 0);
+  const em = hacer(true);
+  assert.equal(em.encolarTexto(['NAVTEX GA12 1/3 UNO', 'NAVTEX GA12 2/3 DOS', 'NAVTEX GA12 3/3 TRES']), true);
+  em.tick(1000); em.tick(1250); em.tick(2900);
+  assert.equal(cuenta(), 1, 'uno al principio y nada más hasta pasados dos segundos');
+  em.tick(3000); em.tick(5000); em.tick(7000);
+  assert.equal(cuenta(), 3);
+  assert.equal(em.pendientes(), 0);
+});

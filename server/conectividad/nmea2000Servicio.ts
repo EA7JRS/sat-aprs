@@ -23,7 +23,7 @@ export interface EngancheN2k {
   autorizado(req: express.Request): boolean;
 }
 
-const CLAVES: (keyof ConfigN2k)[] = ['activo', 'interfaz', 'direccion', 'emitirGps', 'emitirMeteo', 'emitirNavegacion', 'emitirAvisos', 'mmsiPropio', 'unico'];
+const CLAVES: (keyof ConfigN2k)[] = ['activo', 'interfaz', 'direccion', 'emitirGps', 'emitirMeteo', 'emitirNavegacion', 'emitirAvisos', 'emitirNavtex', 'mmsiPropio', 'unico'];
 
 export class ServicioN2k {
   cfg: ConfigN2k;
@@ -74,6 +74,8 @@ export class ServicioN2k {
 
   /** Avisos de emergencia: se llama cuando salta un aviso (sismo, alerta...). */
   emitirAviso(texto: string) { this.emisor?.emitirAviso(Date.now(), texto); }
+  /** Un mensaje NAVTEX entero, ya partido en trozos (ver EmisorN2k.encolarTexto). */
+  emitirNavtex(trozos: string[]): boolean { return this.emisor?.encolarTexto(trozos) ?? false; }
 
   estado() {
     return {

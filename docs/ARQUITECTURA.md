@@ -1,6 +1,6 @@
 # Arquitectura de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · v1.47.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
+© 2026 Manuel - EA7JRS · v1.48.0 · Uso de la consola: [MANUAL.md](MANUAL.md)
 
 S.A.T.-APRS+ es una estación APRS de alerta temprana: recoge avisos de fuentes
 oficiales de Internet y de receptores de radio, los convierte a protocolo APRS
@@ -139,7 +139,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Perfil de la estación (operador, estaciones, presets) | Hecho: guardado en la estación (`sat_perfil.json`) |
 | Perfil de la estación APRS y baliza de posición (`server/estacion/baliza.ts`) | Hecho |
 | Estación meteorológica: parte APRS con datos propios (WeeWX, wxnow.txt) o de Internet | Hecho (`server/estacion/meteo.ts`) |
-| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: receptor Navtex (EA7JRS/Navtex, en este equipo con `tools/instalar-navtex.sh` o en la red) → su API HTTP, que consulta `server/radio/navtex.ts` (mensajes cada minuto; estado, ajustes y estaciones cuando se abre la pantalla). Desde la v1.47.0 es la única vía: la cadena con archivo de la v1.39.0 se retiró. Inmarsat-C EGC desde la v1.39.0: InmarScope por UDP (JSON) → `server/radio/egc.ts`. Fuera la entrada UDP antigua (puerto 9999), que inventaba área y emisor |
+| Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: receptor Navtex (EA7JRS/Navtex, en este equipo con `tools/instalar-navtex.sh` o en la red) → su API HTTP, que consulta `server/radio/navtex.ts` (mensajes cada minuto; estado, ajustes y estaciones cuando se abre la pantalla). Desde la v1.47.0 es la única vía: la cadena con archivo de la v1.39.0 se retiró. Desde la v1.48.0, borrado y exportación, repeticiones por `heard`, y texto entero al bus NMEA 2000 por partes en el PGN 129802. Inmarsat-C EGC desde la v1.39.0: InmarScope por UDP (JSON) → `server/radio/egc.ts`. Fuera la entrada UDP antigua (puerto 9999), que inventaba área y emisor |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
 | Configuración de Direwolf/aprx desde la consola | Hecho: generador de `direwolf.conf` (sin `CBEACON`, con `LOGDIR`) y editor de archivos `.conf` |
 | Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |

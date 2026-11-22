@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.47.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.48.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -343,10 +343,19 @@ Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apa
 
 La pantalla tiene cuatro vistas:
 
-- **NAVTEX**: los mensajes recibidos, por tema. Los de los temas A, B, D y L de las estaciones que se siguen pasan a Avisos.
+- **NAVTEX**: los mensajes recibidos, por tema. Los de los temas A, B, D y L de las estaciones que se siguen pasan a Avisos. Al abrir uno se ve cuántos caracteres llegaron mal y si llegó fuera del turno de su letra, y se puede **borrar**. Debajo de la lista: **guardar todos** en un archivo de texto o CSV, y **borrar todos**.
 - **Estaciones**: las próximas emisiones de las estaciones que se siguen y la tabla de estaciones de cada frecuencia, ordenada por distancia a la posición de la consola, con el alcance que declara cada una y su próxima hora. Con «Se sigue / No» se elige de qué letras pasan los avisos; «Seguir solo las que quedan en alcance» lo hace de una vez. La letra vale para las tres frecuencias y para todas las estaciones que la comparten. Los datos son la Tabla 4 de la UIT (2017) y, para 4209,5 kHz, la lista de Wikipedia: tómelos como referencia, no como horario oficial.
 - **Receptores**: estado y ajustes de los dos receptores de Navtex (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección y alimentación de la antena). Cada cambio se guarda al momento y el receptor lo aplica solo en unos segundos. Solo con la sesión de administrador.
 - **Inmarsat-C**: ver más abajo.
+
+**Qué pasa con los mensajes.**
+
+- *Se guardan* en dos sitios: en el receptor (72 horas desde la última vez que se oyen, ampliable hasta un año en Receptores) y en la consola (los últimos 300).
+- *Repeticiones.* Una estación repite cada cuatro horas lo que sigue en vigor. El receptor no lo guarda otra vez (como manda la norma: OMI MSC.148(77)), pero avisa de que lo ha vuelto a oír, y la consola mantiene vigente el aviso mientras siga oyéndose.
+- *Calidad.* Una recepción se da por buena con menos de un 4 % de caracteres erróneos. Si llega una copia mejor, sustituye a la peor.
+- *Borrar* quita el mensaje de la consola y del receptor, que lo recuerda 72 horas para que la repetición no lo traiga de vuelta. Solo con la sesión de administrador.
+- *NMEA 0183.* El receptor puede mandar cada mensaje nuevo, entero, en sentencias `NRX` por UDP o por un servidor TCP (Receptores → Conservación y salida NMEA 0183). Es la salida normalizada de NAVTEX, y la misma forma que usan la app y el plotter APRS LoRa+.
+- *NMEA 2000.* No existe un mensaje de NMEA 2000 para NAVTEX. Hay dos salidas, las dos con el PGN 129802 (mensaje de seguridad AIS, que los plotters muestran): los **avisos** que saltan (título corto; opción «Avisos de emergencia» de Conectividad → NMEA 2000) y, si se pide, el **texto entero** de cada mensaje nuevo de las estaciones que se siguen, por partes numeradas (`NAVTEX GA12 2/7 …`), una cada dos segundos (opción «NAVTEX: texto entero», apagada de serie: en algunos plotters cada parte abre una ventana). Va solo por el bus: no se emite nada por radio, así que no interviene en el reparto de tiempos (TDMA) del AIS.
 
 **Posición.** Si el receptor tiene su propio GPS, usa esa. Si no, la consola le da la de la estación (se puede quitar en Entradas, «Dar al receptor la posición…»).
 
@@ -409,6 +418,7 @@ Las claves y contraseñas guardadas se muestran como `********` y no salen nunca
 | Viento, presión y temperatura | 130306, 130314, 130316 |
 | Navegación, si hay objetivo o ruta | 129283, 129284 |
 | Avisos de emergencia, como mensaje de seguridad AIS | 129802 |
+| NAVTEX: texto entero de cada mensaje, por partes (apagado de serie) | 129802 |
 
 Lo recibido por radio (AIS, ADS-B, APRS) **no** se reenvía al bus. Para levantar la interfaz:
 ```

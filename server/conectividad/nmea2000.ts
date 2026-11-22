@@ -390,6 +390,7 @@ export interface ConfigN2k {
   emitirMeteo: boolean;
   emitirNavegacion: boolean;
   emitirAvisos: boolean;       // avisos de emergencia como mensaje de seguridad AIS (129802)
+  emitirNavtex?: boolean;      // el texto entero de cada mensaje NAVTEX, por partes, en 129802 (no hay PGN propio de NAVTEX)
   mmsiPropio?: number;         // MMSI (ficticio o real) de la estación para el 129802
   unico?: number;              // número de serie del NAME
 }
@@ -402,6 +403,7 @@ export const CONFIG_N2K_DEFECTO: ConfigN2k = {
   emitirMeteo: true,
   emitirNavegacion: true,
   emitirAvisos: true,
+  emitirNavtex: false,
 };
 
 /** Emisor NMEA 2000: reclama dirección y emite los PGN activados cada segundo desde las fuentes. */
@@ -413,6 +415,8 @@ export class EmisorN2k {
   private ultMeteo = -1e9;
   private ultHora = -1e9;
   private ultNav = -1e9;
+  private ultTexto = -1e9;
+  private colaTexto: string[] = [];
 
   constructor(private transporte: TransporteCan, private cfg: ConfigN2k, private fuentes: FuentesN2k) {
     this.reclamo = new ReclamoDireccion(n2kName({ unico: cfg.unico, clase: 60, funcion: 130 }), cfg.direccion);
@@ -428,6 +432,19 @@ export class EmisorN2k {
     this.envia(129802, mensajeSeguridadAis(this.cfg.mmsiPropio ?? 8000000, 0, texto), 5);
     return true;
   }
+
+  /**
+   * Texto de un mensaje NAVTEX, ya partido: sale de uno en uno, cada dos segundos, como mensaje de
+   * seguridad AIS (129802). NMEA 2000 no tiene un PGN para NAVTEX; este es el que lleva texto de seguridad
+   * y los plotters lo muestran. Va solo por el bus: nada se emite por radio.
+   */
+  encolarTexto(trozos: string[]): boolean {
+    if (!this.cfg.activo || !this.cfg.emitirNavtex) return false;
+    this.colaTexto.push(...trozos);
+    if (this.colaTexto.length > 240) this.colaTexto = this.colaTexto.slice(-240);
+    return true;
+  }
+  pendientes(): number { return this.colaTexto.length; }
 
   /** Pásale cada trama recibida del bus para que defienda/negocie la dirección. */
   alRecibir(id: number, datos: Uint8Array, nowMs: number) {
@@ -450,6 +467,10 @@ export class EmisorN2k {
   tick(nowMs: number) {
     if (!this.cfg.activo || !this.reclamo.listo(nowMs)) return;
     this.sid = (this.sid + 1) % 253;
+    if (this.colaTexto.length && nowMs - this.ultTexto >= 2000) {
+      this.ultTexto = nowMs;
+      this.envia(129802, mensajeSeguridadAis(this.cfg.mmsiPropio ?? 8000000, 0, this.colaTexto.shift()!), 5);
+    }
     if (this.cfg.emitirGps) {
       const p = this.fuentes.posicion?.();
       if (p && nowMs - this.ultGps >= 1000) {

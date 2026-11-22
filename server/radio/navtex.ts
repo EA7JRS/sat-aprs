@@ -63,10 +63,20 @@ function mensaje(cab: string, cuerpo: string, recibido: number, incompleto: bool
  * Recibe 518 y 490 kHz a la vez, o 4209,5 kHz (onda corta) si se le pide. Devuelve los mensajes y el mayor id visto,
  * para pedir la próxima vez solo los nuevos.
  */
-export interface MensajeNavtexRed extends MensajeNavtex { freq: number | null }
-export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: MensajeNavtexRed[]; ultimoId: number } {
+export interface MensajeNavtexRed extends MensajeNavtex {
+  freq: number | null;
+  /** Identificador en el receptor, para pedirle que lo borre. */
+  idReceptor?: number;
+  /** Caracteres que no se pudieron recibir, y si la recepción se da por buena (menos de un 4 %, OMI MSC.148(77)). */
+  errores?: number | null;
+  satisfactorio?: boolean | null;
+  /** Si llegó en el turno de su letra. */
+  enTurno?: boolean | null;
+}
+export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: MensajeNavtexRed[]; ultimoId: number; ultimoOido: number } {
   const mensajes: MensajeNavtexRed[] = [];
   let ultimoId = 0;
+  let ultimoOido = 0;
   for (const x of (Array.isArray(j) ? j : [])) {
     const id = Number(x?.id);
     if (Number.isInteger(id) && id > ultimoId) ultimoId = id;
@@ -77,13 +87,21 @@ export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: 
       .filter((l: string, i: number) => !(i === 0 && /ZCZC/.test(l))).join('\n').replace(/\n?\s*NNNN\s*$/, '');
     const cuando = Date.parse(String(x?.received ?? ''));
     // Una hora del receptor en el futuro o absurda no se cree: vale la de la consola
-    const recibido = Number.isFinite(cuando) && cuando <= ahora + 5 * 60_000 && cuando > ahora - 7 * 86400_000 ? cuando : ahora;
+    const creible = (t: number) => Number.isFinite(t) && t <= ahora + 5 * 60_000 && t > ahora - 7 * 86400_000;
+    // «heard» (Navtex 1.2): la última vez que se oyó; el receptor ya no guarda otra vez lo que la estación repite
+    const oido = Number(x?.heard) * 1000;
+    if (typeof x?.heard === 'number' && creible(oido) && x.heard > ultimoOido) ultimoOido = x.heard;
+    const recibido = typeof x?.heard === 'number' && creible(oido) && (!creible(cuando) || oido > cuando) ? oido : creible(cuando) ? cuando : ahora;
     const m = mensaje(cab, cuerpo, recibido, x?.complete === false);
     const freq = Number(x?.freq);
     // 4209 es el canal de onda corta, 4209,5 kHz
-    if (m) mensajes.push({ ...m, freq: freq === 518 || freq === 490 || freq === 4209 ? freq : null });
+    if (m) mensajes.push({
+      ...m, freq: freq === 518 || freq === 490 || freq === 4209 ? freq : null, idReceptor: Number.isInteger(id) && id > 0 ? id : undefined,
+      errores: Number.isInteger(x?.errors) && x.errors >= 0 ? x.errors : null,
+      satisfactorio: typeof x?.satisfactory === 'boolean' ? x.satisfactory : null, enTurno: typeof x?.in_slot === 'boolean' ? x.in_slot : null,
+    });
   }
-  return { mensajes, ultimoId };
+  return { mensajes, ultimoId, ultimoOido };
 }
 
 /** Dirección del receptor en red: solo http(s)://equipo[:puerto], sin ruta ni credenciales. */
@@ -186,8 +204,13 @@ export function estacionesPorDistancia(lista: EstacionNavtex[], pos: { lat: numb
 // la consola no le manda nada que él fuera a rechazar, ni una clave que no sea de un receptor.
 const UNA_DE = (v: string, ...ops: string[]) => ops.includes(v);
 export function ajusteReceptorValido(clave: string, valor: string): boolean {
+  if (typeof valor !== 'string') return false;
+  // Conservación de los mensajes y salida NMEA 0183 del receptor (Navtex 1.2)
+  if (clave === 'retention_hours') return /^\d{2,4}$/.test(valor) && Number(valor) >= 72 && Number(valor) <= 8760;
+  if (clave === 'nrx.udp') return valor === '' || (/^[A-Za-z0-9.-]{1,70}:\d{1,5}$/.test(valor) && Number(valor.split(':')[1]) >= 1 && Number(valor.split(':')[1]) <= 65535);
+  if (clave === 'nrx.tcp') return /^\d{1,5}$/.test(valor) && (Number(valor) === 0 || (Number(valor) >= 1024 && Number(valor) <= 65535));
   const m = /^rx[12]\.(enabled|source|band|hf_slots|port|bias|serial|direct|upconv|gain|ppm)$/.exec(String(clave));
-  if (!m || typeof valor !== 'string') return false;
+  if (!m) return false;
   switch (m[1]) {
     case 'enabled': case 'bias': return UNA_DE(valor, '0', '1');
     case 'source': return UNA_DE(valor, 'sdrplay', 'rtlsdr');
@@ -205,3 +228,42 @@ export function ajusteReceptorValido(clave: string, valor: string): boolean {
 
 /** Posición «lat,lon» como la quiere el receptor (5 decimales). */
 export const posicionParaReceptor = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`;
+
+// ---------------------------------------------------------------------------
+// Sacar los mensajes: a un archivo y al bus NMEA 2000
+
+const nombreKhz = (f: number | null | undefined) => (f === 4209 ? '4209.5' : f ? String(f) : '');
+const fechaUtc = (t: number) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
+
+/** Los mensajes en texto o en CSV (RFC 4180), del más antiguo al más reciente. */
+export function exportarNavtex(mensajes: MensajeNavtexRed[], csv: boolean): string {
+  const lista = [...mensajes].sort((a, b) => a.recibido - b.recibido);
+  if (!csv) {
+    return lista.map((m) => `==== ${m.cabecera}  ${nombreKhz(m.freq) ? `${nombreKhz(m.freq)} kHz  ` : ''}recibido ${fechaUtc(m.recibido)} UTC${m.incompleto ? '  cortado' : ''}${m.errores ? `  ${m.errores} caracteres mal` : ''} ====\r\nZCZC ${m.cabecera}\r\n${m.texto.replace(/\r?\n/g, '\r\n')}\r\n`).join('\r\n');
+  }
+  // Una celda que empieza por = + - @ la ejecutaría una hoja de cálculo como fórmula
+  const celda = (t: string) => `"${(/^[=+\-@]/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`;
+  const filas = lista.map((m) => [m.cabecera, nombreKhz(m.freq), fechaUtc(m.recibido), m.incompleto ? 0 : 1, m.errores ?? '', TEMAS_NAVTEX[m.tema] ?? m.tema,
+    m.posicion ? m.posicion.lat : '', m.posicion ? m.posicion.lon : '', m.texto].map((c) => (typeof c === 'string' ? celda(c) : String(c))).join(','));
+  return ['cabecera,khz,recibido_utc,completo,caracteres_mal,tema,lat,lon,texto', ...filas].join('\r\n') + '\r\n';
+}
+
+/**
+ * Un mensaje NAVTEX para el bus NMEA 2000. No hay PGN de NAVTEX: va como mensajes de seguridad AIS
+ * (129802), que solo admiten el juego de caracteres de 6 bits del AIS y poco más de cien caracteres,
+ * así que el texto se parte, en un espacio si se puede, y cada trozo dice qué mensaje es y qué parte.
+ */
+export function trozosNavtexN2k(m: Pick<MensajeNavtex, 'cabecera' | 'texto'>, maximo = 110, maxTrozos = 30): string[] {
+  // Lo que no existe en el AIS de 6 bits (minúsculas, tildes, el asterisco sí existe) pasa a mayúsculas o a «?»
+  const limpio = m.texto.toUpperCase().replace(/\s+/g, ' ').replace(/[^ -_]/g, '?').trim();
+  const trozos: string[] = [];
+  const sitio = maximo - `NAVTEX ${m.cabecera} 00/00 `.length;
+  for (let resto = limpio; resto && trozos.length < maxTrozos;) {
+    let n = Math.min(sitio, resto.length);
+    if (n < resto.length) { const sp = resto.lastIndexOf(' ', n); if (sp > n / 2) n = sp; }
+    trozos.push(resto.slice(0, n).trim());
+    resto = resto.slice(n).trim();
+    if (resto && trozos.length === maxTrozos) trozos[maxTrozos - 1] = `${trozos[maxTrozos - 1].slice(0, sitio - 4)} ...`;
+  }
+  return trozos.map((t, i) => `NAVTEX ${m.cabecera} ${i + 1}/${trozos.length} ${t}`);
+}

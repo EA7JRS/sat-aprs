@@ -2,6 +2,18 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.48.0] - 2026-11-22
+### NAVTEX: borrar, guardar y sacar los mensajes
+Pide el receptor [Navtex](https://github.com/EA7JRS/Navtex) 1.2.0 para lo nuevo; con uno anterior todo sigue como en la v1.47.
+- **Borrar** un mensaje o todos desde la consola (administrador): se borra también en el receptor, que lo recuerda 72 horas para no traerlo de vuelta.
+- **Guardar** todos los mensajes en un archivo de texto o CSV.
+- **Repeticiones y calidad.** Navtex 1.2 ya no guarda otra vez lo que la estación repite (OMI MSC.148(77)); la consola le pregunta qué ha vuelto a oír y mantiene vigente el aviso. Cada mensaje dice cuántos caracteres llegaron mal, si la recepción se da por buena (menos de un 4 %) y si llegó en el turno de su letra; una copia buena sustituye a la que llegó con errores.
+- **NMEA 0183.** Desde Receptores se ajustan la conservación de los mensajes y la salida `NRX` del receptor (UDP y TCP).
+- **NMEA 2000.** Nueva opción «NAVTEX: texto entero» (apagada de serie): cada mensaje nuevo de las estaciones que se siguen sale al bus por partes numeradas en el PGN 129802, una cada dos segundos. NMEA 2000 no tiene mensaje propio de NAVTEX. Solo lo recién recibido; nada por radio.
+- Probado con el servidor real de Navtex 1.2.0 y grabaciones de prueba. La salida al bus NMEA 2000 solo está probada con las comprobaciones del programa: falta verla en un bus real y en el plotter.
+
+---
+
 ## [v1.47.0] - 2026-11-22
 ### Navtex, integrado en la consola
 - **Pantalla completa.** Radio → NAVTEX e Inmarsat muestra ahora lo que antes solo estaba en la interfaz del receptor [Navtex](https://github.com/EA7JRS/Navtex): el estado de sus dos receptores, sus ajustes (equipo, banda, horario de onda corta, toma de antena, número de serie, muestreo directo, ganancia, corrección, alimentación de la antena), la última señal en cada frecuencia y su GPS. Los ajustes se cambian desde la consola, solo con la sesión de administrador; la consola solo manda al receptor claves y valores conocidos.

@@ -14,7 +14,7 @@ import { useAdminSession } from '../utils/session';
 import { Estado } from '../components/radio/Piezas';
 import { TelemetryConfig } from '../types';
 
-interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; freq?: number | null; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean }
+interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; freq?: number | null; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean; errores?: number | null; satisfactorio?: boolean | null; enTurno?: boolean | null }
 interface Egc { clave: string; servicio: string; prioridad: string; prioridadEs: string; msgId: number | null; hora: string | null; mhz: number | null; texto: string; recibido: number; posicion: { lat: number; lon: number } | null; vigente: boolean }
 interface Datos {
   navtex: { activo: boolean; estaciones: string; url: string; compartePosicion: boolean; red: { error: string | null; consulta: number | null; vivo: number | null; receptor: string | null }; error: string | null; ultimoDato: number | null; temas: Record<string, string>; mensajes: Navtex[] };
@@ -180,6 +180,14 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
     const nuevas = actuales.includes(letra) ? actuales.filter((l) => l !== letra) : [...actuales, letra];
     void seguir(nuevas.length === 26 ? '' : nuevas.sort().join(''));
   };
+  const borrar = async (que: { clave: string } | { todos: true }) => {
+    try {
+      const r = await customFetch('/api/navtex/borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(que) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) setD((x) => (x ? { ...x, navtex: { ...x.navtex, mensajes: 'todos' in que ? [] : x.navtex.mensajes.filter((m) => m.clave !== que.clave) } } : x));
+      setMsgRx(r.ok ? (j.enReceptor === false ? { ok: false, texto: 'Borrado aquí; el receptor no lo ha borrado (¿es anterior a la versión 1.2?).' } : null) : { ok: false, texto: j.error || 'No se pudo borrar.' });
+    } catch { setMsgRx({ ok: false, texto: 'No se pudo borrar.' }); }
+  };
   const poner = async (clave: string, valor: string) => {
     try {
       const r = await customFetch('/api/navtex/ajuste', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clave, valor }) });
@@ -252,13 +260,32 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                   <button type="button" className="w-full text-left p-3 cursor-pointer hover:bg-slate-800/50 flex flex-wrap items-baseline gap-x-3 gap-y-1" onClick={() => setAbierto(abierto === m.clave ? null : m.clave)} aria-expanded={abierto === m.clave}>
                     <span className={`border rounded px-1.5 font-mono text-xs font-bold ${COLOR_TEMA[m.tema] ?? 'border-slate-600 text-slate-300'}`}>{m.cabecera}</span>
                     <span className="text-slate-100 font-semibold">{n.temas[m.tema] ?? m.tema}</span>
-                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq === 4209 ? '4209,5' : m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
+                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq === 4209 ? '4209,5' : m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : m.satisfactorio === false ? ' · con errores' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
                     <span className="basis-full text-[13px] text-slate-300 truncate">{m.texto.split('\n').find((l) => l.trim() && !/^\d{6} ?UTC/.test(l)) ?? ''}</span>
                   </button>
-                  {abierto === m.clave && <pre className="px-3 pb-3 text-[13px] text-slate-200 whitespace-pre-wrap break-words font-mono">{m.texto}</pre>}
+                  {abierto === m.clave && (
+                    <div className="px-3 pb-3 flex flex-col gap-2">
+                      <pre className="text-[13px] text-slate-200 whitespace-pre-wrap break-words font-mono">{m.texto}</pre>
+                      <p className="text-[13px] text-slate-400">
+                        {m.errores ? `${m.errores} ${m.errores === 1 ? 'carácter no se pudo recibir bien (el asterisco)' : 'caracteres no se pudieron recibir bien (los asteriscos)'}. ` : ''}
+                        {m.satisfactorio === false && !m.incompleto ? 'Con un 4 % o más de errores la recepción no se da por buena: si la estación lo repite mejor, el receptor guarda la copia nueva. ' : ''}
+                        {m.enTurno === false ? `Llegó fuera del turno de la letra ${m.estacion}: puede ser una estación lejana con otro horario.` : ''}
+                      </p>
+                      <button type="button" className={`${botonMenor} self-start`} disabled={!isAdmin} onClick={() => void borrar({ clave: m.clave })} id={`borrar-${m.cabecera}`}>Borrar este mensaje</button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+          {n.mensajes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2" id="mar-acciones">
+              <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=txt" download id="exportar-txt">Guardar todos como texto</a>
+              <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=csv" download id="exportar-csv">Guardar todos como CSV</a>
+              <button type="button" className={botonMenor} disabled={!isAdmin} id="borrar-todos"
+                onClick={() => { if (window.confirm('¿Borrar todos los mensajes NAVTEX, aquí y en el receptor? Los que las estaciones repitan en las próximas 72 horas no volverán a aparecer.')) void borrar({ todos: true }); }}>Borrar todos</button>
+              {msgRx && ver === 'navtex' && <span className={`text-sm ${msgRx.ok ? 'text-emerald-400' : 'text-amber-300'}`} role="status">{msgRx.texto}</span>}
+            </div>
           )}
           <p className="text-[13px] text-slate-400">Los temas A, B, D y L (avisos a los navegantes, meteorológicos y de salvamento) pasan a Avisos; los demás solo se muestran. Un mensaje vale 12 horas desde la última vez que se recibe.</p>
         </Tarjeta>
@@ -348,6 +375,21 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                   <AjustesReceptor n={1} r={rx} admin={isAdmin} poner={poner} horasOndaCorta={horasOndaCorta} />
                   <AjustesReceptor n={2} r={rx} admin={isAdmin} poner={poner} horasOndaCorta={horasOndaCorta} />
                 </div>
+                <fieldset className="grid grid-cols-1 md:grid-cols-3 gap-3 border border-slate-800 rounded-lg p-3" disabled={!isAdmin} id="mar-salida">
+                  <legend className="px-1 text-slate-100 font-semibold">Conservación y salida NMEA 0183 del receptor</legend>
+                  {([['retention_hours', 'Horas que conserva un mensaje desde que se oye por última vez (72 a 8760)', '72', '72'],
+                    ['nrx.udp', 'Sentencias NRX por UDP: destino (equipo:puerto; vacío, apagado)', '', '192.168.1.255:10110'],
+                    ['nrx.tcp', 'Sentencias NRX por TCP: puerto del servidor (0, apagado)', '0', '10110']] as const).map(([k, rotulo, defecto, marcador]) => {
+                    const valor = rx.ajustes[k] !== undefined && rx.ajustes[k] !== '' ? rx.ajustes[k] : defecto;
+                    return (
+                      <label key={k} className="flex flex-col gap-1 text-sm text-slate-300">{rotulo}
+                        <input key={`${k}-${valor}`} className={`${campo} font-mono`} defaultValue={valor} placeholder={marcador} id={`ajuste-${k.replace('.', '-')}`}
+                          onBlur={(e) => { const x = e.target.value.trim(); if (x !== valor) void poner(k, x); }} />
+                      </label>
+                    );
+                  })}
+                  <p className="md:col-span-3 text-[13px] text-slate-400">Las sentencias NRX llevan el texto entero de cada mensaje nuevo, en la forma de los receptores Furuno (la de la app y el plotter APRS LoRa+). La salida no tiene contraseña: si hay cortafuegos, abra el puerto TCP solo a la red local.</p>
+                </fieldset>
                 <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" id="mar-rx-datos">
                   {(['518', '490', '4209'] as const).map((f) => {
                     const t = Date.parse(rx.estado[`phasing_${f}`] || '');

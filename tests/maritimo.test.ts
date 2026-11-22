@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ajusteReceptorValido, claveNavtex, emitiendoAhora, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, proximaEmision, urlReceptorValida } from '../server/radio/navtex';
+import { ajusteReceptorValido, claveNavtex, emitiendoAhora, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, proximaEmision, urlReceptorValida, exportarNavtex, trozosNavtexN2k } from '../server/radio/navtex';
 import { eventoEgc, juntarEgc, leerEgc } from '../server/radio/egc';
 import { posicionEnTexto } from '../server/core/posicionTexto';
 import { boletinAprs, objetoAprs } from '../server/core/aprsAvisos';
@@ -89,7 +89,7 @@ test('NAVTEX en red: mensajes de la API del receptor EA7JRS/Navtex', () => {
   assert.equal(eventoNavtex(p, 3600_000)?.gravedad, 'amarillo');
   // Una hora del receptor en el futuro no se cree
   assert.equal(s.recibido, ahora);
-  assert.deepEqual(mensajesDeReceptor({ error: 'x' }, ahora), { mensajes: [], ultimoId: 0 });
+  assert.deepEqual(mensajesDeReceptor({ error: 'x' }, ahora), { mensajes: [], ultimoId: 0, ultimoOido: 0 });
   // Onda corta: 4209 es 4209,5 kHz; otra frecuencia no se cree
   const hf = mensajesDeReceptor([{ id: 1, bbbb: 'EE39', freq: 4209, complete: true, message: 'ZCZC EE39\nWEATHER FORECAST FOR THE AREA' }, { id: 2, bbbb: 'EE40', freq: 7000, complete: true, message: 'ZCZC EE40\nWEATHER FORECAST FOR THE AREA' }], ahora);
   assert.deepEqual(hf.mensajes.map((m) => m.freq), [4209, null]);
@@ -145,4 +145,43 @@ test('NAVTEX: ajustes del receptor que la consola acepta mandar', () => {
     assert.equal(ajusteReceptorValido(k, val), false, `${k}=${val}`);
   }
   assert.equal(posicionParaReceptor(36.53, -6.29), '36.53000,-6.29000');
+});
+
+test('NAVTEX: repeticiones (heard), calidad, exportación y trozos para NMEA 2000', () => {
+  // Mensajes escritos para la prueba, con la forma de la API de Navtex 1.2
+  const api = [
+    { id: 7, bbbb: 'GA12', freq: 518, received: '2026-11-20T05:08:00Z', heard: Date.parse('2026-11-20T09:08:00Z') / 1000, complete: true, characters: 60, errors: 0, satisfactory: true, in_slot: true, message: 'ZCZC GA12\nLIGHT UNLIT IN 36-05.2N 005-21.0W.\nNNNN' },
+    { id: 8, bbbb: 'GB20', freq: 490, received: '2026-11-20T09:40:00Z', heard: Date.parse('2026-11-20T09:40:00Z') / 1000, complete: true, characters: 40, errors: 6, satisfactory: false, in_slot: false, message: 'ZCZC GB20\n=GA*E "W*RN*NG", T**T.\nNNNN' },
+  ];
+  const r = mensajesDeReceptor(api, T);
+  assert.equal(r.ultimoId, 8);
+  assert.equal(r.ultimoOido, Date.parse('2026-11-20T09:40:00Z') / 1000);
+  // Vale la última vez que se oyó, no la primera: el aviso sigue vigente mientras la estación lo repita
+  assert.equal(new Date(r.mensajes[0].recibido).toISOString(), '2026-11-20T09:08:00.000Z');
+  assert.deepEqual([r.mensajes[0].idReceptor, r.mensajes[0].satisfactorio, r.mensajes[0].enTurno, r.mensajes[1].errores, r.mensajes[1].satisfactorio, r.mensajes[1].enTurno], [7, true, true, 6, false, false]);
+  // Un receptor anterior no trae esos campos
+  const viejo = mensajesDeReceptor([{ id: 1, bbbb: 'GA12', freq: 518, received: '2026-11-20T05:08:00Z', complete: true, message: 'ZCZC GA12\nLIGHT UNLIT. PRUEBA.\nNNNN' }], T);
+  assert.deepEqual([viejo.ultimoOido, viejo.mensajes[0].errores, viejo.mensajes[0].satisfactorio], [0, null, null]);
+  assert.equal(new Date(viejo.mensajes[0].recibido).toISOString(), '2026-11-20T05:08:00.000Z');
+
+  const csv = exportarNavtex(r.mensajes, true).split('\r\n');
+  assert.equal(csv[0], 'cabecera,khz,recibido_utc,completo,caracteres_mal,tema,lat,lon,texto');
+  assert.equal(csv[1], '"GA12","518","2026-11-20 09:08",1,0,"Aviso a los navegantes",36.08667,-5.35,"LIGHT UNLIT IN 36-05.2N 005-21.0W."');
+  // Comillas dobladas, y nada que una hoja de cálculo tome por fórmula
+  assert.ok(csv[2].endsWith(',"\'=GA*E ""W*RN*NG"", T**T."'), csv[2]);
+  const txt = exportarNavtex(r.mensajes, false);
+  assert.ok(txt.startsWith('==== GA12  518 kHz  recibido 2026-11-20 09:08 UTC ====\r\nZCZC GA12\r\nLIGHT UNLIT'));
+  assert.ok(txt.includes('==== GB20  490 kHz  recibido 2026-11-20 09:40 UTC  6 caracteres mal ===='));
+
+  const largo = { cabecera: 'GE40', texto: Array.from({ length: 60 }, (_, i) => `palabra${i}`).join(' ') + '\nÚltima línea con ñ.' };
+  const t = trozosNavtexN2k(largo);
+  assert.ok(t.length > 5 && t.every((x) => x.length <= 110 && /^[ -_]+$/.test(x)), 'trozos cortos y solo con caracteres del AIS');
+  assert.ok(t[0].startsWith(`NAVTEX GE40 1/${t.length} PALABRA0 PALABRA1`));
+  assert.ok(t[t.length - 1].endsWith('?LTIMA L?NEA CON ?.'));
+  // Todo el texto, en orden y sin partir palabras
+  assert.equal(t.map((x) => x.replace(/^NAVTEX GE40 \d+\/\d+ /, '')).join(' '), largo.texto.toUpperCase().replace(/\s+/g, ' ').replace(/[^ -_]/g, '?'));
+  assert.deepEqual(trozosNavtexN2k({ cabecera: 'GA12', texto: 'LIGHT UNLIT.' }), ['NAVTEX GA12 1/1 LIGHT UNLIT.']);
+  assert.equal(trozosNavtexN2k({ cabecera: 'GA12', texto: 'A '.repeat(4000) }).length, 30);
+  assert.ok(ajusteReceptorValido('retention_hours', '168') && ajusteReceptorValido('nrx.udp', '192.168.1.255:10110') && ajusteReceptorValido('nrx.udp', '') && ajusteReceptorValido('nrx.tcp', '0'));
+  assert.ok(!ajusteReceptorValido('retention_hours', '24') && !ajusteReceptorValido('nrx.udp', 'equipo') && !ajusteReceptorValido('nrx.udp', 'a:0') && !ajusteReceptorValido('nrx.tcp', '80'));
 });

@@ -16,6 +16,7 @@ interface ConfigN2k {
   emitirMeteo: boolean;
   emitirNavegacion: boolean;
   emitirAvisos: boolean;
+  emitirNavtex?: boolean;
   mmsiPropio?: number;
 }
 interface EstadoN2k { activo: boolean; interfaz: string; direccion: number; error: string | null; }
@@ -25,6 +26,7 @@ const GRUPOS: Array<{ k: keyof ConfigN2k; txt: string; sub: string }> = [
   { k: 'emitirMeteo', txt: 'Meteorología', sub: '130306 · 130314 · 130316' },
   { k: 'emitirNavegacion', txt: 'Navegación / ruta', sub: '129283 · 129284' },
   { k: 'emitirAvisos', txt: 'Avisos de emergencia', sub: '129802 (mensaje de seguridad AIS)' },
+  { k: 'emitirNavtex', txt: 'NAVTEX: texto entero', sub: '129802, por partes; NMEA 2000 no tiene mensaje propio de NAVTEX' },
 ];
 
 export default function Nmea2000Card({ isAdmin, showToast }: { isAdmin?: boolean; showToast?: (m: string, t?: string) => void }) {

@@ -26,7 +26,7 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.53.0)
+## 📌 Qué hace hoy (v1.54.0)
 
 El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 
@@ -60,6 +60,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Conectividad · salida NMEA 2000 (SocketCAN): posición, hora, meteorología y avisos al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
 | aprx desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx), que compila en Debian 13 (`tools/instalar-aprx.sh`) | Operativo desde la v1.32.1 |
 | Radio · Tramas APRS: todo lo que entra (radio y APRS-IS) y sale, explicado, y analizador de tramas | Operativo desde la v1.33.0 |
+| Radio · WX3in1: el Microsat WX3in1 Plus 2.0 por telnet (estado, cifras, estaciones oídas, registro), su `.cfg` comprobado con [wx3cfg](https://github.com/EA7JRS/wx3in1), reparto de funciones con Direwolf y aprx, vía de emisión de respaldo y recepción de su *Statistics upload* | Operativo desde la v1.54.0; probado contra un WX3in1 de pega, **sin probar con el equipo de verdad** |
 | Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real (un WeeWX en modo `Simulator` no cuenta como estación, v1.44.7) |
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
 | Ayuda de la consola: las seis secciones, con acceso a cada pantalla y enlace al manual | Operativo desde la v1.34.0 |
@@ -83,7 +84,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 | **Avisos** | En vigor · Salud | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; temperaturas y salud, con acceso a Kairós (ISCIII) y Meteosalud (Sanidad). |
 | **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza); WeeWX con sus últimas 24 h. |
 | **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
-| **Radio** | Principal · Direwolf · HF y propagación · aprx · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
+| **Radio** | Principal · Direwolf · HF y propagación · aprx · WX3in1 · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
 | **Sistema** | Equipo · Configuración · Conectividad · Pruebas y simulación | Estado del equipo, ajustes y archivos `.conf`, salida NMEA 2000 y herramientas de ensayo (nada de ellas se emite). |
 
 ---
@@ -113,14 +114,14 @@ Un único servicio en **Node.js y TypeScript** (consola, fuentes y emisión) que
 | `server/core/` | Cadena de avisos: evento común, reglas de difusión, formato APRS por tipo de emergencia y cola de emisión |
 | `server/fuentes/` | Fuentes oficiales: sismos (IGN), avisos (AEMET y MeteoAlarm), clima espacial (NOAA), focos de calor (FIRMS), calidad del aire (CAMS), ciclones (NHC) y radiactividad (EURDEP) |
 | `server/estacion/` | Baliza de posición y parte meteorológico de la estación |
-| `server/radio/` | Radio: mensajería APRS, DAPNET, cluster DX y tabla DXCC, Hamlib (equipo y rotor) y caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat (Winlink) |
+| `server/radio/` | Radio: mensajería APRS, DAPNET, cluster DX y tabla DXCC, Hamlib (equipo y rotor) y caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx, el WX3in1 y Pat (Winlink) |
 | `server/conectividad/` | Salida NMEA 2000 por SocketCAN |
 | `server/formulas/` | Fórmulas comunes con el plotter APRS LoRa+ |
 | `server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts` | Entradas AIS y ADS-B para el mapa |
 | `server/propagacion.ts`, `server/sistema/` | HF y propagación; estado del equipo (ntpsec) |
 | `server.ts` | Servidor Express; contiene aún el resto de la lógica, que se va pasando a las carpetas anteriores |
 | `src/` | Consola web: React 19, Vite y Tailwind CSS (`src/pages/` una pantalla por archivo, `src/navigation.ts` las secciones) |
-| `tools/` | `instalar.sh` (monta la consola y retira restos antiguos), `actualizar.sh` (actualiza con una orden), `instalar-aprx.sh` (aprx desde el fork), `instalar-navtex.sh` (instala el receptor Navtex y lo enlaza) y `canboat/` (comprobación de los PGN de NMEA 2000) |
+| `tools/` | `instalar.sh` (monta la consola y retira restos antiguos), `actualizar.sh` (actualiza con una orden), `instalar-aprx.sh` (aprx desde el fork), `instalar-navtex.sh` (instala el receptor Navtex y lo enlaza), `wx3cfg.py` (comprueba y corrige la configuración del WX3in1, de [EA7JRS/wx3in1](https://github.com/EA7JRS/wx3in1)) y `canboat/` (comprobación de los PGN de NMEA 2000) |
 | `tests/` | Pruebas de protocolo, emisión, avisos, fórmulas y radio |
 
 ## 📡 Seguridad de emisión (léalo antes de transmitir)

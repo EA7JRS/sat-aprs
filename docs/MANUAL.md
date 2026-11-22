@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.53.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.54.0**
 
 Las normas y reglamentos que contempla la consola están en [NORMAS.md](NORMAS.md). Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -300,7 +300,18 @@ Lo que da aprx de verdad, a partir de `aprx.conf` y de su **registro de radio** 
 
 Sin `rflog /var/log/aprx/aprx-rf.log` dentro de `<logging>`, la pantalla lo explica y no muestra cifras. aprx se instala desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx) con `sudo sh tools/instalar-aprx.sh`.
 
-### 7.5 Tramas APRS
+### 7.5 WX3in1
+
+El **Microsat WX3in1 Plus 2.0** de la estación (firmware v1.13), si lo hay. Se ajusta en la propia pantalla (Ajustes, administrador): dirección del equipo, usuario y contraseña de telnet, mensajes de depuración que se le piden y los datos de su servidor APRS-IS simple.
+
+- **Sesión telnet** que se mantiene abierta: `print version`, `print stats`, `print voltage` y `print rfheard` cada minuto (30 a 600 s), y los mensajes de depuración que se elijan (`debug rf on`, `debug digi on`, `debug aprsis on`...). Si alguien entra a mano por telnet a la vez, el equipo puede cerrar una de las dos sesiones.
+- Cifras: recibidas y repetidas por minuto (se cuentan los mensajes «(RF)» y «(DIGI)» del equipo desde que se abrió la sesión), eficiencia de decodificación si `print stats` la da y tensión de alimentación. Estaciones oídas, estadísticas del equipo y registro filtrable. El administrador puede ver las respuestas del equipo tal cual: el formato de `print stats` y `print rfheard` no está documentado y la consola lo enseña sin interpretar lo que no reconoce.
+- **Configuración (wx3cfg)**: se carga el `.cfg` guardado con el Configurador oficial («Save to file»). La consola lo comprueba con `tools/wx3cfg.py` (del repositorio [EA7JRS/wx3in1](https://github.com/EA7JRS/wx3in1); necesita `python3`) con las mismas reglas que el Configurador v1.13 y buenas prácticas APRS, y da una copia corregida para cargarla en el equipo por USB. Calculadora de passcode APRS-IS. La configuración del equipo no se puede cambiar desde la consola.
+- **Reparto de funciones**: qué hacen Direwolf, aprx y el WX3in1 (digipetidor, iGate, APRS-IS a radio, balizas, parte meteorológico, avisos), según `direwolf.conf`, `aprx.conf` y el `.cfg`, y dónde se pisan si trabajan en la misma frecuencia. Con dos digipetidores, «Digi solo en el WX3in1» comenta las líneas `DIGIPEAT` de `direwolf.conf` (copia en `direwolf.conf.antes-wx3in1`) y reinicia Direwolf; «Digi solo en Direwolf» descarga el `.cfg` del equipo sin digipetidor.
+- **Vía de emisión de respaldo** (desactivada de serie): si Direwolf no acepta un aviso **urgente** (servicio parado o sin conexión KISS), sale por el servidor APRS-IS simple del WX3in1 y su emisora. Si Direwolf lo acepta pero su radio falla, la consola no lo puede saber. Con la emisión desactivada (`SAT_APRS_TX`) no sale nada. «Probar con un paquete» emite un estado de prueba.
+- **Estadísticas por HTTP** (*Statistics upload* del equipo): en su Configurador, servidor = la dirección de la consola, puerto = el de la consola (3000) y ruta `wx3in1/estadisticas`. Solo se aceptan del propio equipo (o de la red local si su dirección es un nombre). Se guardan tal cual las 20 últimas.
+
+### 7.6 Tramas APRS
 
 Todo lo que entra y sale, en una lista:
 
@@ -314,7 +325,7 @@ Todo lo que entra y sale, en una lista:
 
 Los mensajes se envían desde Radio → Principal → Mensajería. Cuando llega un mensaje para la estación, sale un aviso en pantalla; su botón «Responder» lo envía de verdad por la mensajería, con acuse y reintentos.
 
-### 7.6 Winlink
+### 7.7 Winlink
 
 El correo por radio que lleva **Pat**, a través de su API HTTP (`pat http`, de serie en `http://127.0.0.1:8080`):
 
@@ -329,7 +340,7 @@ El correo por radio que lleva **Pat**, a través de su API HTTP (`pat http`, de 
 
 El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `config.json` o su propia web).
 
-### 7.7 NAVTEX e Inmarsat
+### 7.8 NAVTEX e Inmarsat
 
 Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apagados y se encienden en esta misma pantalla (con la sesión de administrador).
 
@@ -569,6 +580,9 @@ En Cluster DX, toque la frecuencia del spot: el equipo sintoniza y el rotor gira
 | Direwolf sin nivel de audio | Falta `LOGDIR` o la consola no puede leer la carpeta | `LOGDIR /var/log/direwolf` y permisos de lectura |
 | aprx sin cifras | Falta `rflog` en `aprx.conf` | Añádalo dentro de `<logging>` y reinicie aprx |
 | aprx no arranca tras instalarlo | `STARTAPRX="no"` en `/etc/default/aprx` | `sudo sh tools/instalar-aprx.sh` lo deja en `"yes"` |
+| WX3in1: «usuario o contraseña de telnet no aceptados» | Usuario o contraseña distintos de los del `.cfg` del equipo | Radio → WX3in1 → Ajustes |
+| WX3in1: «Sin .cfg» en el reparto | No se ha cargado su configuración | Guárdela con el Configurador («Save to file») y cárguela en «Comprobar un .cfg» |
+| WX3in1: «python3 no está instalado» | Falta Python 3 para `tools/wx3cfg.py` | `sudo apt install python3` |
 | Winlink: «Pat no contesta» | `pat http` parado o en otra dirección | `sudo systemctl enable --now pat@<usuario>`; revise `http_addr` |
 | Winlink: «Fuera de systemd» | El servicio se llama `pat@<usuario>` | Radio → Winlink → Ajustes → servicio |
 | Equipo o rotor «sin enlace» | `rigctld` o `rotctld` parados, o puerto distinto | Arránquelos y revise host y puerto en su panel |
@@ -608,6 +622,7 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 | ntpsec | Hora | `ntpq` |
 | Direwolf | Módem/TNC | KISS TCP 8001; registro CSV en `/var/log/direwolf` |
 | aprx | iGate y digipeater | `/etc/aprx.conf` y `rflog` |
+| Microsat WX3in1 Plus 2.0 | Digipetidor, iGate y TNC hardware | Telnet 23; su servidor APRS-IS simple (14580) para el respaldo; recibe en HTTP `/wx3in1/estadisticas` |
 | rigctld (Hamlib) | Equipo por CAT | TCP 4532 |
 | rotctld (Hamlib) | Rotor | TCP 4533 |
 | Caja APRS LoRa+ Rotor | Rotor | TCP 4534 (JSON, con PIN) |

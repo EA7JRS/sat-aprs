@@ -11,6 +11,7 @@ import Mapa from './pages/Mapa';
 import RadioPrincipal from './pages/RadioPrincipal';
 import Direwolf from './pages/Direwolf';
 import Aprx from './pages/Aprx';
+import Wx3in1 from './pages/Wx3in1';
 import Winlink from './pages/Winlink';
 import TramasAprs from './pages/TramasAprs';
 import Maritimo from './pages/Maritimo';
@@ -1099,6 +1100,8 @@ export default function App() {
           <Direwolf />
         ) : activeTab === 'aprx-pillar' ? (
           <Aprx />
+        ) : activeTab === 'wx3in1' ? (
+          <Wx3in1 />
         ) : activeTab === 'conectividad' ? (
           /* CONECTIVIDAD: emisión NMEA 2000 (SocketCAN) */
           <motion.div

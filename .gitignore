@@ -21,6 +21,10 @@ last_gps.json
 scheduled_notifications.json
 weather_alerts_sources.json
 local_weather.json
+# WX3in1: su .cfg cargado en la consola y la copia de direwolf.conf al quitar su digipetidor
+sat_wx3in1.cfg
+sat_wx3in1.json
+direwolf.conf.antes-wx3in1
 
 # Plantillas de servicios que la consola genera en local
 /direwolf.conf

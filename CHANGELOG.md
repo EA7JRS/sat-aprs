@@ -2,6 +2,17 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.54.0] - 2026-11-22
+- **Radio · WX3in1**, pantalla nueva para el Microsat WX3in1 Plus 2.0 de la estación (firmware v1.13), según la vista previa aprobada.
+  - **Sesión telnet** permanente: `print version`, `print stats`, `print voltage` y `print rfheard` cada minuto y los mensajes de depuración que se elijan. Recibidas y repetidas por minuto (mensajes «(RF)» y «(DIGI)» del equipo), eficiencia de decodificación, tensión, estaciones oídas y registro filtrable. Lo que el equipo escribe y la consola no reconoce se enseña tal cual (administrador), no se supone.
+  - **Configuración (wx3cfg)**: se carga el `.cfg` del equipo y se comprueba con `tools/wx3cfg.py` 1.1.0, de [EA7JRS/wx3in1](https://github.com/EA7JRS/wx3in1) (mismas reglas que el Configurador v1.13 y buenas prácticas APRS); copia corregida para cargar por USB y calculadora de passcode.
+  - **Reparto de funciones** entre Direwolf, aprx y el WX3in1 (digipetidor, iGate, APRS-IS a radio, balizas, parte meteorológico, avisos) y aviso de choques: dos digipetidores, dos pasarelas de APRS-IS a radio, la misma baliza o dos partes meteorológicos. «Digi solo en el WX3in1» comenta las líneas `DIGIPEAT` de `direwolf.conf` (con copia) y reinicia Direwolf; «Digi solo en Direwolf» descarga el `.cfg` sin digipetidor.
+  - **Vía de emisión de respaldo** (desactivada de serie): un aviso urgente que Direwolf no acepta sale por el servidor APRS-IS simple del WX3in1. Respeta `SAT_APRS_TX`.
+  - **Statistics upload**: la consola recibe en `/wx3in1/estadisticas` las estadísticas que manda el equipo y las guarda tal cual (su formato no está documentado). Solo del propio equipo o de la red local.
+  - Ajustes en la propia pantalla (`/api/radio/wx3in1/config`, solo el administrador): `wx3in1Equipo`, `wx3in1Telnet`, `wx3in1Usuario`, `wx3in1Clave` (secreta), `wx3in1Depuracion`, `wx3in1Intervalo`, `wx3in1IsPuerto`, `wx3in1IsUsuario`, `wx3in1IsClave` (secreta), `wx3in1Respaldo`.
+- Necesita `python3` en el equipo para comprobar el `.cfg` (Debian lo trae).
+- Comprobado con 204 pruebas, comprobación de tipos, compilación y la consola en marcha contra un WX3in1 de pega (telnet con negociación, usuario y contraseña, depuración continua, servidor APRS-IS simple y petición HTTP de estadísticas), con captura de la pantalla. **Sin probar con un WX3in1 de verdad**: el formato de `print stats` y `print rfheard` no está documentado, y lo que no se reconozca se verá en «Ver las respuestas tal cual».
+
 ## [v1.53.0] - 2026-11-22
 - **KiwiSDR** (HF y propagación): un receptor de onda corta de la red como fuente, solo de recepción, en dos canales suyos.
   - **APRS de onda corta** a 300 baudios: el sonido va a un segundo Direwolf que solo escucha (sin PTT, KISS en el puerto 8011) y las tramas entran en Tramas y Estaciones como las de radio; no se contestan. De serie 10 147,6 kHz USB.

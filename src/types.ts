@@ -287,6 +287,19 @@ export interface TelemetryConfig {
   kiwiAprsKhz?: number;
   kiwiAprsBanda?: string;
   kiwiIbp?: boolean;
+  /** Microsat WX3in1 Plus 2.0 de la estación. Se ajusta en su panel (POST /api/radio/wx3in1/config). */
+  wx3in1Equipo?: string;
+  wx3in1Telnet?: number;
+  wx3in1Usuario?: string;
+  wx3in1Clave?: string;
+  /** Mensajes de depuración que se piden por telnet, separados por comas (rf, digi, aprsis, ntp, dns...). */
+  wx3in1Depuracion?: string;
+  wx3in1Intervalo?: number;
+  wx3in1IsPuerto?: number;
+  wx3in1IsUsuario?: string;
+  wx3in1IsClave?: string;
+  /** Avisos urgentes por el servidor APRS-IS simple del WX3in1 cuando Direwolf no acepta la trama. */
+  wx3in1Respaldo?: boolean;
   voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

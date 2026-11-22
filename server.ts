@@ -24,6 +24,7 @@ import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
 import { NOMBRE_TIPO, RegistroTramas, analizarTrama, textoLegible } from './server/radio/tramas';
 import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
 import { EstacionKiwi } from './server/radio/kiwiEstacion';
+import { FuncionesDirewolf, PeticionEstadisticas, RecibidorEstadisticas, ResumenWx3cfg, SesionWx3in1, datoEstadistica, enviarPorServidorSimple, funcionesDirewolf, PATRONES, quitarDigiDirewolf, repartoFunciones } from './server/radio/wx3in1';
 import { APRS_HF_DE_SERIE } from './server/radio/aprsHf';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
@@ -237,7 +238,7 @@ function isAuthorizedRequest(req: express.Request): boolean {
 }
 
 // Claves y credenciales que solo puede ver un administrador
-const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword', 'rotorPin', 'kiwiClave'] as const;
+const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword', 'rotorPin', 'kiwiClave', 'wx3in1Clave', 'wx3in1IsClave'] as const;
 const SECRET_MASK = '********';
 
 function isMaskedSecret(value: unknown): boolean {
@@ -384,6 +385,17 @@ let config: TelemetryConfig = {
   kiwiAprsKhz: 10147.6,
   kiwiAprsBanda: 'usb',
   kiwiIbp: false,
+  // Microsat WX3in1 Plus 2.0 de la estación: telnet (estado y registro) y su servidor APRS-IS simple (respaldo)
+  wx3in1Equipo: '',
+  wx3in1Telnet: 23,
+  wx3in1Usuario: 'admin',
+  wx3in1Clave: '',
+  wx3in1Depuracion: 'rf,digi,aprsis',
+  wx3in1Intervalo: 60,
+  wx3in1IsPuerto: 14580,
+  wx3in1IsUsuario: 'admin',
+  wx3in1IsClave: '',
+  wx3in1Respaldo: false,
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -1445,6 +1457,8 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
         console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`);
       } catch (err: any) {
         console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a RF: ${err.message}`);
+        // Vía de respaldo: el WX3in1 y su emisora, solo para lo urgente y si se ha pedido
+        if (urgente && config.wx3in1Respaldo === true) await respaldoWx3in1(packet.source, packet.destination, config.aprsPath || DEFAULT_RF_PATH, packet.info, err.message);
       }
     }
   }, urgente);
@@ -5949,6 +5963,251 @@ app.post('/api/radio/aprx', async (req, res) => {
   setTimeout(leerAprx, 3000);
   res.status(error ? 500 : 200).json({ ok: !error, error: error ? `No se pudo reiniciar: ${error}` : undefined });
 });
+// ---------------------------------------------------------------------------
+// Microsat WX3in1 Plus 2.0 (server/radio/wx3in1.ts): sesión telnet, su .cfg
+// comprobado con tools/wx3cfg.py, el reparto de funciones de la estación, la
+// vía de emisión de respaldo y las estadísticas que manda por HTTP
+// ---------------------------------------------------------------------------
+const equipoWx3Valido = (t: string) => /^[A-Za-z0-9.-]{1,80}$/.test(t);
+const usuarioWx3Valido = (t: string) => /^[A-Za-z0-9._-]{1,16}$/.test(t);
+const claveWx3Valida = (t: string) => /^[\x21-\x7e]{0,32}$/.test(t);
+const puertoWx3 = (v: unknown, def: number) => { const n = Math.round(Number(v)); return n >= 1 && n <= 65535 ? n : def; };
+const DEPURACION_WX3 = ['rf', 'digi', 'aprsis', 'aprsis_messages', 'ntp', 'dns', 'ax25', 'weatherstation', 'wunderground', 'telemetry'];
+const depuracionWx3 = () => String(config.wx3in1Depuracion ?? '').split(',').map((x) => x.trim().toLowerCase()).filter((x) => DEPURACION_WX3.includes(x));
+const equipoWx3 = () => (equipoWx3Valido(String(config.wx3in1Equipo ?? '')) ? String(config.wx3in1Equipo) : '');
+
+const sesionWx3in1 = new SesionWx3in1(() => ({
+  equipo: equipoWx3(),
+  puerto: puertoWx3(config.wx3in1Telnet, 23),
+  usuario: String(config.wx3in1Usuario ?? 'admin'),
+  clave: String(config.wx3in1Clave ?? ''),
+  depuracion: depuracionWx3(),
+  intervaloS: Number(config.wx3in1Intervalo) || 60,
+}), (texto) => addLog('SYS', 'WX3IN1', 'LOCAL', 'TELNET', texto, true, 'WX3in1'));
+
+// Su archivo .cfg: el que se carga en el equipo con el Configurador oficial (USB)
+const WX3_CFG = path.join(process.cwd(), 'sat_wx3in1.cfg');
+const WX3_META = path.join(process.cwd(), 'sat_wx3in1.json');
+const WX3CFG_PY = path.join(process.cwd(), 'tools', 'wx3cfg.py');
+interface AvisoWx3cfg { level: 'error' | 'warning' | 'info'; section: string; key: string; text: string }
+let cfgWx3in1: null | {
+  nombre: string; cuando: number; error: string | null;
+  counts: { error: number; warning: number; info: number } | null; items: AvisoWx3cfg[]; summary: ResumenWx3cfg | null;
+} = null;
+
+function wx3cfg(args: string[]): Promise<{ salida: string; error: string }> {
+  return new Promise((resolve) => {
+    execFile('python3', ['-I', WX3CFG_PY, '--lang', 'es', '--no-color', ...args], { timeout: 15_000, maxBuffer: 2_000_000 }, (err: any, stdout, stderr) => {
+      // check devuelve 1 con avisos y 2 con errores: no es un fallo de la herramienta
+      const fallo = err && typeof err.code !== 'number' ? (err.code === 'ENOENT' ? 'python3 no está instalado en este equipo' : String(err.message || err)) : '';
+      resolve({ salida: String(stdout ?? ''), error: fallo || String(stderr ?? '').trim() });
+    });
+  });
+}
+
+async function comprobarCfgWx3in1() {
+  if (!fs.existsSync(WX3_CFG)) { cfgWx3in1 = null; return; }
+  let meta = { nombre: 'sat_wx3in1.cfg', cuando: fs.statSync(WX3_CFG).mtimeMs };
+  try { meta = { ...meta, ...JSON.parse(fs.readFileSync(WX3_META, 'utf8')) }; } catch { /* sin datos del archivo original */ }
+  const r = await wx3cfg(['check', '--json', WX3_CFG]);
+  try {
+    const j = JSON.parse(r.salida);
+    cfgWx3in1 = { ...meta, error: null, counts: j.counts, items: j.items, summary: j.summary };
+  } catch {
+    cfgWx3in1 = { ...meta, error: r.error || 'wx3cfg no devolvió un resultado', counts: null, items: [], summary: null };
+  }
+}
+comprobarCfgWx3in1();
+
+// Lo que hace Direwolf (DIGIPEAT, IGSERVER, IGTXVIA, balizas), para el reparto
+let funcionesDw: FuncionesDirewolf | null = null;
+function leerFuncionesDirewolf() {
+  const ruta = confDirewolf?.ruta;
+  if (!ruta) { funcionesDw = null; return; }
+  try { funcionesDw = funcionesDirewolf(fs.readFileSync(ruta, 'utf8')); } catch { funcionesDw = null; }
+}
+leerFuncionesDirewolf();
+setInterval(leerFuncionesDirewolf, 30_000);
+
+function repartoEstacion() {
+  return repartoFunciones({
+    direwolf: funcionesDw,
+    aprx: confAprx?.conf ?? null,
+    wx3in1: cfgWx3in1?.summary ?? null,
+    consola: { indicativo: String(config.callsign ?? ''), baliza: config.aprsBeaconEnabled === true, parteMeteo: config.wxBeaconEnabled === true, emite: TX_ENABLED },
+    respaldo: config.wx3in1Respaldo === true,
+  });
+}
+
+// Vía de respaldo: el servidor APRS-IS simple del WX3in1 pasa a la radio lo que recibe
+let respaldoEstado: { cuando: number; ok: boolean | null; texto: string } = { cuando: 0, ok: null, texto: '' };
+const ajustesServidorSimple = () => ({
+  equipo: equipoWx3(),
+  puerto: puertoWx3(config.wx3in1IsPuerto, 14580),
+  usuario: String(config.wx3in1IsUsuario ?? 'admin'),
+  clave: String(config.wx3in1IsClave ?? ''),
+  version: `S.A.T.-APRS+ ${pkg.version}`,
+});
+
+async function respaldoWx3in1(origen: string, destino: string, ruta: string, info: string, motivo: string) {
+  const tnc2 = `${origen}>${destino}${ruta ? `,${ruta}` : ''}:${info}`;
+  try {
+    await enviarPorServidorSimple(ajustesServidorSimple(), tnc2);
+    respaldoEstado = { cuando: Date.now(), ok: true, texto: `Trama urgente emitida por el WX3in1 (Direwolf: ${motivo}).` };
+    addLog('TX', origen, destino, ruta, info, true, `Por el WX3in1 (respaldo): Direwolf no la aceptó (${motivo})`, { urgente: true });
+  } catch (e: any) {
+    respaldoEstado = { cuando: Date.now(), ok: false, texto: `Tampoco salió por el WX3in1: ${e?.message || e}.` };
+    addLog('TX', origen, destino, ruta, info, false, `Ni Direwolf (${motivo}) ni el WX3in1 (${e?.message || e}) la emitieron`, { urgente: true });
+  }
+}
+
+// Statistics upload: el equipo manda sus estadísticas por HTTP. Fuera de /api,
+// porque el equipo no lleva sesión; solo se aceptan del propio equipo o de la red local.
+const recibidorWx3 = new RecibidorEstadisticas();
+const RUTA_ESTADISTICAS_WX3 = '/wx3in1/estadisticas';
+const ipPrivada = (ip: string) => /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$)/.test(ip);
+app.all(RUTA_ESTADISTICAS_WX3, express.text({ type: '*/*', limit: '8kb' }), (req, res) => {
+  const ip = String(req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+  const equipo = equipoWx3();
+  const aceptada = /^\d+\.\d+\.\d+\.\d+$/.test(equipo) ? ip === equipo : ipPrivada(ip);
+  if (!aceptada) return res.status(403).type('text/plain').send('Forbidden');
+  const consulta: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.query).slice(0, 60)) consulta[k.slice(0, 40)] = String(v).slice(0, 200);
+  const cuerpo = typeof req.body === 'string' ? req.body : req.body && Object.keys(req.body).length ? JSON.stringify(req.body) : '';
+  const p: PeticionEstadisticas = { cuando: Date.now(), desde: ip, metodo: req.method, ruta: req.originalUrl.slice(0, 300), consulta, cuerpo };
+  recibidorWx3.anotar(p);
+  res.type('text/plain').send('OK');
+});
+
+app.get('/api/radio/wx3in1', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const admin = isAuthorizedRequest(req);
+  const ahora = Date.now();
+  const s = sesionWx3in1;
+  const tipo = String(req.query.tipo ?? '');
+  const c = s.cuenta(60, ahora);
+  const dato = (p: RegExp) => datoEstadistica(s.estadisticas, p);
+  res.json({
+    ajustes: {
+      equipo: equipoWx3(), telnet: puertoWx3(config.wx3in1Telnet, 23), usuario: String(config.wx3in1Usuario ?? 'admin'),
+      claveGuardada: !!config.wx3in1Clave, depuracion: depuracionWx3(), intervalo: Number(config.wx3in1Intervalo) || 60,
+      isPuerto: puertoWx3(config.wx3in1IsPuerto, 14580), isUsuario: String(config.wx3in1IsUsuario ?? 'admin'),
+      isClaveGuardada: !!config.wx3in1IsClave, respaldo: config.wx3in1Respaldo === true,
+    },
+    sesion: { estado: s.estado, motivo: s.motivo, desde: s.desde || null, version: s.version, tension: s.tension, ultimaConsulta: s.ultimaConsulta || null },
+    cifras: {
+      recibidas: c.rf, repetidas: c.digi, minutosVistos: c.minutosVistos,
+      eficiencia: dato(PATRONES.eficiencia), totalRecibidas: dato(PATRONES.recibidas), totalRepetidas: dato(PATRONES.repetidas), enMarcha: dato(PATRONES.enMarcha),
+    },
+    minutos: s.minutos(ahora),
+    estadisticas: s.estadisticas,
+    oidas: s.oidas.slice(0, 60),
+    registro: s.registro.filter((l) => !tipo || l.tipo === tipo).slice(0, 80),
+    bruto: admin ? s.bruto : null,
+    cfg: cfgWx3in1,
+    reparto: repartoEstacion(),
+    respaldo: { ...respaldoEstado, activo: config.wx3in1Respaldo === true, txActiva: TX_ENABLED },
+    estadisticasHttp: { ruta: RUTA_ESTADISTICAS_WX3, puerto: PORT, peticiones: recibidorWx3.peticiones.slice(0, 5) },
+  });
+});
+
+app.post('/api/radio/wx3in1/config', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const b = req.body ?? {};
+  if (b.equipo !== undefined) { const t = String(b.equipo).trim(); if (t === '' || equipoWx3Valido(t)) config.wx3in1Equipo = t; else return res.status(400).json({ ok: false, error: 'Nombre o dirección del equipo no válidos.' }); }
+  if (b.telnet !== undefined) { const n = Math.round(Number(b.telnet)); if (n >= 1 && n <= 65535) config.wx3in1Telnet = n; else return res.status(400).json({ ok: false, error: 'Puerto de telnet no válido.' }); }
+  if (b.usuario !== undefined) { const t = String(b.usuario).trim(); if (usuarioWx3Valido(t)) config.wx3in1Usuario = t; else return res.status(400).json({ ok: false, error: 'Usuario de telnet no válido.' }); }
+  // La contraseña se envía tal cual por telnet: nada que la rompa. Sin el campo, se deja la que hay
+  if (b.clave !== undefined) { const t = String(b.clave); if (claveWx3Valida(t)) config.wx3in1Clave = t; else return res.status(400).json({ ok: false, error: 'Contraseña de telnet con caracteres no admitidos.' }); }
+  if (b.depuracion !== undefined) {
+    const lista = (Array.isArray(b.depuracion) ? b.depuracion : String(b.depuracion).split(',')).map((x: unknown) => String(x).trim().toLowerCase());
+    config.wx3in1Depuracion = lista.filter((x: string) => DEPURACION_WX3.includes(x)).join(',');
+  }
+  if (b.intervalo !== undefined) { const n = Math.round(Number(b.intervalo)); if (n >= 30 && n <= 600) config.wx3in1Intervalo = n; else return res.status(400).json({ ok: false, error: 'Intervalo entre 30 y 600 s.' }); }
+  if (b.isPuerto !== undefined) { const n = Math.round(Number(b.isPuerto)); if (n >= 1 && n <= 65535) config.wx3in1IsPuerto = n; else return res.status(400).json({ ok: false, error: 'Puerto del servidor APRS-IS simple no válido.' }); }
+  if (b.isUsuario !== undefined) { const t = String(b.isUsuario).trim(); if (usuarioWx3Valido(t)) config.wx3in1IsUsuario = t; else return res.status(400).json({ ok: false, error: 'Usuario del servidor APRS-IS simple no válido.' }); }
+  if (b.isClave !== undefined) { const t = String(b.isClave); if (claveWx3Valida(t)) config.wx3in1IsClave = t; else return res.status(400).json({ ok: false, error: 'Contraseña del servidor APRS-IS simple con caracteres no admitidos.' }); }
+  if (b.respaldo !== undefined) config.wx3in1Respaldo = b.respaldo === true;
+  guardarConfig();
+  sesionWx3in1.aplicar();
+  addLog('SYS', 'WX3IN1', 'LOCAL', 'CONFIG', 'Ajustes del WX3in1 cambiados.', true, 'WX3in1');
+  res.json({ ok: true });
+});
+
+app.post('/api/radio/wx3in1/cfg', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const nombre = String(req.body?.nombre ?? 'wx3in1.cfg').replace(/[^A-Za-z0-9._ -]/g, '').slice(0, 80) || 'wx3in1.cfg';
+  let datos: Buffer;
+  try { datos = Buffer.from(String(req.body?.datos ?? ''), 'base64'); } catch { return res.status(400).json({ ok: false, error: 'Archivo no válido.' }); }
+  if (datos.length < 100 || datos.length > 64_000 || !datos.toString('latin1').includes('[Radio]')) {
+    return res.status(400).json({ ok: false, error: 'No parece un archivo de configuración del WX3in1 Plus 2.0 (.cfg).' });
+  }
+  try {
+    fs.writeFileSync(WX3_CFG, datos);
+    fs.writeFileSync(WX3_META, JSON.stringify({ nombre, cuando: Date.now() }));
+  } catch (e: any) { return res.status(500).json({ ok: false, error: `No se pudo guardar: ${e?.message || e}` }); }
+  await comprobarCfgWx3in1();
+  addLog('SYS', 'WX3IN1', 'LOCAL', 'CONFIG', `Configuración del WX3in1 cargada (${nombre}).`, true, 'WX3in1');
+  res.json({ ok: true, cfg: cfgWx3in1 });
+});
+
+app.get('/api/radio/wx3in1/cfg/corregido', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  if (!fs.existsSync(WX3_CFG)) return res.status(404).json({ ok: false, error: 'Todavía no hay ningún .cfg cargado.' });
+  const tmp = path.join(os.tmpdir(), `sat-wx3in1-${process.pid}-${Date.now()}.cfg`);
+  const sinDigi = req.query.digi === '0';
+  const r = await wx3cfg(['fix', WX3_CFG, '-o', tmp, ...(sinDigi ? ['--set', 'Digion=0'] : [])]);
+  if (!fs.existsSync(tmp)) return res.status(500).json({ ok: false, error: r.error || 'wx3cfg no escribió el archivo corregido.' });
+  const base = (cfgWx3in1?.nombre ?? 'wx3in1.cfg').replace(/\.cfg$/i, '');
+  res.set('Content-Type', 'application/octet-stream');
+  res.set('Content-Disposition', `attachment; filename="${base}${sinDigi ? '_sin_digi' : '_corregido'}.cfg"`);
+  res.send(fs.readFileSync(tmp));
+  fs.unlink(tmp, () => {});
+});
+
+app.post('/api/radio/wx3in1/orden', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const accion = String(req.body?.accion ?? '');
+  if (accion === 'reconectar') {
+    sesionWx3in1.aplicar();
+    return res.json({ ok: true, texto: equipoWx3() ? 'Conectando con el WX3in1…' : 'Sin equipo: escriba antes su dirección.' });
+  }
+  if (accion === 'probar-respaldo') {
+    if (!TX_ENABLED) return res.status(409).json({ ok: false, error: 'La emisión está desactivada (SAT_APRS_TX): no se envía nada al aire.' });
+    if (!/^[A-Z0-9]{3,6}(-\d{1,2})?$/i.test(String(config.callsign ?? '').trim()) || /^N[O0]CALL/i.test(String(config.callsign ?? '').trim())) return res.status(409).json({ ok: false, error: 'Falta el indicativo de la estación.' });
+    const origen = String(config.callsign).trim().toUpperCase();
+    const ruta = config.aprsPath || DEFAULT_RF_PATH;
+    const info = '>Prueba de la via de respaldo (WX3in1) de S.A.T.-APRS+';
+    try {
+      const resp = await enviarPorServidorSimple(ajustesServidorSimple(), `${origen}>${TOCALL},${ruta}:${info}`);
+      respaldoEstado = { cuando: Date.now(), ok: true, texto: `Prueba entregada al WX3in1${resp ? ` (${resp})` : ''}.` };
+      addLog('TX', origen, TOCALL, ruta, info, true, 'Prueba de la vía de respaldo por el WX3in1');
+      return res.json({ ok: true, texto: respaldoEstado.texto });
+    } catch (e: any) {
+      respaldoEstado = { cuando: Date.now(), ok: false, texto: `La prueba no salió: ${e?.message || e}.` };
+      return res.status(502).json({ ok: false, error: respaldoEstado.texto });
+    }
+  }
+  if (accion === 'digi-solo-wx3in1') {
+    const ruta = confDirewolf?.ruta;
+    if (!ruta) return res.status(404).json({ ok: false, error: 'No se encuentra direwolf.conf.' });
+    let texto: string;
+    try { texto = fs.readFileSync(ruta, 'utf8'); } catch (e: any) { return res.status(500).json({ ok: false, error: `No se puede leer ${ruta}: ${e?.message || e}` }); }
+    const r = quitarDigiDirewolf(texto, `S.A.T.-APRS+ ${new Date().toISOString().slice(0, 10)}, digipetidor en el WX3in1`);
+    if (!r.cambiadas) return res.json({ ok: true, texto: 'Direwolf ya no tenía digipetidor.' });
+    try { fs.writeFileSync(path.join(process.cwd(), 'direwolf.conf.antes-wx3in1'), texto); } catch { /* la copia es una ayuda, no un requisito */ }
+    try {
+      try { fs.writeFileSync(ruta, r.texto, 'utf8'); } catch { execFileSync('sudo', ['-n', 'tee', ruta], { input: r.texto, stdio: ['pipe', 'ignore', 'pipe'], timeout: 5000 }); }
+    } catch (e: any) { return res.status(500).json({ ok: false, error: `No se pudo escribir ${ruta}: ${e?.message || e}` }); }
+    const error = await reiniciarServicio('direwolf');
+    leerDirewolf();
+    leerFuncionesDirewolf();
+    addLog('SYS', 'DIREWOLF', 'LOCAL', 'CONFIG', `Digipetidor de Direwolf desactivado (${r.cambiadas} línea${r.cambiadas === 1 ? '' : 's'} DIGIPEAT comentada${r.cambiadas === 1 ? '' : 's'}); queda el del WX3in1.`, true, 'Reparto');
+    if (error) return res.status(500).json({ ok: false, error: `direwolf.conf cambiado (copia del anterior en direwolf.conf.antes-wx3in1), pero no se pudo reiniciar Direwolf: ${error}` });
+    return res.json({ ok: true, texto: `Hecho: ${r.cambiadas} línea${r.cambiadas === 1 ? '' : 's'} DIGIPEAT comentada${r.cambiadas === 1 ? '' : 's'} y Direwolf reiniciado. Copia del archivo anterior en direwolf.conf.antes-wx3in1.` });
+  }
+  res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
 
 // WeeWX: su configuración y su base de datos (últimas 24 h), de verdad
 let confWeewx: { conf: ConfWeewx; ruta: string } | null = null;
@@ -7511,6 +7770,7 @@ async function initServer() {
   }
 
   estacionKiwi.aplicar();
+  sesionWx3in1.aplicar();
   app.listen(PORT, HOST, () => {
     console.log(`[S.A.T.-APRS+ SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
     console.log(TX_ENABLED

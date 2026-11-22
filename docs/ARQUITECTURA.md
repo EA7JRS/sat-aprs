@@ -33,6 +33,7 @@ programas: se conecta a ellos por sus interfaces de red.
 | ntpsec | Servidor de hora de la red | `ntpq` |
 | Direwolf | Módem/TNC para APRS por RF | KISS sobre TCP 8001; registro CSV (`LOGDIR`) para el nivel de audio |
 | aprx (fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx)) | Digipeater e iGate | `aprx.conf` y su registro de radio (`rflog`) |
+| Microsat WX3in1 Plus 2.0 (opcional) | Digipeater, iGate y TNC hardware | Telnet (estado y depuración), su servidor APRS-IS simple (vía de respaldo) y su `.cfg` comprobado con `tools/wx3cfg.py` ([EA7JRS/wx3in1](https://github.com/EA7JRS/wx3in1)) |
 | Pat | Winlink | API HTTP de `pat http` (8080) |
 | Hamlib `rigctld` / `rotctld` | Equipo por CAT y rotor | TCP 4532 / 4533, protocolo extendido |
 | Caja APRS LoRa+ Rotor | Rotor | TCP 4534, JSON con PIN |
@@ -142,7 +143,7 @@ debajo de la magnitud configurada o con datos incompletos, no se emite nada.
 | Entradas por RF: AIS, ADS-B, NAVTEX, Inmarsat | AIS y ADS-B reales. NAVTEX: receptor Navtex (EA7JRS/Navtex, en este equipo con `tools/instalar-navtex.sh` o en la red) → su API HTTP, que consulta `server/radio/navtex.ts` (mensajes cada minuto; estado, ajustes y estaciones cuando se abre la pantalla). Desde la v1.47.0 es la única vía: la cadena con archivo de la v1.39.0 se retiró. Desde la v1.48.0, borrado y exportación, repeticiones por `heard`, y texto entero al bus NMEA 2000 por partes en el PGN 129802. Inmarsat-C EGC desde la v1.39.0: InmarScope por UDP (JSON) → `server/radio/egc.ts`. Fuera la entrada UDP antigua (puerto 9999), que inventaba área y emisor |
 | Mapa con capas | Hecho con Estación, Avisos y Tráfico (`src/pages/Mapa.tsx`, `/api/mapa`); con la capa APRS desde la v1.11.0 (`server/aprsPosicion.ts`, `server/estaciones.ts`, `server/aprsIs.ts`); AIS y ADS-B desde la v1.12.0 (`server/ais.ts`, `server/adsb.ts`, `server/enlaceTcp.ts`) |
 | Configuración de Direwolf/aprx desde la consola | Hecho: generador de `direwolf.conf` (sin `CBEACON`, con `LOGDIR`) y editor de archivos `.conf` |
-| Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx y Pat |
+| Radio (`server/radio/`) | Hecho: mensajería APRS y DAPNET, cluster DX con DXCC, Hamlib (equipo y rotor), caja APRS LoRa+ Rotor, seguimiento, satélites y Doppler, grupo ARTS/EAI, consola de comandos, Direwolf, aprx, el WX3in1 y Pat |
 | Salida NMEA 2000 (`server/conectividad/`) | Hecho; PGN contrastados con CANboat en la CI; sin probar con un bus real |
 | Pantallas con partes de demostración | Rehechas en la v1.33.0: Tramas APRS (`server/radio/tramas.ts`), WeeWX (`server/estacion/weewx.ts`), enlaces de Sistema → Equipo (`/api/enlaces`). Fuera el A-GPS simulado. En la v1.34.0 se retiran Coordinación y los paneles de demostración de Pruebas |
 | Persistencia en SQLite | Hecho para el historial (`server/sistema/historial.ts`, `sat_historial.db` con `node:sqlite`): tramas, registro y mensajería sobreviven a un reinicio, con retención y exportación a CSV. La configuración y los avisos emitidos siguen en JSON |

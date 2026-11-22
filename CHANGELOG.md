@@ -2,6 +2,11 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.52.0] - 2026-11-22
+- HF y propagación: **circuito de onda corta con VOACAP**, pedido a [Wefax](https://github.com/EA7JRS/Wefax) 0.3.0 (`/api/wefax/circuito`): de una posición o localizador al receptor de Wefax, en una frecuencia o en las bandas de aficionado de HF; fiabilidad de ahora, horas buenas y tira de 24 horas. Y **últimas cartas de radiofacsímil** (`/api/wefax/cartas`), con enlace a cada una.
+- Ajuste nuevo `wefaxUrl` (Marítimo > NAVTEX, «Dirección de Wefax»).
+- Comprobado con 182 pruebas, comprobación de tipos y compilación. **Sin probar contra un Wefax en marcha**: las formas de sus respuestas son las de su servidor real.
+
 ## [v1.51.0] - 2026-11-22
 - NAVTEX: **los mensajes ya no se pueden borrar a mano** (OMI MSC.508(105), 6.1.1: el usuario no debe poder borrar mensajes de la memoria). Fuera «Borrar este mensaje» y «Borrar todos»; `/api/navtex/borrar` contesta 410. Salen solos al cumplir su plazo. Va con Navtex 1.7.0, que hace lo mismo.
 - NAVTEX · Receptores: ajuste **Gestión de alertas del puente** de la salida NMEA 0183 del receptor (`nrx.bam`; sentencias `ALF`, `ALC`, `HBT` y orden `ACN`; Navtex 1.7.0).

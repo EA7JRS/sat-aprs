@@ -58,6 +58,8 @@ import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './serve
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
 import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, recortarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
+import { BANDAS_CIRCUITO_KHZ, leerCartas, leerCircuito, rutaCircuito } from './server/radio/wefax';
+import { maidenheadToLatLon } from './server/formulas/radio';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -367,6 +369,8 @@ let config: TelemetryConfig = {
   // NAVTEX con SDR propio: el receptor Navtex (EA7JRS/Navtex), en este equipo o en otro de la red
   navtexEnabled: false,
   navtexUrl: '',
+  // Wefax (EA7JRS/Wefax): radiofacsímil meteorológico y predicción de circuitos de onda corta con VOACAP
+  wefaxUrl: '',
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -4923,6 +4927,44 @@ app.get('/api/navtex/estaciones', async (_req, res) => {
     res.json({ error: errorNavtex(e), conPosicion: false, fuentes: [], estaciones: [] });
   }
 });
+// Wefax: cartas recibidas y predicción de un circuito de onda corta (VOACAP), leídas de su servidor
+const baseWefax = () => urlReceptorValida(String(config.wefaxUrl ?? ''));
+async function pedirWefax(base: string, ruta: string): Promise<any> {
+  const r = await fetch(`${base}${ruta}`, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'S.A.T.-APRS+' } });
+  if (!r.ok) throw new Error(`Wefax respondió ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+app.get('/api/wefax/cartas', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const base = baseWefax();
+  if (!base) return res.json({ url: '', error: 'falta la dirección de Wefax', cartas: [] });
+  try {
+    res.json({ url: base, error: null, cartas: leerCartas(await pedirWefax(base, '/api/charts?limit=30')) });
+  } catch (e: any) {
+    res.json({ url: base, error: errorNavtex(e), cartas: [] });
+  }
+});
+// Circuito de un transmisor (posición o localizador) al receptor de Wefax: destino=36.5,-6.3 | IM66uq; mhz vacío = bandas de aficionado
+app.get('/api/wefax/circuito', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const base = baseWefax();
+  if (!base) return res.json({ error: 'falta la dirección de Wefax (Marítimo > NAVTEX)', circuito: null });
+  const destino = String(req.query.destino ?? '').trim().slice(0, 40);
+  const m = /^(-?\d{1,2}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)$/.exec(destino);
+  const pos = m ? { lat: Number(m[1].replace(',', '.')), lon: Number(m[2].replace(',', '.')) } : maidenheadToLatLon(destino);
+  if (!pos) return res.json({ error: 'no entiendo ese destino: una posición (36.53, -6.29) o un localizador (IM66uq)', circuito: null });
+  const mhz = String(req.query.mhz ?? '').trim().replace(',', '.');
+  const khz = mhz ? [Number(mhz) * 1000] : BANDAS_CIRCUITO_KHZ;
+  const vatios = Number(String(req.query.w ?? '100'));
+  const ruta = rutaCircuito(pos.lat, pos.lon, khz, (Number.isFinite(vatios) ? vatios : 100) / 1000);
+  if (!ruta) return res.json({ error: 'VOACAP vale de 2 a 30 MHz y de 1 W a 1000 kW', circuito: null });
+  try {
+    const c = leerCircuito(await pedirWefax(base, ruta));
+    res.json({ error: c.ok ? null : c.motivo, circuito: c.ok ? c : null, destino: pos });
+  } catch (e: any) {
+    res.json({ error: errorNavtex(e), circuito: null });
+  }
+});
 // Guardar los mensajes en un archivo
 app.get('/api/navtex/exportar', (req, res) => {
   const csv = req.query.formato === 'csv';
@@ -6427,6 +6469,11 @@ app.post('/api/config', (req, res) => {
     // Archivo, dirección y puerto del propio equipo: solo el administrador
     if (isAuthorizedRequest(req)) {
       if (updated.navtexPosicion !== undefined) config.navtexPosicion = !!updated.navtexPosicion;
+      if (updated.wefaxUrl !== undefined) {
+        const u = String(updated.wefaxUrl).trim();
+        if (!u) config.wefaxUrl = '';
+        else if (urlReceptorValida(u)) config.wefaxUrl = urlReceptorValida(u)!;
+      }
       if (updated.navtexUrl !== undefined) {
         const u = String(updated.navtexUrl).trim();
         const valida = urlReceptorValida(u);

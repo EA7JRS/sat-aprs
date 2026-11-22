@@ -31,6 +31,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { PropagationData } from '../../types';
+import CircuitoHf from './CircuitoHf';
 import { absorcionRayosX } from '../../../server/propagacion';
 
 // Band propagation condition helper (standard HamClock feature)
@@ -3243,6 +3244,8 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
           </div>
         </div>
       </div>
+
+      <CircuitoHf />
 
     </motion.div>
   );

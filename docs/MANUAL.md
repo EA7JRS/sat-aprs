@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.51.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.52.0**
 
 Las normas y reglamentos que contempla la consola están en [NORMAS.md](NORMAS.md). Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -282,6 +282,7 @@ El nivel de audio y los bits corregidos salen del registro CSV de Direwolf: hace
 - **Bandas ahora**: qué bandas abren para enlace local y regional (NVIS, 0-400 km) y para larga distancia (3000 km).
 - **Ionosfera medida**: la ionosonda más cercana, con foF2, MUF y su antigüedad.
 - **Sol y campo magnético**: índices SFI, Kp y escalas de la NOAA.
+- **Circuito de onda corta (VOACAP)**: si en *Marítimo > NAVTEX* se indica la dirección de Wefax (EA7JRS/Wefax, el receptor de radiofacsímil, con VOACAP instalado), se puede pedir la predicción de una estación (posición o localizador) al receptor de Wefax, en una frecuencia o en todas las bandas de HF: porcentaje de días del mes en que llega ahora, horas buenas y las 24 horas. Es la mediana del mes y va hasta la posición de Wefax, no hasta la de la consola. Debajo, las últimas cartas de radiofacsímil recibidas, con enlace.
 - **Detalle**: viento solar y previsión a 3 días. Si falta alguna fuente, se dice cuál y no se rellena con cifras supuestas.
 
 ### 7.4 aprx

@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.49.1**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.50.0**
 
 Las normas y reglamentos que contempla la consola están en [NORMAS.md](NORMAS.md). Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -353,6 +353,7 @@ La pantalla tiene cuatro vistas:
 - *Se guardan* en dos sitios: en el receptor (72 horas desde la última vez que se oyen, ampliable hasta un año en Receptores) y en la consola (los últimos 300).
 - *Repeticiones.* Una estación repite cada cuatro horas lo que sigue en vigor. El receptor no lo guarda otra vez (como manda la norma: OMI MSC.508(105)), pero avisa de que lo ha vuelto a oír, y la consola mantiene vigente el aviso mientras siga oyéndose.
 - *Calidad.* Una recepción se da por buena con menos de un 4 % de caracteres erróneos. Si llega una copia mejor, sustituye a la peor.
+- *Conservar siempre* marca un mensaje para que no se borre al cumplir el plazo, ni en la consola ni en el receptor (OMI MSC.508(105), 6.1.2). Hasta 50. «Borrar todos» los respeta. Solo con la sesión de administrador.
 - *Borrar* quita el mensaje de la consola y del receptor, que lo recuerda 72 horas para que la repetición no lo traiga de vuelta. Solo con la sesión de administrador.
 - *Alarma de búsqueda y salvamento.* Un mensaje del tema D da en el receptor una alarma que solo se apaga a mano (OMI MSC.508(105); IEC 61097-6). La pantalla la enseña arriba, en rojo, con el botón «Reconocer la alarma» (administrador). Aparte, el mensaje salta como aviso rojo en Avisos, como antes.
 - *NMEA 0183.* El receptor puede mandar cada mensaje nuevo, entero, en sentencias `NRX` por UDP o por un servidor TCP (Receptores → Conservación y salida NMEA 0183), en la forma de Furuno (la de la app y el plotter APRS LoRa+) o en la de la norma IEC 61097-6, y la alarma en la sentencia `ALR`.

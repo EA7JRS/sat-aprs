@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ajusteReceptorValido, claveNavtex, emitiendoAhora, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, proximaEmision, urlReceptorValida, exportarNavtex, trozosNavtexN2k } from '../server/radio/navtex';
+import { ajusteReceptorValido, claveNavtex, emitiendoAhora, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, proximaEmision, urlReceptorValida, exportarNavtex, recortarNavtex, trozosNavtexN2k } from '../server/radio/navtex';
 import { eventoEgc, juntarEgc, leerEgc } from '../server/radio/egc';
 import { posicionEnTexto } from '../server/core/posicionTexto';
 import { boletinAprs, objetoAprs } from '../server/core/aprsAvisos';
@@ -185,4 +185,13 @@ test('NAVTEX: repeticiones (heard), calidad, exportación y trozos para NMEA 200
   assert.ok(ajusteReceptorValido('retention_hours', '168') && ajusteReceptorValido('nrx.udp', '192.168.1.255:10110') && ajusteReceptorValido('nrx.udp', '') && ajusteReceptorValido('nrx.tcp', '0'));
   assert.ok(ajusteReceptorValido('nrx.format', 'iec') && ajusteReceptorValido('nrx.format', 'furuno') && !ajusteReceptorValido('nrx.format', 'x'));
   assert.ok(!ajusteReceptorValido('retention_hours', '24') && !ajusteReceptorValido('nrx.udp', 'equipo') && !ajusteReceptorValido('nrx.udp', 'a:0') && !ajusteReceptorValido('nrx.tcp', '80'));
+});
+
+test('NAVTEX: los mensajes conservados no se pierden al recortar la memoria de la consola', () => {
+  const lista = Array.from({ length: 10 }, (_, i) => ({ n: i, ...(i === 7 || i === 9 ? { conservado: true } : {}) }));
+  assert.deepEqual(recortarNavtex(lista, 5).map((m) => m.n), [0, 1, 2, 7, 9]);
+  assert.deepEqual(recortarNavtex(lista, 1).map((m) => m.n), [7, 9]);
+  assert.equal(recortarNavtex(lista, 300).length, 10);
+  const api = mensajesDeReceptor([{ id: 3, bbbb: 'GA12', freq: 518, received: '2026-11-20T09:08:00Z', complete: true, keep: true, message: 'ZCZC GA12\nLIGHT UNLIT. PRUEBA.\nNNNN' }], T);
+  assert.equal(api.mensajes[0].conservado, true);
 });

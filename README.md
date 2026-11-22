@@ -26,7 +26,7 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.49.1)
+## 📌 Qué hace hoy (v1.50.0)
 
 El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 

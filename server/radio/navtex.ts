@@ -72,6 +72,8 @@ export interface MensajeNavtexRed extends MensajeNavtex {
   satisfactorio?: boolean | null;
   /** Si llegó en el turno de su letra. */
   enTurno?: boolean | null;
+  /** Marcado para conservarlo siempre (OMI MSC.508(105), 6.1.2). */
+  conservado?: boolean;
 }
 export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: MensajeNavtexRed[]; ultimoId: number; ultimoOido: number } {
   const mensajes: MensajeNavtexRed[] = [];
@@ -99,6 +101,7 @@ export function mensajesDeReceptor(j: unknown, ahora = Date.now()): { mensajes: 
       ...m, freq: freq === 518 || freq === 490 || freq === 4209 ? freq : null, idReceptor: Number.isInteger(id) && id > 0 ? id : undefined,
       errores: Number.isInteger(x?.errors) && x.errors >= 0 ? x.errors : null,
       satisfactorio: typeof x?.satisfactory === 'boolean' ? x.satisfactory : null, enTurno: typeof x?.in_slot === 'boolean' ? x.in_slot : null,
+      ...(x?.keep === true ? { conservado: true } : {}),
     });
   }
   return { mensajes, ultimoId, ultimoOido };
@@ -267,4 +270,10 @@ export function trozosNavtexN2k(m: Pick<MensajeNavtex, 'cabecera' | 'texto'>, ma
     if (resto && trozos.length === maxTrozos) trozos[maxTrozos - 1] = `${trozos[maxTrozos - 1].slice(0, sitio - 4)} ...`;
   }
   return trozos.map((t, i) => `NAVTEX ${m.cabecera} ${i + 1}/${trozos.length} ${t}`);
+}
+
+/** Los mensajes que caben en la memoria de la consola: los conservados siempre, y los más recientes hasta el máximo. */
+export function recortarNavtex<T extends { conservado?: boolean }>(lista: T[], maximo = 300): T[] {
+  let libres = Math.max(0, maximo - lista.filter((m) => m.conservado).length);
+  return lista.filter((m) => m.conservado || libres-- > 0);
 }

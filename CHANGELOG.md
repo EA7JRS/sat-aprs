@@ -2,6 +2,12 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.50.0] - 2026-11-22
+- NAVTEX: **«Conservar siempre»** en cada mensaje (OMI MSC.508(105), 6.1.2). Lo marca en la consola y en el receptor, no se borra al cumplir el plazo y «Borrar todos» lo respeta. Hasta 50. Pide Navtex 1.5.0 o posterior para que el receptor también lo conserve.
+- Probado contra el servidor real de Navtex 1.6.0.
+
+---
+
 ## [v1.49.1] - 2026-11-22
 - Normas al día: la norma de funcionamiento NAVTEX vigente de la OMI es la MSC.508(105) (equipos instalados desde 2024), que sustituye a la MSC.148(77); se cita ya en la consola y en la documentación. `docs/NORMAS.md` tiene una tabla nueva con la edición vigente de cada norma y cuáles se han leído.
 - Sin cambios de funcionamiento. El marcado de mensajes para conservarlos siempre, nuevo en Navtex 1.5.0, se hace por ahora en la interfaz de Navtex.

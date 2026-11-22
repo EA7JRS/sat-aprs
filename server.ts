@@ -57,7 +57,7 @@ import { descargarFocos, grupoAEvento } from './server/fuentes/incendios';
 import { AvisoMeteoAlarm, descargarMeteoAlarm, eventosMeteoAlarm } from './server/fuentes/meteoalarm';
 import { descargarCiclones, eventosCiclones } from './server/fuentes/ciclones';
 import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './server/fuentes/radiacion';
-import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
+import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, recortarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -4713,7 +4713,7 @@ function anotarNavtex(nuevos: MensajeNavtex[]) {
   for (const m of nuevos) {
     const clave = claveNavtex(m);
     const i = mensajesNavtex.findIndex((x) => claveNavtex(x) === clave);
-    if (i >= 0) { mensajesNavtex[i] = { ...mensajesNavtex[i], ...(m as MensajeNavtexRed).idReceptor ? { idReceptor: (m as MensajeNavtexRed).idReceptor } : {}, recibido: Math.max(mensajesNavtex[i].recibido, m.recibido), incompleto: mensajesNavtex[i].incompleto && m.incompleto } as MensajeNavtex; }
+    if (i >= 0) { mensajesNavtex[i] = { ...mensajesNavtex[i], ...(m as MensajeNavtexRed).idReceptor ? { idReceptor: (m as MensajeNavtexRed).idReceptor } : {}, ...((m as MensajeNavtexRed).conservado ? { conservado: true } : {}), recibido: Math.max(mensajesNavtex[i].recibido, m.recibido), incompleto: mensajesNavtex[i].incompleto && m.incompleto } as MensajeNavtex; }
     else {
       mensajesNavtex.unshift(m);
       // El texto entero al bus NMEA 2000, si está pedido y es de una estación que se sigue
@@ -4724,7 +4724,7 @@ function anotarNavtex(nuevos: MensajeNavtex[]) {
     cambios = true;
   }
   if (cambios) {
-    mensajesNavtex = mensajesNavtex.slice(0, 300);
+    mensajesNavtex = recortarNavtex(mensajesNavtex as MensajeNavtexRed[]);
     historial.guardarEstado('navtex', mensajesNavtex);
     difundirAvisos(eventosNavtexLista(), politicaNavtex());
   }
@@ -4936,7 +4936,8 @@ app.post('/api/navtex/borrar', async (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });
   const todos = req.body?.todos === true;
   const clave = String(req.body?.clave ?? '');
-  const fuera = mensajesNavtex.filter((m) => todos || claveNavtex(m) === clave) as MensajeNavtexRed[];
+  // «Todos» respeta los conservados, como el receptor
+  const fuera = (mensajesNavtex as MensajeNavtexRed[]).filter((m) => (todos ? !m.conservado : claveNavtex(m) === clave));
   if (!fuera.length) return res.status(404).json({ error: 'Ese mensaje ya no está.' });
   const base = baseNavtex();
   let enReceptor = true;
@@ -4950,6 +4951,23 @@ app.post('/api/navtex/borrar', async (req, res) => {
   historial.guardarEstado('navtex', mensajesNavtex);
   addLog('SYS', config.callsign, 'LOCAL', 'NAVTEX', todos ? `Borrados los ${fuera.length} mensajes NAVTEX.` : `Borrado el mensaje NAVTEX ${fuera[0].cabecera}.`, true, 'Mensajes NAVTEX');
   res.json({ ok: true, borrados: fuera.length, enReceptor });
+});
+// Marcar un mensaje para conservarlo siempre, o quitar la marca: en la consola y en el receptor
+app.post('/api/navtex/conservar', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });
+  const clave = String(req.body?.clave ?? '');
+  const conservar = req.body?.conservar === true;
+  const m = mensajesNavtex.find((x) => claveNavtex(x) === clave) as MensajeNavtexRed | undefined;
+  if (!m) return res.status(404).json({ error: 'Ese mensaje ya no está.' });
+  if (conservar && (mensajesNavtex as MensajeNavtexRed[]).filter((x) => x.conservado).length >= 50) return res.status(409).json({ error: 'Ya hay 50 mensajes conservados: deje de conservar alguno.' });
+  const base = baseNavtex();
+  let enReceptor = false;
+  if (base && m.idReceptor) {
+    try { await pedirNavtex(base, `/api/messages/keep/${m.idReceptor}/${conservar ? 1 : 0}`, 'POST'); enReceptor = true; } catch { /* receptor anterior a la 1.5, o el mensaje ya no está allí */ }
+  }
+  if (conservar) m.conservado = true; else delete m.conservado;
+  historial.guardarEstado('navtex', mensajesNavtex);
+  res.json({ ok: true, enReceptor });
 });
 // Reconocer la alarma de búsqueda y salvamento del receptor (tema D): solo se apaga a mano
 app.post('/api/navtex/alarma', async (req, res) => {

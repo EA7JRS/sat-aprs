@@ -14,7 +14,7 @@ import { useAdminSession } from '../utils/session';
 import { Estado } from '../components/radio/Piezas';
 import { TelemetryConfig } from '../types';
 
-interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; freq?: number | null; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean; errores?: number | null; satisfactorio?: boolean | null; enTurno?: boolean | null }
+interface Navtex { cabecera: string; estacion: string; tema: string; numero: number; freq?: number | null; texto: string; dtg: string | null; recibido: number; incompleto: boolean; posicion: { lat: number; lon: number } | null; clave: string; vigente: boolean; errores?: number | null; satisfactorio?: boolean | null; enTurno?: boolean | null; conservado?: boolean }
 interface Egc { clave: string; servicio: string; prioridad: string; prioridadEs: string; msgId: number | null; hora: string | null; mhz: number | null; texto: string; recibido: number; posicion: { lat: number; lon: number } | null; vigente: boolean }
 interface Datos {
   navtex: { activo: boolean; estaciones: string; url: string; compartePosicion: boolean; red: { error: string | null; consulta: number | null; vivo: number | null; receptor: string | null }; error: string | null; ultimoDato: number | null; temas: Record<string, string>; mensajes: Navtex[] };
@@ -184,9 +184,17 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
     try {
       const r = await customFetch('/api/navtex/borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(que) });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) setD((x) => (x ? { ...x, navtex: { ...x.navtex, mensajes: 'todos' in que ? [] : x.navtex.mensajes.filter((m) => m.clave !== que.clave) } } : x));
+      if (r.ok) setD((x) => (x ? { ...x, navtex: { ...x.navtex, mensajes: 'todos' in que ? x.navtex.mensajes.filter((m) => m.conservado) : x.navtex.mensajes.filter((m) => m.clave !== que.clave) } } : x));
       setMsgRx(r.ok ? (j.enReceptor === false ? { ok: false, texto: 'Borrado aquí; el receptor no lo ha borrado (¿es anterior a la versión 1.2?).' } : null) : { ok: false, texto: j.error || 'No se pudo borrar.' });
     } catch { setMsgRx({ ok: false, texto: 'No se pudo borrar.' }); }
+  };
+  const conservar = async (clave: string, si: boolean) => {
+    try {
+      const r = await customFetch('/api/navtex/conservar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clave, conservar: si }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) setD((x) => (x ? { ...x, navtex: { ...x.navtex, mensajes: x.navtex.mensajes.map((m) => (m.clave === clave ? { ...m, conservado: si } : m)) } } : x));
+      setMsgRx(r.ok ? null : { ok: false, texto: j.error || 'No se pudo guardar.' });
+    } catch { setMsgRx({ ok: false, texto: 'No se pudo guardar.' }); }
   };
   const reconocer = async () => {
     try {
@@ -275,7 +283,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                   <button type="button" className="w-full text-left p-3 cursor-pointer hover:bg-slate-800/50 flex flex-wrap items-baseline gap-x-3 gap-y-1" onClick={() => setAbierto(abierto === m.clave ? null : m.clave)} aria-expanded={abierto === m.clave}>
                     <span className={`border rounded px-1.5 font-mono text-xs font-bold ${COLOR_TEMA[m.tema] ?? 'border-slate-600 text-slate-300'}`}>{m.cabecera}</span>
                     <span className="text-slate-100 font-semibold">{n.temas[m.tema] ?? m.tema}</span>
-                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq === 4209 ? '4209,5' : m.freq} kHz` : ''} · {fecha(m.recibido)}{m.incompleto ? ' · cortado' : m.satisfactorio === false ? ' · con errores' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
+                    <span className="text-[13px] text-slate-400">estación {m.estacion}{m.freq ? ` · ${m.freq === 4209 ? '4209,5' : m.freq} kHz` : ''} · {fecha(m.recibido)}{m.conservado ? ' · conservado' : ''}{m.incompleto ? ' · cortado' : m.satisfactorio === false ? ' · con errores' : ''}{m.vigente ? '' : ' · ya no vigente'}{m.posicion ? ` · ${m.posicion.lat.toFixed(3)}, ${m.posicion.lon.toFixed(3)}` : ''}</span>
                     <span className="basis-full text-[13px] text-slate-300 truncate">{m.texto.split('\n').find((l) => l.trim() && !/^\d{6} ?UTC/.test(l)) ?? ''}</span>
                   </button>
                   {abierto === m.clave && (
@@ -286,7 +294,10 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                         {m.satisfactorio === false && !m.incompleto ? 'Con un 4 % o más de errores la recepción no se da por buena: si la estación lo repite mejor, el receptor guarda la copia nueva. ' : ''}
                         {m.enTurno === false ? `Llegó fuera del turno de la letra ${m.estacion}: puede ser una estación lejana con otro horario.` : ''}
                       </p>
-                      <button type="button" className={`${botonMenor} self-start`} disabled={!isAdmin} onClick={() => void borrar({ clave: m.clave })} id={`borrar-${m.cabecera}`}>Borrar este mensaje</button>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className={botonMenor} disabled={!isAdmin} onClick={() => void conservar(m.clave, !m.conservado)} id={`conservar-${m.cabecera}`}>{m.conservado ? 'Dejar de conservar' : 'Conservar siempre'}</button>
+                        <button type="button" className={botonMenor} disabled={!isAdmin} onClick={() => void borrar({ clave: m.clave })} id={`borrar-${m.cabecera}`}>Borrar este mensaje</button>
+                      </div>
                     </div>
                   )}
                 </li>
@@ -298,7 +309,7 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
               <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=txt" download id="exportar-txt">Guardar todos como texto</a>
               <a className={`${botonMenor} inline-flex items-center`} href="/api/navtex/exportar?formato=csv" download id="exportar-csv">Guardar todos como CSV</a>
               <button type="button" className={botonMenor} disabled={!isAdmin} id="borrar-todos"
-                onClick={() => { if (window.confirm('¿Borrar todos los mensajes NAVTEX, aquí y en el receptor? Los que las estaciones repitan en las próximas 72 horas no volverán a aparecer.')) void borrar({ todos: true }); }}>Borrar todos</button>
+                onClick={() => { if (window.confirm('¿Borrar todos los mensajes NAVTEX, salvo los conservados, aquí y en el receptor? Los que las estaciones repitan en las próximas 72 horas no volverán a aparecer.')) void borrar({ todos: true }); }}>Borrar todos</button>
               {msgRx && ver === 'navtex' && <span className={`text-sm ${msgRx.ok ? 'text-emerald-400' : 'text-amber-300'}`} role="status">{msgRx.texto}</span>}
             </div>
           )}

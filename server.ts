@@ -60,6 +60,7 @@ import { Sonda, descargarEurdep, eventosRadiacion, sondasCercanas } from './serv
 import { EstacionNavtex, FuenteEstaciones, MensajeNavtex, TEMAS_NAVTEX, MensajeNavtexRed, ajusteReceptorValido, claveNavtex, exportarNavtex, recortarNavtex, trozosNavtexN2k, estacionesDeReceptor, estacionesPorDistancia, eventoNavtex, mensajesDeReceptor, posicionParaReceptor, urlReceptorValida } from './server/radio/navtex';
 import { BANDAS_CIRCUITO_KHZ, leerCartas, leerCircuito, rutaCircuito } from './server/radio/wefax';
 import { maidenheadToLatLon } from './server/formulas/radio';
+import { ejecutarVoacap, voacapDisponible } from './server/radio/voacap';
 import { MensajeEgc, eventoEgc, juntarEgc, leerEgc, prioridadEs } from './server/radio/egc';
 import { descargarTsunami, eventosTsunami } from './server/fuentes/tsunami';
 import { descargarNws, eventosNws } from './server/fuentes/nws';
@@ -371,6 +372,8 @@ let config: TelemetryConfig = {
   navtexUrl: '',
   // Wefax (EA7JRS/Wefax): radiofacsímil meteorológico y predicción de circuitos de onda corta con VOACAP
   wefaxUrl: '',
+  // VOACAP propio: número de manchas solares suavizado del mes ('' = el del día, con aviso)
+  voacapManchas: '',
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -4944,11 +4947,12 @@ app.get('/api/wefax/cartas', async (_req, res) => {
     res.json({ url: base, error: errorNavtex(e), cartas: [] });
   }
 });
-// Circuito de un transmisor (posición o localizador) al receptor de Wefax: destino=36.5,-6.3 | IM66uq; mhz vacío = bandas de aficionado
-app.get('/api/wefax/circuito', async (req, res) => {
+// Circuito de onda corta de una estación (posición o localizador) hasta aquí: destino=36.5,-6.3 | IM66uq; mhz vacío = bandas de aficionado.
+// Con VOACAP en este equipo (tools/instalar-voacap.sh) se calcula aquí, hasta la posición de la consola; si no, se le pide a Wefax,
+// que lo calcula hasta la suya.
+const DIR_VOACAP = (process.env.SAT_VOACAP_DIR || '/opt/sat-aprs/itshfbc').trim();
+async function circuitoHf(req: express.Request, res: express.Response) {
   res.set('Cache-Control', 'no-store');
-  const base = baseWefax();
-  if (!base) return res.json({ error: 'falta la dirección de Wefax (Marítimo > NAVTEX)', circuito: null });
   const destino = String(req.query.destino ?? '').trim().slice(0, 40);
   const m = /^(-?\d{1,2}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)$/.exec(destino);
   const pos = m ? { lat: Number(m[1].replace(',', '.')), lon: Number(m[2].replace(',', '.')) } : maidenheadToLatLon(destino);
@@ -4956,15 +4960,42 @@ app.get('/api/wefax/circuito', async (req, res) => {
   const mhz = String(req.query.mhz ?? '').trim().replace(',', '.');
   const khz = mhz ? [Number(mhz) * 1000] : BANDAS_CIRCUITO_KHZ;
   const vatios = Number(String(req.query.w ?? '100'));
-  const ruta = rutaCircuito(pos.lat, pos.lon, khz, (Number.isFinite(vatios) ? vatios : 100) / 1000);
+  const kw = (Number.isFinite(vatios) ? vatios : 100) / 1000;
+  const ruta = rutaCircuito(pos.lat, pos.lon, khz, kw);
   if (!ruta) return res.json({ error: 'VOACAP vale de 2 a 30 MHz y de 1 W a 1000 kW', circuito: null });
+  const base = baseWefax();
+  const local = voacapDisponible(DIR_VOACAP);
+  if (local) {
+    const aqui = posicionConsola();
+    if (!aqui) return res.json({ error: 'la consola no tiene posición: sin ella no hay circuito', circuito: null });
+    // VOACAP pide el número de manchas suavizado del mes. Si no se ha escrito, se usa el del día y se avisa.
+    const escrito = Number(config.voacapManchas);
+    const delDia = Number((await fetchNoaaSolarIndices())?.ssn);
+    const hayEscrito = String(config.voacapManchas ?? '').trim() !== '' && Number.isFinite(escrito) && escrito >= 0 && escrito <= 300;
+    const manchas = hayEscrito ? escrito : (Number.isFinite(delDia) && delDia >= 0 && delDia <= 300 ? delDia : NaN);
+    if (!Number.isFinite(manchas)) return res.json({ error: 'falta el número de manchas solares: escríbalo en Marítimo > NAVTEX (no se pudo leer el del día)', circuito: null });
+    const d = new Date();
+    try {
+      const s = await ejecutarVoacap(DIR_VOACAP, { txLat: pos.lat, txLon: pos.lon, rxLat: aqui.lat, rxLon: aqui.lon, kw, khz, anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1, manchas, ruido: 145, umbral: 40 });
+      return res.json({
+        error: null, destino: pos, origen: 'local',
+        aviso: hayEscrito ? '' : 'Con el número de manchas del día, no el suavizado del mes que pide VOACAP: escriba este en Marítimo > NAVTEX para afinar.',
+        circuito: { ok: true, motivo: '', km: gcDistanceKm({ lat: aqui.lat, lon: aqui.lon }, { lat: pos.lat, lon: pos.lon }), manchas, mes: d.getUTCMonth() + 1, ruido: 145, umbral: 40, khz, fiabilidad: s.fiabilidad, senal: s.senal },
+      });
+    } catch (e: any) {
+      if (!base) return res.json({ error: String(e?.message ?? e).slice(0, 120), circuito: null });
+    }
+  }
+  if (!base) return res.json({ error: 'no hay con qué calcularlo: instale VOACAP en este equipo (sudo sh tools/instalar-voacap.sh) o indique la dirección de Wefax en Marítimo > NAVTEX', circuito: null });
   try {
     const c = leerCircuito(await pedirWefax(base, ruta));
-    res.json({ error: c.ok ? null : c.motivo, circuito: c.ok ? c : null, destino: pos });
+    res.json({ error: c.ok ? null : c.motivo, circuito: c.ok ? c : null, destino: pos, origen: 'wefax', aviso: '' });
   } catch (e: any) {
     res.json({ error: errorNavtex(e), circuito: null });
   }
-});
+}
+app.get('/api/hf/circuito', circuitoHf);
+app.get('/api/wefax/circuito', circuitoHf);
 // Guardar los mensajes en un archivo
 app.get('/api/navtex/exportar', (req, res) => {
   const csv = req.query.formato === 'csv';
@@ -6469,6 +6500,10 @@ app.post('/api/config', (req, res) => {
     // Archivo, dirección y puerto del propio equipo: solo el administrador
     if (isAuthorizedRequest(req)) {
       if (updated.navtexPosicion !== undefined) config.navtexPosicion = !!updated.navtexPosicion;
+      if (updated.voacapManchas !== undefined) {
+        const t = String(updated.voacapManchas).trim();
+        if (t === '' || (/^\d{1,3}$/.test(t) && Number(t) <= 300)) config.voacapManchas = t;
+      }
       if (updated.wefaxUrl !== undefined) {
         const u = String(updated.wefaxUrl).trim();
         if (!u) config.wefaxUrl = '';

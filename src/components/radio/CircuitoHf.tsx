@@ -17,6 +17,8 @@ export default function CircuitoHf() {
   const [vatios, setVatios] = useState('100');
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [origen, setOrigen] = useState('');
   const [circuito, setCircuito] = useState<Circuito | null>(null);
   const [cartas, setCartas] = useState<{ url: string; error: string | null; cartas: CartaWefax[] } | null>(null);
   const hora = new Date().getUTCHours();
@@ -27,10 +29,10 @@ export default function CircuitoHf() {
 
   const calcular = (e: React.FormEvent) => {
     e.preventDefault();
-    setOcupado(true); setError(''); setCircuito(null);
-    customFetch(`/api/wefax/circuito?destino=${encodeURIComponent(destino)}&mhz=${encodeURIComponent(mhz)}&w=${encodeURIComponent(vatios)}`)
+    setOcupado(true); setError(''); setAviso(''); setCircuito(null);
+    customFetch(`/api/hf/circuito?destino=${encodeURIComponent(destino)}&mhz=${encodeURIComponent(mhz)}&w=${encodeURIComponent(vatios)}`)
       .then((r) => r.json())
-      .then((j) => { setError(j.error ?? ''); setCircuito(j.circuito ?? null); })
+      .then((j) => { setError(j.error ?? ''); setAviso(j.aviso ?? ''); setOrigen(j.origen ?? ''); setCircuito(j.circuito ?? null); })
       .catch(() => setError('la consola no contesta'))
       .finally(() => setOcupado(false));
   };
@@ -39,7 +41,7 @@ export default function CircuitoHf() {
     <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 flex flex-col gap-4" aria-label="Circuito de onda corta">
       <div>
         <h3 className="text-lg font-semibold text-slate-100">Circuito de onda corta (VOACAP)</h3>
-        <p className="text-sm text-slate-400">De una estación al receptor de Wefax: qué parte de los días de este mes llega la señal, hora a hora. Es la mediana del mes, con antenas y ruido supuestos; no ve la tormenta ni el apagón de hoy, que están arriba.</p>
+        <p className="text-sm text-slate-400">De una estación hasta aquí: qué parte de los días de este mes llega la señal, hora a hora. Lo calcula VOACAP en este equipo, hasta la posición de la consola; si no está instalado, se le pide a Wefax, que lo calcula hasta su receptor. Es la mediana del mes, con antenas y ruido supuestos; no ve la tormenta ni el apagón de hoy, que están arriba.</p>
       </div>
       <form className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" onSubmit={calcular}>
         <label className="flex flex-col gap-1 text-sm text-slate-300 md:col-span-2">Estación: posición o localizador
@@ -58,8 +60,9 @@ export default function CircuitoHf() {
       {error && <p className="text-sm text-amber-400" role="status">{error}</p>}
       {circuito && (
         <div className="flex flex-col gap-2">
+          {aviso && <p className="text-sm text-amber-400">{aviso}</p>}
           <p className="text-sm text-slate-400">
-            {circuito.km !== null ? `${Math.round(circuito.km)} km · ` : ''}manchas solares {circuito.manchas ?? '?'} · umbral {circuito.umbral ?? '?'} dB-Hz · ahora {String(hora).padStart(2, '0')} UTC
+            {origen === 'wefax' ? 'Calculado por Wefax, hasta su receptor · ' : origen === 'local' ? 'Calculado aquí, hasta la consola · ' : ''}{circuito.km !== null ? `${Math.round(circuito.km)} km · ` : ''}manchas solares {circuito.manchas ?? '?'} · umbral {circuito.umbral ?? '?'} dB-Hz · ahora {String(hora).padStart(2, '0')} UTC
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

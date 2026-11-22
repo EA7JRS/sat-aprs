@@ -3,9 +3,10 @@
 Historial de versiones de la consola S.A.T.-APRS+.
 
 ## [v1.52.0] - 2026-11-22
-- HF y propagación: **circuito de onda corta con VOACAP**, pedido a [Wefax](https://github.com/EA7JRS/Wefax) 0.3.0 (`/api/wefax/circuito`): de una posición o localizador al receptor de Wefax, en una frecuencia o en las bandas de aficionado de HF; fiabilidad de ahora, horas buenas y tira de 24 horas. Y **últimas cartas de radiofacsímil** (`/api/wefax/cartas`), con enlace a cada una.
-- Ajuste nuevo `wefaxUrl` (Marítimo > NAVTEX, «Dirección de Wefax»).
-- Comprobado con 182 pruebas, comprobación de tipos y compilación. **Sin probar contra un Wefax en marcha**: las formas de sus respuestas son las de su servidor real.
+- HF y propagación: **circuito de onda corta con VOACAP** (`/api/hf/circuito`). **Motor propio**: con VOACAP instalado en este equipo (`sudo sh tools/instalar-voacap.sh`, opcional) se calcula aquí, hasta la posición de la consola, sin depender de ningún otro equipo; si no lo está, se le pide a [Wefax](https://github.com/EA7JRS/Wefax) 0.3.0, que lo calcula hasta su receptor. De una posición o localizador, en una frecuencia o en las bandas de aficionado de HF; fiabilidad de ahora, horas buenas y tira de 24 horas. Y **últimas cartas de radiofacsímil** (`/api/wefax/cartas`), con enlace a cada una.
+- Ajustes nuevos (Marítimo > NAVTEX): `wefaxUrl`, la dirección de Wefax, y `voacapManchas`, el número de manchas solares suavizado del mes para el motor propio. Sin escribirlo se usa el número de manchas del día (NOAA) y la pantalla lo avisa: VOACAP pide el suavizado.
+- El motor propio supone 145 dBW de ruido (residencial), 40 dB-Hz de umbral, transmisor sin ganancia y antena de látigo en recepción. Es la mediana del mes.
+- Comprobado con 186 pruebas, comprobación de tipos y compilación; el módulo del motor propio, ejecutado contra voacapl 16.1207W real (mismos resultados que Wefax). **Sin probar** la pantalla en un navegador, la ruta con la consola en marcha, el instalador en ningún equipo ni la consulta a un Wefax en marcha.
 
 ## [v1.51.0] - 2026-11-22
 - NAVTEX: **los mensajes ya no se pueden borrar a mano** (OMI MSC.508(105), 6.1.1: el usuario no debe poder borrar mensajes de la memoria). Fuera «Borrar este mensaje» y «Borrar todos»; `/api/navtex/borrar` contesta 410. Salen solos al cumplir su plazo. Va con Navtex 1.7.0, que hace lo mismo.

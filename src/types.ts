@@ -279,6 +279,7 @@ export interface TelemetryConfig {
   navtexPosicion?: boolean;
   navtexUrl?: string;
   wefaxUrl?: string;
+  voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;
   navtexGravedadMinima?: 'info' | 'amarillo' | 'naranja' | 'rojo';

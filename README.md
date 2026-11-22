@@ -20,7 +20,7 @@ Todo con datos reales. Lo que se usa para ensayar (sucesos de prueba) se ve en p
 
 S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/APRS-LoRa-Plus/) (tracker, app Android, Display, Rotor, plotter, pasarela NMEA 2000) y comparte con él fórmulas, órdenes y formatos.
 
-📘 **[Manual de uso](docs/MANUAL.md)** · 🏗️ [Arquitectura](docs/ARQUITECTURA.md) · 📝 [Cambios por versión](CHANGELOG.md)
+📘 **[Manual de uso](docs/MANUAL.md)** · 🏗️ [Arquitectura](docs/ARQUITECTURA.md) · ⚖️ [Normas y reglamentos](docs/NORMAS.md) · 📝 [Cambios por versión](CHANGELOG.md)
 
 > El autor no se hace responsable de un uso o una configuración incorrectos por parte del operador. Lo que emite la estación sale con **su** indicativo: lea [Seguridad de emisión](#-seguridad-de-emisión-léalo-antes-de-transmitir) antes de activar la transmisión.
 
@@ -345,10 +345,23 @@ La consola genera y valida, en **Sistema → Configuración → «Archivos .conf
 
 ---
 
-## 🛡️ Estándares de Seguridad de Radioaficionados
-Esta consola promueve el uso ético del espectro electromagnético. Las tramas que emite se atienen a la normativa internacional de la UIT y a la legislación local de telecomunicaciones:
-- **Identificación Obligatoria**: Todas las tramas salientes llevan el indicativo de la estación, y el sistema se niega a transmitir si no es un indicativo válido.
-- **Uso sin Cifrado**: Conforme al reglamento de radioaficionados, las transmisiones se realizan en texto claro y legible por cualquier estación de escucha terrestre o satelital (ISS / Satélites LEO).
+## ⚖️ Normas y reglamentos
+
+El detalle, con lo que se aplica de cada norma y lo que no, está en **[docs/NORMAS.md](docs/NORMAS.md)**.
+
+| Ámbito | Norma o especificación |
+| :--- | :--- |
+| Emisión de radioaficionado | Reglamento de Radiocomunicaciones de la UIT (artículo 25); en España, Orden IET/1311/2013 |
+| APRS, APRS-IS y radiopaquete | APRS Protocol Reference 1.0.1, APRS-IS, AX.25 2.2 y KISS |
+| NAVTEX | UIT-R M.540-2, OMI MSC.148(77), Manual NAVTEX e IEC 61097-6, a través del receptor [Navtex](https://github.com/EA7JRS/Navtex) |
+| AIS, NMEA 0183 y NMEA 2000 | UIT-R M.1371, IEC 61162-1, IEC 61162-3, ISO 11783-3 y 11783-5; los PGN, contrastados con CANboat |
+| Avisos oficiales | OASIS Common Alerting Protocol 1.2 (AEMET) |
+
+- **Identificación obligatoria**: todas las tramas llevan el indicativo de la estación, y el sistema se niega a transmitir si no es un indicativo válido.
+- **Sin cifrado**: las transmisiones van en claro, legibles por cualquier estación.
+- **Nada simulado sale al aire**, y la emisión viene apagada hasta que el titular la activa.
+
+La consola no es un equipo homologado ni un servicio oficial de alertas, y su salida NMEA 2000 no está certificada por la NMEA. La autorización de radioaficionado y las condiciones de la licencia son responsabilidad del titular de la estación.
 
 ---
 

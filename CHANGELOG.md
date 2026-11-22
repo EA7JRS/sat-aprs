@@ -5,6 +5,7 @@ Historial de versiones de la consola S.A.T.-APRS+.
 ## [v1.49.0] - 2026-11-22
 - NAVTEX: la pantalla enseña la **alarma de búsqueda y salvamento** del receptor (mensajes del tema D sin reconocer) y permite reconocerla (administrador). Pide Navtex 1.3.0.
 - Receptores: se puede elegir la forma de la sentencia `NRX` del receptor, Furuno o IEC 61097-6.
+- Documentación: nuevo `docs/NORMAS.md`, con las normas, especificaciones y reglamentos que contempla la consola (radioaficionado, APRS, AX.25, NAVTEX, AIS, NMEA 0183 y 2000, CAP), lo que aplica de cada una y lo que no.
 
 ---
 

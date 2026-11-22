@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.48.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.49.0**
 
 Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -354,7 +354,8 @@ La pantalla tiene cuatro vistas:
 - *Repeticiones.* Una estación repite cada cuatro horas lo que sigue en vigor. El receptor no lo guarda otra vez (como manda la norma: OMI MSC.148(77)), pero avisa de que lo ha vuelto a oír, y la consola mantiene vigente el aviso mientras siga oyéndose.
 - *Calidad.* Una recepción se da por buena con menos de un 4 % de caracteres erróneos. Si llega una copia mejor, sustituye a la peor.
 - *Borrar* quita el mensaje de la consola y del receptor, que lo recuerda 72 horas para que la repetición no lo traiga de vuelta. Solo con la sesión de administrador.
-- *NMEA 0183.* El receptor puede mandar cada mensaje nuevo, entero, en sentencias `NRX` por UDP o por un servidor TCP (Receptores → Conservación y salida NMEA 0183). Es la salida normalizada de NAVTEX, y la misma forma que usan la app y el plotter APRS LoRa+.
+- *Alarma de búsqueda y salvamento.* Un mensaje del tema D da en el receptor una alarma que solo se apaga a mano (OMI MSC.148(77); IEC 61097-6). La pantalla la enseña arriba, en rojo, con el botón «Reconocer la alarma» (administrador). Aparte, el mensaje salta como aviso rojo en Avisos, como antes.
+- *NMEA 0183.* El receptor puede mandar cada mensaje nuevo, entero, en sentencias `NRX` por UDP o por un servidor TCP (Receptores → Conservación y salida NMEA 0183), en la forma de Furuno (la de la app y el plotter APRS LoRa+) o en la de la norma IEC 61097-6, y la alarma en la sentencia `ALR`.
 - *NMEA 2000.* No existe un mensaje de NMEA 2000 para NAVTEX. Hay dos salidas, las dos con el PGN 129802 (mensaje de seguridad AIS, que los plotters muestran): los **avisos** que saltan (título corto; opción «Avisos de emergencia» de Conectividad → NMEA 2000) y, si se pide, el **texto entero** de cada mensaje nuevo de las estaciones que se siguen, por partes numeradas (`NAVTEX GA12 2/7 …`), una cada dos segundos (opción «NAVTEX: texto entero», apagada de serie: en algunos plotters cada parte abre una ventana). Va solo por el bus: no se emite nada por radio, así que no interviene en el reparto de tiempos (TDMA) del AIS.
 
 **Posición.** Si el receptor tiene su propio GPS, usa esa. Si no, la consola le da la de la estación (se puede quitar en Entradas, «Dar al receptor la posición…»).

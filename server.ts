@@ -4951,6 +4951,20 @@ app.post('/api/navtex/borrar', async (req, res) => {
   addLog('SYS', config.callsign, 'LOCAL', 'NAVTEX', todos ? `Borrados los ${fuera.length} mensajes NAVTEX.` : `Borrado el mensaje NAVTEX ${fuera[0].cabecera}.`, true, 'Mensajes NAVTEX');
   res.json({ ok: true, borrados: fuera.length, enReceptor });
 });
+// Reconocer la alarma de búsqueda y salvamento del receptor (tema D): solo se apaga a mano
+app.post('/api/navtex/alarma', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });
+  const base = baseNavtex();
+  if (!base) return res.status(409).json({ error: 'Falta la dirección del receptor.' });
+  try {
+    const r = await pedirNavtex(base, '/api/alarm/ack', 'POST');
+    navtexReceptor = null;
+    addLog('SYS', config.callsign, 'LOCAL', 'NAVTEX', 'Reconocida la alarma de búsqueda y salvamento del receptor NAVTEX.', true, 'Alarma NAVTEX');
+    res.json({ ok: true, reconocidos: Number(r?.acknowledged) || 0 });
+  } catch (e: any) {
+    res.status(502).json({ error: errorNavtex(e) });
+  }
+});
 // Cambiar un ajuste de uno de los dos receptores: solo el administrador, y solo claves y valores conocidos
 app.post('/api/navtex/ajuste', async (req, res) => {
   if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'Hace falta la sesión de administrador.' });

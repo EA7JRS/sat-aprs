@@ -208,6 +208,7 @@ export function ajusteReceptorValido(clave: string, valor: string): boolean {
   // Conservación de los mensajes y salida NMEA 0183 del receptor (Navtex 1.2)
   if (clave === 'retention_hours') return /^\d{2,4}$/.test(valor) && Number(valor) >= 72 && Number(valor) <= 8760;
   if (clave === 'nrx.udp') return valor === '' || (/^[A-Za-z0-9.-]{1,70}:\d{1,5}$/.test(valor) && Number(valor.split(':')[1]) >= 1 && Number(valor.split(':')[1]) <= 65535);
+  if (clave === 'nrx.format') return valor === 'furuno' || valor === 'iec';
   if (clave === 'nrx.tcp') return /^\d{1,5}$/.test(valor) && (Number(valor) === 0 || (Number(valor) >= 1024 && Number(valor) <= 65535));
   const m = /^rx[12]\.(enabled|source|band|hf_slots|port|bias|serial|direct|upconv|gain|ppm)$/.exec(String(clave));
   if (!m) return false;

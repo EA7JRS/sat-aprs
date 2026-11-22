@@ -188,6 +188,14 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
       setMsgRx(r.ok ? (j.enReceptor === false ? { ok: false, texto: 'Borrado aquí; el receptor no lo ha borrado (¿es anterior a la versión 1.2?).' } : null) : { ok: false, texto: j.error || 'No se pudo borrar.' });
     } catch { setMsgRx({ ok: false, texto: 'No se pudo borrar.' }); }
   };
+  const reconocer = async () => {
+    try {
+      const r = await customFetch('/api/navtex/alarma', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const j = await r.json().catch(() => ({}));
+      setMsgRx(r.ok ? null : { ok: false, texto: j.error || 'No se pudo reconocer la alarma.' });
+    } catch { setMsgRx({ ok: false, texto: 'No se pudo reconocer la alarma.' }); }
+    void leerReceptor();
+  };
   const poner = async (clave: string, valor: string) => {
     try {
       const r = await customFetch('/api/navtex/ajuste', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clave, valor }) });
@@ -234,6 +242,13 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
           texto={!g.activo ? 'Apagado' : g.error ? 'Sin escucha' : egcVivo ? 'Recibiendo' : 'Escuchando'}
           detalle={!g.activo ? 'se enciende abajo' : g.error ? g.error : `UDP ${g.escucha ?? '—'}${g.ultimoDato ? ` · último mensaje ${haceCuanto(g.ultimoDato, ahora)}` : ' · aún sin mensajes de InmarScope'}`} />
       </section>
+
+      {n.activo && Number(rx?.estado.sar_alarms) > 0 && (
+        <div role="alert" id="mar-alarma" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-red-500 bg-red-950/60 p-3">
+          <p className="text-slate-100 min-w-0"><strong className="text-red-300">Alarma.</strong> {Number(rx!.estado.sar_alarms) === 1 ? 'Un mensaje' : `${rx!.estado.sar_alarms} mensajes`} NAVTEX de búsqueda y salvamento (tema D) sin reconocer en el receptor.</p>
+          <button type="button" className={boton} disabled={!isAdmin} onClick={() => void reconocer()} id="mar-reconocer">Reconocer la alarma</button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Qué ver">
         <button type="button" className={pastilla(ver === 'navtex')} aria-pressed={ver === 'navtex'} onClick={() => setVer('navtex')} id="ver-navtex">NAVTEX · {n.mensajes.length}</button>
@@ -388,7 +403,13 @@ export default function Maritimo({ config, onGuardar }: { config: TelemetryConfi
                       </label>
                     );
                   })}
-                  <p className="md:col-span-3 text-[13px] text-slate-400">Las sentencias NRX llevan el texto entero de cada mensaje nuevo, en la forma de los receptores Furuno (la de la app y el plotter APRS LoRa+). La salida no tiene contraseña: si hay cortafuegos, abra el puerto TCP solo a la red local.</p>
+                  <label className="flex flex-col gap-1 text-sm text-slate-300">Forma de la sentencia NRX
+                    <select className={campo} value={rx.ajustes['nrx.format'] === 'iec' ? 'iec' : 'furuno'} onChange={(e) => void poner('nrx.format', e.target.value)} id="ajuste-nrx-format">
+                      <option value="furuno">Furuno (la de la app y el plotter APRS LoRa+)</option>
+                      <option value="iec">IEC 61097-6 (la de la norma)</option>
+                    </select>
+                  </label>
+                  <p className="md:col-span-3 text-[13px] text-slate-400">Las sentencias NRX llevan el texto entero de cada mensaje nuevo. La alarma de búsqueda y salvamento sale además en la sentencia ALR cada 30 segundos hasta que se reconoce. La salida no tiene contraseña: si hay cortafuegos, abra el puerto TCP solo a la red local.</p>
                 </fieldset>
                 <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" id="mar-rx-datos">
                   {(['518', '490', '4209'] as const).map((f) => {

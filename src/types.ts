@@ -279,6 +279,14 @@ export interface TelemetryConfig {
   navtexPosicion?: boolean;
   navtexUrl?: string;
   wefaxUrl?: string;
+  /** KiwiSDR de la red: APRS de onda corta y balizas NCDXF / IARU. Se ajusta en su panel (POST /api/kiwi/config). */
+  kiwiEquipo?: string;
+  kiwiPuerto?: number;
+  kiwiClave?: string;
+  kiwiAprs?: boolean;
+  kiwiAprsKhz?: number;
+  kiwiAprsBanda?: string;
+  kiwiIbp?: boolean;
   voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

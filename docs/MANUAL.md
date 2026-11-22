@@ -1,6 +1,6 @@
 # Manual de uso de S.A.T.-APRS+
 
-© 2026 Manuel - EA7JRS · versión de la consola: **v1.52.0**
+© 2026 Manuel - EA7JRS · versión de la consola: **v1.53.0**
 
 Las normas y reglamentos que contempla la consola están en [NORMAS.md](NORMAS.md). Este manual explica qué hace cada pantalla de la consola, cómo se usa y qué hace falta tener en marcha en el equipo para que muestre datos. La instalación está en el [README](../README.md#️-guía-de-instalación-desde-cero) y el funcionamiento interno en [ARQUITECTURA.md](ARQUITECTURA.md).
 
@@ -282,6 +282,10 @@ El nivel de audio y los bits corregidos salen del registro CSV de Direwolf: hace
 - **Bandas ahora**: qué bandas abren para enlace local y regional (NVIS, 0-400 km) y para larga distancia (3000 km).
 - **Ionosfera medida**: la ionosonda más cercana, con foF2, MUF y su antigüedad.
 - **Sol y campo magnético**: índices SFI, Kp y escalas de la NOAA.
+- **KiwiSDR: onda corta por la red**. Un KiwiSDR es un receptor de 0 a 30 MHz que se usa por la red (el suyo o el de otra persona). Escriba su nombre o dirección, el puerto (8073) y la contraseña si la pide; solo el administrador puede cambiarlo. Con él la consola hace dos cosas, cada una en un canal del KiwiSDR y de continuo:
+  - **APRS de onda corta** (300 baudios): el sonido del KiwiSDR va a un segundo Direwolf que solo escucha (no tiene PTT ni salida de sonido) y sus tramas entran en Tramas y Estaciones como las de radio. No se contestan ni se repiten. De serie, 10 147,6 kHz en banda lateral superior (30 m); en 20 m, 14 105 kHz en la inferior. Hace falta `direwolf` instalado, el mismo de VHF.
+  - **Balizas NCDXF / IARU**: dieciocho balizas emiten por turno, diez segundos cada una, en 14 100, 18 110, 21 150, 24 930 y 28 200 kHz. La consola mide el nivel en la ranura de cada una y cuánto sobresale del ruido de la banda; una vuelta a las cinco bandas tarda 15 minutos. La baliza se reconoce por la hora, no por su indicativo: otra señal en la frecuencia cuenta como si fuera ella, y el reloj del equipo debe ir en hora. Es lo que llega ahora al KiwiSDR; VOACAP da la mediana del mes.
+  - Lo que se mide es lo que llega **donde está el KiwiSDR**, no a la consola: el panel enseña la posición que declara. Con un KiwiSDR público, pida permiso a su dueño: los públicos limitan el tiempo de cada visitante. Si está lleno o corta, se reintenta al minuto. Un KiwiSDR no recibe el APRS de VHF ni las balizas de 433 MHz.
 - **Circuito de onda corta (VOACAP)**: predicción de una estación (posición o localizador) hasta aquí, en una frecuencia o en todas las bandas de HF: porcentaje de días del mes en que llega ahora, horas buenas y las 24 horas. Con VOACAP instalado en este equipo (`sudo sh tools/instalar-voacap.sh`; opcional, necesita Internet solo al instalar) lo calcula la propia consola, hasta su posición. Sin él, se lo pide a Wefax (EA7JRS/Wefax) si su dirección está en *Marítimo > NAVTEX*, y entonces va hasta el receptor de Wefax. Es la mediana del mes: no ve la tormenta ni el apagón de hoy. El número de manchas solares lo toma solo: la media de los cerca de 30 días de índices solares de la NOAA que la consola ya descarga. Se puede fijar otro a mano en *Marítimo > NAVTEX*. Debajo, las últimas cartas de radiofacsímil recibidas, con enlace.
 - **Detalle**: viento solar y previsión a 3 días. Si falta alguna fuente, se dice cuál y no se rellena con cifras supuestas.
 

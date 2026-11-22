@@ -23,6 +23,8 @@ import { ConfAprx, MonitorAprx, SeguidorArchivo, leerConfAprx, leerLineaRf } fro
 import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
 import { NOMBRE_TIPO, RegistroTramas, analizarTrama, textoLegible } from './server/radio/tramas';
 import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
+import { EstacionKiwi } from './server/radio/kiwiEstacion';
+import { APRS_HF_DE_SERIE } from './server/radio/aprsHf';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
 import { Contexto, EstacionVista, Objetivo, Proa, Seguimiento, acimutDeRotor, acimutVerdadero } from './server/radio/seguimiento';
@@ -235,7 +237,7 @@ function isAuthorizedRequest(req: express.Request): boolean {
 }
 
 // Claves y credenciales que solo puede ver un administrador
-const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword', 'rotorPin'] as const;
+const SECRET_CONFIG_KEYS = ['aprsPasscode', 'owmApiKey', 'aemetApiKey', 'iqAirApiKey', 'weatherApiKey', 'dapnetPassword', 'rotorPin', 'kiwiClave'] as const;
 const SECRET_MASK = '********';
 
 function isMaskedSecret(value: unknown): boolean {
@@ -374,6 +376,14 @@ let config: TelemetryConfig = {
   wefaxUrl: '',
   // VOACAP propio: número de manchas solares suavizado del mes ('' = el del día, con aviso)
   voacapManchas: '',
+  // KiwiSDR de la red: APRS de onda corta y balizas NCDXF / IARU (solo recepción)
+  kiwiEquipo: '',
+  kiwiPuerto: 8073,
+  kiwiClave: '',
+  kiwiAprs: false,
+  kiwiAprsKhz: 10147.6,
+  kiwiAprsBanda: 'usb',
+  kiwiIbp: false,
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -5019,6 +5029,53 @@ async function circuitoHf(req: express.Request, res: express.Response) {
   }
 }
 app.get('/api/hf/circuito', circuitoHf);
+
+// ---------------------------------------------------------------------------
+// KiwiSDR: APRS de onda corta y propagación medida con las balizas NCDXF / IARU
+// ---------------------------------------------------------------------------
+const equipoKiwiValido = (t: string) => /^[A-Za-z0-9.-]{1,80}$/.test(t);
+const estacionKiwi = new EstacionKiwi(
+  () => ({
+    equipo: equipoKiwiValido(String(config.kiwiEquipo ?? '')) ? String(config.kiwiEquipo) : '',
+    puerto: Number(config.kiwiPuerto) >= 1 && Number(config.kiwiPuerto) <= 65535 ? Math.round(Number(config.kiwiPuerto)) : 8073,
+    clave: String(config.kiwiClave ?? ''),
+    aprs: config.kiwiAprs === true,
+    aprsHf: { khz: Number(config.kiwiAprsKhz) >= 1800 && Number(config.kiwiAprsKhz) <= 30000 ? Number(config.kiwiAprsKhz) : APRS_HF_DE_SERIE.khz, banda: config.kiwiAprsBanda === 'lsb' ? 'lsb' : 'usb', puertoKiss: APRS_HF_DE_SERIE.puertoKiss },
+    ibp: config.kiwiIbp === true,
+    indicativo: String(config.callsign ?? ''),
+  }),
+  (ax25) => {
+    // Una trama oída en onda corta: entra como las de radio, pero no se contesta ni se cuenta en el Direwolf de VHF
+    const texto = decodeAx25Frame(ax25);
+    const m = texto ? texto.match(/^([^>]+)>([^,:]+)([^:]*):(.*)$/) : null;
+    if (!m) return;
+    const ruta = m[3] ? m[3].replace(/^,/, '') : '';
+    addLog('RX', m[1], m[2], ruta || 'HF', m[4], true, `[KiwiSDR HF] Recibido en ${config.kiwiAprsKhz} kHz`);
+    estacionesOidas.anotar(m[1], m[2], m[4], 'RF');
+    registroTramas.anotar('RF', m[1], m[2], ruta, m[4]);
+    grupoOido(m[1], m[2], m[4], 'RF');
+  },
+  (texto) => addLog('SYS', 'KIWI', 'LOCAL', 'HF', texto, true, 'KiwiSDR'),
+);
+app.get('/api/kiwi', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(estacionKiwi.estado());
+});
+app.post('/api/kiwi/config', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'solo el administrador' });
+  const b = req.body ?? {};
+  if (b.equipo !== undefined) { const t = String(b.equipo).trim(); if (t === '' || equipoKiwiValido(t)) config.kiwiEquipo = t; else return res.status(400).json({ error: 'nombre o dirección no válidos' }); }
+  if (b.puerto !== undefined) { const n = Math.round(Number(b.puerto)); if (n >= 1 && n <= 65535) config.kiwiPuerto = n; else return res.status(400).json({ error: 'puerto no válido' }); }
+  // la contraseña va tal cual en una orden: nada que la rompa. Vacía la quita; sin el campo, se deja la que hay
+  if (b.clave !== undefined) { const t = String(b.clave); if (/^[A-Za-z0-9._+!@*-]{0,40}$/.test(t)) config.kiwiClave = t; else return res.status(400).json({ error: 'contraseña con caracteres no admitidos' }); }
+  if (b.aprs !== undefined) config.kiwiAprs = b.aprs === true;
+  if (b.aprsKhz !== undefined) { const k = Number(b.aprsKhz); if (k >= 1800 && k <= 30000) config.kiwiAprsKhz = Math.round(k * 100) / 100; else return res.status(400).json({ error: 'frecuencia fuera de la onda corta' }); }
+  if (b.aprsBanda !== undefined) config.kiwiAprsBanda = b.aprsBanda === 'lsb' ? 'lsb' : 'usb';
+  if (b.ibp !== undefined) config.kiwiIbp = b.ibp === true;
+  guardarConfig();
+  estacionKiwi.aplicar();
+  res.json(estacionKiwi.estado());
+});
 app.get('/api/wefax/circuito', circuitoHf);
 // Guardar los mensajes en un archivo
 app.get('/api/navtex/exportar', (req, res) => {
@@ -7453,6 +7510,7 @@ async function initServer() {
     });
   }
 
+  estacionKiwi.aplicar();
   app.listen(PORT, HOST, () => {
     console.log(`[S.A.T.-APRS+ SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
     console.log(TX_ENABLED

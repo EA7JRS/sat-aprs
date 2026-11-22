@@ -2,6 +2,14 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.53.0] - 2026-11-22
+- **KiwiSDR** (HF y propagación): un receptor de onda corta de la red como fuente, solo de recepción, en dos canales suyos.
+  - **APRS de onda corta** a 300 baudios: el sonido va a un segundo Direwolf que solo escucha (sin PTT, KISS en el puerto 8011) y las tramas entran en Tramas y Estaciones como las de radio; no se contestan. De serie 10 147,6 kHz USB.
+  - **Propagación medida con las balizas NCDXF / IARU**: nivel de cada baliza en su ranura de diez segundos y decibelios sobre el ruido, en las cinco bandas (una vuelta, 15 minutos). La baliza se reconoce por la hora, no por su indicativo.
+  - Ajustes en el propio panel (`/api/kiwi`, `/api/kiwi/config`, solo el administrador): `kiwiEquipo`, `kiwiPuerto`, `kiwiClave` (secreta), `kiwiAprs`, `kiwiAprsKhz`, `kiwiAprsBanda`, `kiwiIbp`.
+- Cliente KiwiSDR propio (`server/radio/kiwi.ts`), con el protocolo del cliente de referencia, kiwiclient; el mismo de Wefax 0.4.0 y Navtex 1.8.0.
+- Comprobado con 196 pruebas, comprobación de tipos, compilación y la consola en marcha contra un KiwiSDR de pega (tramas APRS de 300 baudios generadas con `gen_packets` y descodificadas por Direwolf; niveles de baliza simulados). **Sin probar con un KiwiSDR de verdad** ni con señales del aire. Un KiwiSDR no recibe VHF ni 433 MHz.
+
 ## [v1.52.0] - 2026-11-22
 - HF y propagación: **circuito de onda corta con VOACAP** (`/api/hf/circuito`). **Motor propio**: con VOACAP instalado en este equipo (`sudo sh tools/instalar-voacap.sh`, opcional) se calcula aquí, hasta la posición de la consola, sin depender de ningún otro equipo; si no lo está, se le pide a [Wefax](https://github.com/EA7JRS/Wefax) 0.3.0, que lo calcula hasta su receptor. De una posición o localizador, en una frecuencia o en las bandas de aficionado de HF; fiabilidad de ahora, horas buenas y tira de 24 horas. Y **últimas cartas de radiofacsímil** (`/api/wefax/cartas`), con enlace a cada una.
 - **Aviso de clima espacial a Wefax y Navtex**: las escalas oficiales de la NOAA (R, S, G) se envían a los receptores de la red cuando cambian y cada media hora (ajuste `space.wx` de Wefax 0.3.0 y Navtex 1.7.3), para que avisen de un apagón de radio o una tormenta que la predicción mensual no ve.

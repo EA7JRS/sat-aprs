@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { PropagationData } from '../../types';
 import CircuitoHf from './CircuitoHf';
+import KiwiSdr from './KiwiSdr';
 import { absorcionRayosX } from '../../../server/propagacion';
 
 // Band propagation condition helper (standard HamClock feature)
@@ -3246,6 +3247,8 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
       </div>
 
       <CircuitoHf />
+
+      <KiwiSdr />
 
     </motion.div>
   );

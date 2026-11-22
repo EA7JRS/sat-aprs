@@ -26,7 +26,7 @@ S.A.T.-APRS+ forma parte del ecosistema [APRS LoRa+](https://ea7jrs.github.io/AP
 
 ---
 
-## 📌 Qué hace hoy (v1.52.0)
+## 📌 Qué hace hoy (v1.53.0)
 
 El 20-11-2026 se hizo la primera prueba en el equipo real (Intel NUC, Debian 13), con Internet y sin radio, GPS ni SDR conectados. La columna «Estado» distingue lo comprobado allí de lo que aún espera al hardware.
 
@@ -46,6 +46,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Boyas y estaciones costeras más cercanas (NOAA NDBC) | Operativo desde la v1.21.0; pendiente de validar en la estación |
 | Mapa con capas: estación, avisos, APRS (radio y APRS-IS), AIS, ADS-B y tráfico de la DGT | Operativo desde la v1.12.0 |
 | Circuito de onda corta con VOACAP: motor propio en este equipo (opcional, `tools/instalar-voacap.sh`) o pedido a [Wefax](https://github.com/EA7JRS/Wefax); y últimas cartas de radiofacsímil de Wefax | Nuevo en la v1.52.0; el motor, probado contra VOACAP real; **la pantalla y la ruta, sin probar con la consola en marcha** |
+| **KiwiSDR** (receptor de onda corta por la red): APRS de onda corta a 300 baudios, con un Direwolf que solo escucha, y propagación medida con las balizas NCDXF / IARU. Solo recibe; no sirve para VHF ni 433 MHz | Operativo desde la v1.53.0; probado contra un KiwiSDR de pega, **sin probar con uno de verdad** |
 | HF y propagación: bandas para NVIS y larga distancia, ionosonda más cercana, índices solares | Operativo desde la v1.16.0; ionosondas (GIRO) e índices comprobados en la estación de pruebas (20-11-2026) |
 | Radio · Principal: cluster DX (país, rumbo y distancia), mensajería APRS con acuse y DAPNET | Operativo desde la v1.22.0; pendiente de validar en la estación |
 | Radio · Principal: equipo por CAT (`rigctld`) y rotor (`rotctld` o la caja APRS LoRa+ Rotor) | Operativo desde la v1.23.0; pendiente de validar en la estación |

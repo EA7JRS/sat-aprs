@@ -309,6 +309,14 @@ export interface TelemetryConfig {
   /** Avisos urgentes por LoRa cuando no salen por VHF / siempre por las dos bandas. */
   loraRespaldo?: boolean;
   loraSiempre?: boolean;
+  kiwiCw?: boolean;
+  kiwiCwKhz?: string;
+  hackrfAprs?: boolean;
+  hackrfMhz?: number;
+  hackrfLna?: number;
+  hackrfVga?: number;
+  hackrfAmp?: boolean;
+  hackrfSerie?: string;
   voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

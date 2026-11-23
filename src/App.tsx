@@ -12,6 +12,7 @@ import RadioPrincipal from './pages/RadioPrincipal';
 import Direwolf from './pages/Direwolf';
 import Aprx from './pages/Aprx';
 import Wx3in1 from './pages/Wx3in1';
+import LoraPlus from './pages/LoraPlus';
 import Winlink from './pages/Winlink';
 import TramasAprs from './pages/TramasAprs';
 import Maritimo from './pages/Maritimo';
@@ -1102,6 +1103,8 @@ export default function App() {
           <Aprx />
         ) : activeTab === 'wx3in1' ? (
           <Wx3in1 />
+        ) : activeTab === 'lora-plus' ? (
+          <LoraPlus />
         ) : activeTab === 'conectividad' ? (
           /* CONECTIVIDAD: emisión NMEA 2000 (SocketCAN) */
           <motion.div

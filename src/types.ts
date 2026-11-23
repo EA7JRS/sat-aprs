@@ -300,6 +300,15 @@ export interface TelemetryConfig {
   wx3in1IsClave?: string;
   /** Avisos urgentes por el servidor APRS-IS simple del WX3in1 cuando Direwolf no acepta la trama. */
   wx3in1Respaldo?: boolean;
+  /** Trackers APRS LoRa+ por KISS sobre WiFi. Se ajusta en su panel (POST /api/radio/lora/config). */
+  loraEquipos?: string;
+  loraIntervalo?: number;
+  loraRuta?: string;
+  /** Pasar a APRS-IS lo que oyen los trackers. */
+  loraIgate?: boolean;
+  /** Avisos urgentes por LoRa cuando no salen por VHF / siempre por las dos bandas. */
+  loraRespaldo?: boolean;
+  loraSiempre?: boolean;
   voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

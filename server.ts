@@ -24,6 +24,7 @@ import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
 import { NOMBRE_TIPO, RegistroTramas, analizarTrama, textoLegible } from './server/radio/tramas';
 import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
 import { EstacionKiwi } from './server/radio/kiwiEstacion';
+import { EnlaceTracker, MAX_EQUIPOS, comprobarTracker, conflictosLora, debePasarAIs, leerEquipos } from './server/radio/aprsLoraPlus';
 import { FuncionesDirewolf, PeticionEstadisticas, RecibidorEstadisticas, ResumenWx3cfg, SesionWx3in1, datoEstadistica, enviarPorServidorSimple, funcionesDirewolf, PATRONES, quitarDigiDirewolf, repartoFunciones } from './server/radio/wx3in1';
 import { APRS_HF_DE_SERIE } from './server/radio/aprsHf';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
@@ -396,6 +397,13 @@ let config: TelemetryConfig = {
   wx3in1IsUsuario: 'admin',
   wx3in1IsClave: '',
   wx3in1Respaldo: false,
+  // Trackers APRS LoRa+ (KISS por WiFi): «equipo[:puerto]» separados por comas
+  loraEquipos: '',
+  loraIntervalo: 30,
+  loraRuta: 'WIDE1-1',
+  loraIgate: false,
+  loraRespaldo: false,
+  loraSiempre: false,
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -1451,15 +1459,20 @@ function transmitRealAprsPacket(packetString: string, simulated: boolean = false
     }
     // 2. RF: trama AX.25 UI con la ruta de radio (nunca TCPIP*/qAC) por KISS
     if (decision.rf) {
+      let falloVhf = '';
       try {
         await sendToKiss(toRfFrame(packet, config.aprsPath || DEFAULT_RF_PATH));
         monitorDirewolf.anotarTx(packet.source, packet.destination, config.aprsPath || DEFAULT_RF_PATH, packet.info);
         console.log(`[APRS TRANSMIT] Trama AX.25 entregada al TNC KISS (puerto ${config.kissTcpPort})`);
       } catch (err: any) {
+        falloVhf = err.message || 'error';
         console.warn(`[APRS TRANSMIT WARNING] Fallo al enviar a RF: ${err.message}`);
         // Vía de respaldo: el WX3in1 y su emisora, solo para lo urgente y si se ha pedido
         if (urgente && config.wx3in1Respaldo === true) await respaldoWx3in1(packet.source, packet.destination, config.aprsPath || DEFAULT_RF_PATH, packet.info, err.message);
       }
+      // Otra banda: lo urgente también por LoRa (433,775 MHz) con un tracker APRS LoRa+,
+      // siempre o solo cuando no ha salido por VHF, según se haya pedido
+      if (urgente && (config.loraSiempre === true || (falloVhf && config.loraRespaldo === true))) await emitirPorLora(packet, falloVhf);
     }
   }, urgente);
 
@@ -6209,6 +6222,132 @@ app.post('/api/radio/wx3in1/orden', async (req, res) => {
   res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
 });
 
+// ---------------------------------------------------------------------------
+// Trackers APRS LoRa+ (server/radio/aprsLoraPlus.ts): su TNC KISS por WiFi y su
+// /api/status. Lo que oyen por LoRa entra en la consola como cualquier otra
+// trama de radio; los avisos urgentes pueden salir también por ellos.
+// ---------------------------------------------------------------------------
+const rutaLora = () => { const r = String(config.loraRuta ?? '').trim().toUpperCase(); return /^[A-Z0-9]{1,6}(-\d{1,2})?(,[A-Z0-9]{1,6}(-\d{1,2})?){0,3}$/.test(r) ? r : 'WIDE1-1'; };
+let enlacesLora: EnlaceTracker[] = [];
+let loraEstado: { cuando: number; ok: boolean | null; texto: string } = { cuando: 0, ok: null, texto: '' };
+let loraPasadas: number[] = [];
+
+function tramaDeTracker(ax25: Buffer, enlace: EnlaceTracker) {
+  const tnc2 = decodeAx25Frame(ax25);
+  const m = tnc2 ? tnc2.match(/^([^>]+)>([^,:]+)([^:]*):(.*)$/) : null;
+  if (!tnc2 || !m) return;
+  const origen = m[1], destino = m[2], ruta = m[3] ? m[3].replace(/^,/, '') : '', info = m[4];
+  enlace.anotarOida(origen, tnc2);
+  // el tracker devuelve por KISS lo que emite: las tramas de la propia consola no son «oídas»
+  if (origen.toUpperCase() === String(config.callsign ?? '').trim().toUpperCase()) return;
+  addLog('RX', origen, destino, ruta || 'LoRa', info, true, `[LoRa] Oído por el tracker ${enlace.estado?.indicativo || enlace.id}`);
+  estacionesOidas.anotar(origen, destino, info, 'RF');
+  registroTramas.anotar('RF', origen, destino, ruta, info);
+  mensajeRecibido(origen, info, 'RF');
+  grupoOido(origen, destino, info, 'RF');
+  if (config.loraIgate === true && TX_ENABLED && debePasarAIs(origen, ruta, info)) {
+    const estacion = String(config.callsign ?? '').trim().toUpperCase();
+    sendToAprsIs(`${origen}>${destino}${ruta ? `,${ruta}` : ''},qAR,${estacion}:${info}`)
+      .then(() => { loraPasadas.push(Date.now()); })
+      .catch(() => { /* el servidor APRS-IS no está: la trama ya consta como oída */ });
+  }
+}
+
+function aplicarLora() {
+  for (const e of enlacesLora) e.parar();
+  enlacesLora = leerEquipos(String(config.loraEquipos ?? '')).map((eq) => new EnlaceTracker(eq, () => Number(config.loraIntervalo) || 30, tramaDeTracker,
+    (texto) => addLog('SYS', 'LORA', 'LOCAL', 'KISS', texto, true, 'APRS LoRa+')));
+  for (const e of enlacesLora) e.iniciar();
+}
+
+/** Emite una trama por el primer tracker con enlace, en modo APRS LoRa. */
+async function emitirPorLora(packet: { source: string; destination: string; path: string[]; info: string }, falloVhf: string) {
+  const enlace = enlacesLora.find((e) => e.enlace === 'conectado' && (!e.estado || e.estado.modo === 0)) ?? null;
+  const ruta = rutaLora();
+  const motivo = falloVhf ? `Direwolf no la aceptó (${falloVhf})` : 'por las dos bandas';
+  if (!enlace) {
+    loraEstado = { cuando: Date.now(), ok: false, texto: 'Aviso urgente sin salir por LoRa: ningún tracker con enlace KISS en modo APRS LoRa.' };
+    addLog('TX', packet.source, packet.destination, ruta, packet.info, false, `LoRa: sin tracker con enlace (${motivo})`, { urgente: true });
+    return;
+  }
+  try {
+    await enlace.enviar(toRfFrame({ ...packet, path: ruta.split(',') }, ruta));
+    loraEstado = { cuando: Date.now(), ok: true, texto: `Trama urgente entregada al tracker ${enlace.estado?.indicativo || enlace.id} (${motivo}).` };
+    addLog('TX', packet.source, packet.destination, ruta, packet.info, true, `Por LoRa con el tracker ${enlace.estado?.indicativo || enlace.id}: ${motivo}`, { urgente: true });
+  } catch (e: any) {
+    loraEstado = { cuando: Date.now(), ok: false, texto: `No salió por LoRa: ${e?.message || e}.` };
+    addLog('TX', packet.source, packet.destination, ruta, packet.info, false, `LoRa: ${e?.message || e} (${motivo})`, { urgente: true });
+  }
+}
+
+app.get('/api/radio/lora', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const admin = isAuthorizedRequest(req);
+  const ahora = Date.now();
+  loraPasadas = loraPasadas.filter((t) => t >= ahora - 3_600_000);
+  const estados = enlacesLora.map((e) => e.estado).filter((x): x is NonNullable<typeof x> => !!x);
+  res.json({
+    admin,
+    ajustes: admin ? {
+      equipos: String(config.loraEquipos ?? ''), intervalo: Number(config.loraIntervalo) || 30, ruta: rutaLora(),
+      igate: config.loraIgate === true, respaldo: config.loraRespaldo === true, siempre: config.loraSiempre === true, maxEquipos: MAX_EQUIPOS,
+    } : null,
+    trackers: enlacesLora.map((e) => ({
+      id: e.id, equipo: admin ? e.equipo.equipo : '', puerto: e.equipo.puerto,
+      enlace: e.enlace, motivo: e.motivo, desde: e.desde,
+      estado: e.estado, estadoCuando: e.estadoCuando, estadoDisponible: e.estadoDisponible,
+      ultimaTrama: e.ultimaTrama, enviadas: e.enviadas, cifras: e.cifras(ahora),
+      hallazgos: e.estado ? comprobarTracker(e.estado) : [],
+    })),
+    pasadasAIs: loraPasadas.length,
+    conflictos: conflictosLora(estados, { indicativo: String(config.callsign ?? ''), baliza: config.aprsBeaconEnabled === true, pasaAIs: config.loraIgate === true }),
+    reparto: repartoEstacion(),
+    emision: { ...loraEstado, txActiva: TX_ENABLED },
+  });
+});
+
+app.post('/api/radio/lora/config', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const b = req.body ?? {};
+  if (b.equipos !== undefined) {
+    const t = String(b.equipos).trim();
+    const trozos = t.split(/[,\s]+/).filter(Boolean);
+    if (trozos.length > MAX_EQUIPOS) return res.status(400).json({ ok: false, error: `Como mucho ${MAX_EQUIPOS} trackers.` });
+    if (leerEquipos(t).length !== trozos.length) return res.status(400).json({ ok: false, error: 'Dirección no válida: escriba la IP o el nombre de cada tracker, con «:puerto» si no es el 8001, separados por comas.' });
+    config.loraEquipos = trozos.join(', ');
+  }
+  if (b.intervalo !== undefined) { const n = Math.round(Number(b.intervalo)); if (n >= 15 && n <= 600) config.loraIntervalo = n; else return res.status(400).json({ ok: false, error: 'El intervalo va de 15 a 600 s.' }); }
+  if (b.ruta !== undefined) {
+    const r = String(b.ruta).trim().toUpperCase();
+    if (r !== '' && !/^[A-Z0-9]{1,6}(-\d{1,2})?(,[A-Z0-9]{1,6}(-\d{1,2})?){0,3}$/.test(r)) return res.status(400).json({ ok: false, error: 'Ruta no válida (ejemplo: WIDE1-1).' });
+    config.loraRuta = r || 'WIDE1-1';
+  }
+  if (b.igate !== undefined) config.loraIgate = b.igate === true;
+  if (b.respaldo !== undefined) config.loraRespaldo = b.respaldo === true;
+  if (b.siempre !== undefined) config.loraSiempre = b.siempre === true;
+  guardarConfig();
+  if (b.equipos !== undefined || b.intervalo !== undefined) aplicarLora();
+  addLog('SYS', 'LORA', 'LOCAL', 'CONFIG', 'Ajustes de APRS LoRa+ cambiados.', true, 'APRS LoRa+');
+  res.json({ ok: true });
+});
+
+app.post('/api/radio/lora/orden', async (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ ok: false, error: 'Solo el administrador.' });
+  const accion = String(req.body?.accion ?? '');
+  if (accion === 'reconectar') {
+    aplicarLora();
+    return res.json({ ok: true, texto: enlacesLora.length ? 'Conectando con los trackers…' : 'Sin trackers: escriba antes su dirección.' });
+  }
+  if (accion === 'probar') {
+    if (!TX_ENABLED) return res.status(409).json({ ok: false, error: 'La emisión está desactivada (SAT_APRS_TX): no se envía nada al aire.' });
+    const origen = String(config.callsign ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,6}(-\d{1,2})?$/.test(origen) || /^N[O0]CALL/.test(origen)) return res.status(409).json({ ok: false, error: 'Falta el indicativo de la estación.' });
+    await emitirPorLora({ source: origen, destination: TOCALL, path: [], info: '>Prueba de emision por LoRa de S.A.T.-APRS+' }, '');
+    return loraEstado.ok ? res.json({ ok: true, texto: loraEstado.texto.replace('Trama urgente', 'Prueba') }) : res.status(502).json({ ok: false, error: loraEstado.texto });
+  }
+  res.status(400).json({ ok: false, error: 'Orden no reconocida.' });
+});
+
 // WeeWX: su configuración y su base de datos (últimas 24 h), de verdad
 let confWeewx: { conf: ConfWeewx; ruta: string } | null = null;
 let weewxDesde: number | null = null;
@@ -7771,6 +7910,7 @@ async function initServer() {
 
   estacionKiwi.aplicar();
   sesionWx3in1.aplicar();
+  aplicarLora();
   app.listen(PORT, HOST, () => {
     console.log(`[S.A.T.-APRS+ SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
     console.log(TX_ENABLED

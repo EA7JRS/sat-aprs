@@ -2,6 +2,17 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.55.0] - 2026-11-23
+- **Radio · APRS LoRa+**, pantalla nueva para los trackers [APRS LoRa+](https://github.com/EA7JRS/APRS-LoRa-Plus) de la estación (hasta 4), según la vista previa aprobada.
+  - **Enlace KISS por WiFi** permanente con cada tracker (puerto 8001, «KISS over WiFi» de su WebUI): lo que oyen por LoRa entra en Tramas, Estaciones, el mapa y la mensajería como cualquier trama de radio. Oídas en la última hora, estaciones distintas y **ocupación del canal** estimada con el tiempo en el aire de cada trama (fórmula de Semtech, con el SF, el ancho de banda y el CR del tracker).
+  - **Estado del tracker** leído de su `GET /api/status` (firmware posterior a la 5.4.7): indicativo, versión, modo, frecuencia y parámetros LoRa, batería, SmartBeacon, digipetidor, ruta. Con un firmware anterior, solo el enlace KISS.
+  - **Comprobación** de lo que se ve desde fuera, con las reglas de «Config check» de la WebUI del tracker: NOCALL, frecuencia fuera de los canales digitales del plan de la IARU Región 1, parámetros distintos de SF12 / 125 kHz / CR 4/5 en 433,775 MHz, ruta de más de dos saltos, digipetidor en una estación móvil, KISS por Bluetooth y por WiFi a la vez.
+  - **Reparto de funciones** con una columna para LoRa, y avisos: la misma baliza desde la consola y el tracker, dos trackers con el mismo indicativo o los dos de digipetidor.
+  - **Avisos urgentes por LoRa** (desactivado de serie): si no salen por VHF, o siempre por las dos bandas, con la ruta que se elija (`WIDE1-1`). «Probar la emisión por LoRa» emite un estado de prueba. Respeta `SAT_APRS_TX`.
+  - **Paso a APRS-IS** de lo oído por LoRa (desactivado de serie), con las reglas de un iGate de solo recepción (no pasa `TCPIP`, `NOGATE`, `RFONLY`, consultas ni terceros que ya vinieron de internet).
+  - Ajustes en la propia pantalla (`/api/radio/lora`, `/api/radio/lora/config`, `/api/radio/lora/orden`, solo el administrador): `loraEquipos`, `loraIntervalo`, `loraRuta`, `loraIgate`, `loraRespaldo`, `loraSiempre`.
+- Comprobado con 212 pruebas, comprobación de tipos y la consola en marcha contra un tracker de pega (TNC KISS por TCP y `/api/status`), con captura de la pantalla. **Sin probar con un tracker de verdad**: falta ver el enlace con la placa, el `/api/status` del firmware nuevo y una emisión real por LoRa.
+
 ## [v1.54.0] - 2026-11-22
 - **Radio · WX3in1**, pantalla nueva para el Microsat WX3in1 Plus 2.0 de la estación (firmware v1.13), según la vista previa aprobada.
   - **Sesión telnet** permanente: `print version`, `print stats`, `print voltage` y `print rfheard` cada minuto y los mensajes de depuración que se elijan. Recibidas y repetidas por minuto (mensajes «(RF)» y «(DIGI)» del equipo), eficiencia de decodificación, tensión, estaciones oídas y registro filtrable. Lo que el equipo escribe y la consola no reconoce se enseña tal cual (administrador), no se supone.

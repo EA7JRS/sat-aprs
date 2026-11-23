@@ -60,6 +60,7 @@ La consola tiene seis secciones: **Inicio, Avisos, Estación, Mapa, Radio y Sist
 | Conectividad · salida NMEA 2000 (SocketCAN): posición, hora, meteorología y avisos al bus, para un plotter | Operativo desde la v1.26.0; sin probar con un bus NMEA 2000 real |
 | aprx desde el fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx), que compila en Debian 13 (`tools/instalar-aprx.sh`) | Operativo desde la v1.32.1 |
 | Radio · Tramas APRS: todo lo que entra (radio y APRS-IS) y sale, explicado, y analizador de tramas | Operativo desde la v1.33.0 |
+| Radio · APRS LoRa+: los trackers [APRS LoRa+](https://github.com/EA7JRS/APRS-LoRa-Plus) por KISS sobre WiFi (lo que oyen por LoRa, su estado y comprobación, ocupación del canal), reparto con el resto de la estación y avisos urgentes también por LoRa | Operativo desde la v1.55.0; probado contra un tracker de pega, **sin probar con un tracker de verdad** |
 | Radio · WX3in1: el Microsat WX3in1 Plus 2.0 por telnet (estado, cifras, estaciones oídas, registro), su `.cfg` comprobado con [wx3cfg](https://github.com/EA7JRS/wx3in1), reparto de funciones con Direwolf y aprx, vía de emisión de respaldo y recepción de su *Statistics upload* | Operativo desde la v1.54.0; probado contra un WX3in1 de pega, **sin probar con el equipo de verdad** |
 | Estación · WeeWX: lectura actual y 24 h desde la base de datos de WeeWX | Operativo desde la v1.33.0; pendiente de validar con una estación real (un WeeWX en modo `Simulator` no cuenta como estación, v1.44.7) |
 | Sistema · Equipo: enlaces reales de la estación (APRS-IS, KISS, gpsd, AIS, ADS-B, CAT, rotor, cluster, Pat, NMEA 2000) | Operativo desde la v1.33.0 |
@@ -84,7 +85,7 @@ El detalle de cada pantalla, con ejemplos de uso, está en el **[manual](docs/MA
 | **Avisos** | En vigor · Salud | Todos los avisos de la cadena, los que se difunden y los que no (y por qué), con sus tramas APRS; temperaturas y salud, con acceso a Kairós (ISCIII) y Meteosalud (Sanidad). |
 | **Estación** | Estación y meteo · Perfil · WeeWX | Meteorología actual y calidad del aire cercana; perfil APRS de la estación (indicativo, posición, símbolo, baliza); WeeWX con sus últimas 24 h. |
 | **Mapa** | Mapa · Tráfico · Boyas | Capas con todo lo que llega con coordenadas (solo se ve, no se retransmite); incidencias de la DGT; boyas cercanas. |
-| **Radio** | Principal · Direwolf · HF y propagación · aprx · WX3in1 · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
+| **Radio** | Principal · Direwolf · HF y propagación · aprx · WX3in1 · APRS LoRa+ · Tramas APRS · Winlink | La estación de radio: equipo, rotor, satélites, cluster, grupo ARTS, mensajes y consola de comandos; los servicios de radio del equipo. |
 | **Sistema** | Equipo · Configuración · Conectividad · Pruebas y simulación | Estado del equipo, ajustes y archivos `.conf`, salida NMEA 2000 y herramientas de ensayo (nada de ellas se emite). |
 
 ---

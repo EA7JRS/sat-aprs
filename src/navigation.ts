@@ -9,7 +9,7 @@ export type Pantalla =
   | 'avisos' | 'propagacion' | 'salud'
   | 'monitor' | 'perfil' | 'weewx-pillar'
   | 'mapa' | 'dgt' | 'portus'
-  | 'radio-principal' | 'direwolf-pillar' | 'aprx-pillar' | 'wx3in1' | 'aprs-adaptor' | 'pat-pillar' | 'maritimo'
+  | 'radio-principal' | 'direwolf-pillar' | 'aprx-pillar' | 'wx3in1' | 'lora-plus' | 'aprs-adaptor' | 'pat-pillar' | 'maritimo'
   | 'sistema' | 'engineering' | 'conectividad' | 'pruebas';
 
 export type IdSeccion = 'inicio' | 'avisos' | 'estacion' | 'mapa' | 'radio' | 'sistema';
@@ -49,6 +49,7 @@ export const SECCIONES: Seccion[] = [
       { id: 'propagacion', nombre: 'HF y propagación' },
       { id: 'aprx-pillar', nombre: 'aprx' },
       { id: 'wx3in1', nombre: 'WX3in1' },
+      { id: 'lora-plus', nombre: 'APRS LoRa+' },
       { id: 'aprs-adaptor', nombre: 'Tramas APRS' },
       { id: 'pat-pillar', nombre: 'Winlink' },
       { id: 'maritimo', nombre: 'NAVTEX e Inmarsat' },

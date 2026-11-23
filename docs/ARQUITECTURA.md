@@ -33,6 +33,7 @@ programas: se conecta a ellos por sus interfaces de red.
 | ntpsec | Servidor de hora de la red | `ntpq` |
 | Direwolf | Módem/TNC para APRS por RF | KISS sobre TCP 8001; registro CSV (`LOGDIR`) para el nivel de audio |
 | aprx (fork [EA7JRS/aprx](https://github.com/EA7JRS/aprx)) | Digipeater e iGate | `aprx.conf` y su registro de radio (`rflog`) |
+| Trackers APRS LoRa+ (opcional) | Red APRS LoRa en 433,775 MHz | TNC KISS por WiFi (TCP 8001) y `/api/status` de cada tracker; `server/radio/aprsLoraPlus.ts` |
 | Microsat WX3in1 Plus 2.0 (opcional) | Digipeater, iGate y TNC hardware | Telnet (estado y depuración), su servidor APRS-IS simple (vía de respaldo) y su `.cfg` comprobado con `tools/wx3cfg.py` ([EA7JRS/wx3in1](https://github.com/EA7JRS/wx3in1)) |
 | Pat | Winlink | API HTTP de `pat http` (8080) |
 | Hamlib `rigctld` / `rotctld` | Equipo por CAT y rotor | TCP 4532 / 4533, protocolo extendido |

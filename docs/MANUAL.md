@@ -311,7 +311,19 @@ El **Microsat WX3in1 Plus 2.0** de la estación (firmware v1.13), si lo hay. Se 
 - **Vía de emisión de respaldo** (desactivada de serie): si Direwolf no acepta un aviso **urgente** (servicio parado o sin conexión KISS), sale por el servidor APRS-IS simple del WX3in1 y su emisora. Si Direwolf lo acepta pero su radio falla, la consola no lo puede saber. Con la emisión desactivada (`SAT_APRS_TX`) no sale nada. «Probar con un paquete» emite un estado de prueba.
 - **Estadísticas por HTTP** (*Statistics upload* del equipo): en su Configurador, servidor = la dirección de la consola, puerto = el de la consola (3000) y ruta `wx3in1/estadisticas`. Solo se aceptan del propio equipo (o de la red local si su dirección es un nombre). Se guardan tal cual las 20 últimas.
 
-### 7.6 Tramas APRS
+### 7.6 APRS LoRa+
+
+Los trackers **APRS LoRa+** de la estación (hasta 4), enlazados por su TNC KISS sobre WiFi. En la WebUI del tracker hay que activar «KISS over WiFi» (Connectivity) y escribir la WiFi (Administration › Firmware update); conviene limitar «Allowed addresses» a la dirección de la consola, porque KISS no pide contraseña. Después, en Ajustes (administrador), se escribe la dirección de cada tracker, separadas por comas (`192.168.1.60, aprs-lora-plus.local`; con `:puerto` si no es el 8001).
+
+- **Enlace KISS** que se mantiene abierto (reintenta cada 20 s). Lo que el tracker oye por LoRa entra en Tramas, Estaciones, el mapa y la mensajería como cualquier trama de radio. El tracker admite 3 clientes KISS a la vez.
+- **Estado**: indicativo, versión, modo, frecuencia y parámetros LoRa, batería, SmartBeacon, digipetidor y ruta, leídos de `http://<tracker>/api/status`. Lo da el firmware posterior a la 5.4.7; con uno anterior la tarjeta lo dice y solo hay enlace KISS.
+- **Comprobación**: errores y avisos de la configuración del tracker que se ven desde fuera (NOCALL, canal fuera del plan de la IARU, ruta de más de dos saltos, digipetidor en una estación móvil, dos enlaces KISS). La comprobación completa y las correcciones están en la WebUI del tracker (Config check).
+- Cifras de la última hora: oídas por LoRa, emitidas por los trackers, pasadas a APRS-IS y **ocupación del canal**, estimada con el tiempo en el aire de cada trama oída (a SF12 y 125 kHz, una trama de 60 bytes ocupa unos 2,6 s).
+- **Reparto de funciones** con una columna para LoRa. Los trackers trabajan en otra banda (433,775 MHz), así que su digipetidor no choca con los de VHF; se avisa de la misma baliza desde la consola y el tracker y de dos trackers con el mismo indicativo.
+- **Avisos urgentes por LoRa** (desactivado de serie): «Si no sale por VHF, emitir por LoRa» o «Emitir siempre por las dos bandas». Salen por el primer tracker enlazado en modo APRS LoRa, con la ruta de Ajustes (`WIDE1-1`). Con la emisión desactivada (`SAT_APRS_TX`) no sale nada.
+- **Pasar a APRS-IS lo que oyen los trackers** (desactivado de serie): iGate de solo recepción por el servidor APRS-IS de la estación.
+
+### 7.7 Tramas APRS
 
 Todo lo que entra y sale, en una lista:
 
@@ -325,7 +337,7 @@ Todo lo que entra y sale, en una lista:
 
 Los mensajes se envían desde Radio → Principal → Mensajería. Cuando llega un mensaje para la estación, sale un aviso en pantalla; su botón «Responder» lo envía de verdad por la mensajería, con acuse y reintentos.
 
-### 7.7 Winlink
+### 7.8 Winlink
 
 El correo por radio que lleva **Pat**, a través de su API HTTP (`pat http`, de serie en `http://127.0.0.1:8080`):
 
@@ -340,7 +352,7 @@ El correo por radio que lleva **Pat**, a través de su API HTTP (`pat http`, de 
 
 El indicativo, la contraseña de Winlink y los alias se configuran en Pat (su `config.json` o su propia web).
 
-### 7.8 NAVTEX e Inmarsat
+### 7.9 NAVTEX e Inmarsat
 
 Radioavisos náuticos recibidos con un SDR propio. Los dos receptores vienen apagados y se encienden en esta misma pantalla (con la sesión de administrador).
 
@@ -582,6 +594,8 @@ En Cluster DX, toque la frecuencia del spot: el equipo sintoniza y el rotor gira
 | aprx no arranca tras instalarlo | `STARTAPRX="no"` en `/etc/default/aprx` | `sudo sh tools/instalar-aprx.sh` lo deja en `"yes"` |
 | WX3in1: «usuario o contraseña de telnet no aceptados» | Usuario o contraseña distintos de los del `.cfg` del equipo | Radio → WX3in1 → Ajustes |
 | WX3in1: «Sin .cfg» en el reparto | No se ha cargado su configuración | Guárdela con el Configurador («Save to file») y cárguela en «Comprobar un .cfg» |
+| APRS LoRa+: «Sin conexión» | El tracker no está en la WiFi, «KISS over WiFi» apagado o la consola no está en sus «Allowed addresses» | WebUI del tracker → Connectivity; Radio → APRS LoRa+ → Ajustes |
+| APRS LoRa+: «no da su estado por HTTP» | Firmware 5.4.7 o anterior | Actualice el tracker; las tramas se reciben igual |
 | WX3in1: «python3 no está instalado» | Falta Python 3 para `tools/wx3cfg.py` | `sudo apt install python3` |
 | Winlink: «Pat no contesta» | `pat http` parado o en otra dirección | `sudo systemctl enable --now pat@<usuario>`; revise `http_addr` |
 | Winlink: «Fuera de systemd» | El servicio se llama `pat@<usuario>` | Radio → Winlink → Ajustes → servicio |
@@ -622,6 +636,7 @@ El diario de cada servicio se ve desde su pantalla («Ver registro») o con `jou
 | ntpsec | Hora | `ntpq` |
 | Direwolf | Módem/TNC | KISS TCP 8001; registro CSV en `/var/log/direwolf` |
 | aprx | iGate y digipeater | `/etc/aprx.conf` y `rflog` |
+| Trackers APRS LoRa+ | Red APRS LoRa de 433,775 MHz | KISS por TCP 8001 y HTTP 80 (`/api/status`) de cada tracker |
 | Microsat WX3in1 Plus 2.0 | Digipetidor, iGate y TNC hardware | Telnet 23; su servidor APRS-IS simple (14580) para el respaldo; recibe en HTTP `/wx3in1/estadisticas` |
 | rigctld (Hamlib) | Equipo por CAT | TCP 4532 |
 | rotctld (Hamlib) | Rotor | TCP 4533 |

@@ -187,7 +187,7 @@ test('KiwiSDR: el cliente contra un receptor de pega', async () => {
 
 test('KiwiSDR en la consola: las bandas de las balizas van de una en una, y un ciclo a medias se repite', async () => {
   const { EstacionKiwi } = await import('../server/radio/kiwiEstacion');
-  const e = new EstacionKiwi(() => ({ equipo: '', puerto: 8073, clave: '', aprs: false, aprsHf: { khz: 10147.6, banda: 'usb', puertoKiss: 8011 }, ibp: false, indicativo: 'EA7JRS' }), () => {}, () => {});
+  const e = new EstacionKiwi(() => ({ equipo: '', puerto: 8073, clave: '', aprs: false, aprsHf: { khz: 10147.6, banda: 'usb', puertoKiss: 8011 }, ibp: false, cw: false, cwKhz: [], indicativo: 'EA7JRS' }), () => {}, () => {});
   const t0 = Date.UTC(2026, 10, 22, 12, 0, 0);
   const dar = (desde: number, hasta: number) => { for (let s = desde; s < hasta; s++) for (let k = 0; k < 5; k++) e.nivelIbp(t0 + s * 1000 + k * 200, -120 + (Math.floor(s / 10) % 18 === 5 ? 25 : 0)); };
   dar(100, 180);                       // se llega a mitad de un ciclo: ocho ranuras no bastan
@@ -201,4 +201,98 @@ test('KiwiSDR en la consola: las bandas de las balizas van de una en una, y un c
   c = e.estado(t0 + 541_000).ibp;
   assert.equal(c.ciclos, 2); assert.equal(c.cuadro[4][1]!.oida, true);          // en 18 110 la ranura 5 es de la baliza anterior
   assert.deepEqual(c.ahora.length, 5);
+});
+
+import { Envolvente, OidasCw, balizasEnTexto, confirmaIndicativo, frecuenciasCw, leerCw, sintoniaCw, sonidoCw } from '../server/radio/cw';
+
+/** Azar repetible, para que las pruebas con ruido den siempre lo mismo. */
+const azarFijo = (semilla: number) => () => { semilla = (semilla * 1103515245 + 12345) & 0x7fffffff; return semilla / 0x7fffffff; };
+const envDe = (pcm: Buffer, ritmo = 12000) => { const e = new Envolvente(90); e.dar(pcm, ritmo, 1_000_000); return e.tramo(0, 2_000_000); };
+
+test('Telegrafía: se lee con ruido, se deduce la velocidad y sin señal no se inventa nada', () => {
+  const a = leerCw(envDe(sonidoCw('4U1UN ____', 22, 12000, 3000, 100, 500, azarFijo(1))));
+  assert.equal(a.texto, '4U1UN ____'); assert.ok(a.ppm >= 19 && a.ppm <= 24); assert.ok(a.snrDb > 20);
+  assert.ok(confirmaIndicativo(a.texto, '4U1UN') && !confirmaIndicativo(a.texto, 'VE8AT'));
+  assert.equal(leerCw(envDe(sonidoCw('CS3B ____', 22, 12000, 3000, 600, 500, azarFijo(2)))).texto, 'CS3B ____');
+  const lenta = leerCw(envDe(sonidoCw('VVV DE EA7JRS IM76HR', 12, 12000, 3000, 300, 500, azarFijo(3))));
+  assert.equal(lenta.texto, 'VVV DE EA7JRS IM76HR'); assert.ok(lenta.ppm >= 11 && lenta.ppm <= 13);
+  assert.equal(leerCw(envDe(sonidoCw('TEST DE EA7JRS', 30, 8000, 3000, 200, 600, azarFijo(4)), 8000)).texto, 'TEST DE EA7JRS');     // otra velocidad de muestras y otro tono
+  assert.equal(leerCw(envDe(sonidoCw('', 22, 12000, 0, 500, 500, azarFijo(5)))).texto, '');                                         // solo ruido
+  assert.equal(leerCw(envDe(sonidoCw('JA2IGY', 22, 12000, 900, 700, 500, azarFijo(6)))).texto, '');                                 // demasiado floja: calla
+  assert.ok(!confirmaIndicativo('4U1U ____', '4U1UN') && confirmaIndicativo('T 4U1UN _', '4U1UN'));
+});
+
+test('Balizas de telegrafía: el indicativo tras «DE», el localizador, y dos lecturas para contar', () => {
+  assert.deepEqual(balizasEnTexto('VVV DE ED7YAA/B IM67 VVV DE ED7YAA/B IM67'), [{ indicativo: 'ED7YAA/B', locator: 'IM67' }, { indicativo: 'ED7YAA/B', locator: 'IM67' }]);
+  assert.deepEqual(balizasEnTexto('CQ DE EA7JRS K'), [{ indicativo: 'EA7JRS', locator: '' }]);
+  assert.deepEqual(balizasEnTexto('DE DE TTT'), []); assert.deepEqual(balizasEnTexto('VVV DE 123'), []);
+  const o = new OidasCw(), l = { texto: 'VVV DE EA7JRS IM76HR', ppm: 12, snrDb: 15 };
+  assert.deepEqual(o.anotar(28200, l, 0), []); assert.deepEqual(o.recientes(1000), []);               // una vez: aún no
+  assert.deepEqual(o.anotar(28250, l, 60_000), []);                                                    // en otra frecuencia no suma
+  const n = o.anotar(28200, l, 120_000);
+  assert.equal(n.length, 1); assert.equal(n[0].indicativo, 'EA7JRS'); assert.equal(n[0].locator, 'IM76HR'); assert.equal(n[0].veces, 2);
+  o.anotar(28200, { ...l, texto: 'DE EA7JRS' }, 180_000);
+  assert.equal(o.recientes(200_000)[0].veces, 3); assert.equal(o.recientes(200_000)[0].locator, 'IM76HR');
+  const tarde = new OidasCw(); tarde.anotar(28200, l, 0);
+  assert.deepEqual(tarde.anotar(28200, l, 31 * 60_000), []);                                          // la primera ya caducó
+  assert.equal(new OidasCw().anotar(7039, { texto: 'DE EA7JRS DE EA7JRS', ppm: 12, snrDb: 15 }, 0).length, 1);   // dos veces en la misma escucha
+  assert.deepEqual(frecuenciasCw('28175, 28200,5 28200.5; 99 31000 hola'), [28175, 28200, 5 < 100 ? 28200.5 : 0].filter((x) => x >= 100));
+  assert.equal(frecuenciasCw('1 2 3').length, 0); assert.equal(frecuenciasCw('1000 2000 3000 4000 5000 6000 7000 8000 9000').length, 8);
+  assert.deepEqual(sintoniaCw(28200), { modo: 'cw', khz: 28199.5, bajo: 300, alto: 700, agc: false });
+});
+
+test('KiwiSDR en la consola: una baliza NCDXF / IARU queda confirmada al leer su indicativo en su ranura', async () => {
+  const { EstacionKiwi } = await import('../server/radio/kiwiEstacion');
+  const e = new EstacionKiwi(() => ({ equipo: '', puerto: 8073, clave: '', aprs: false, aprsHf: { khz: 10147.6, banda: 'usb', puertoKiss: 8011 }, ibp: false, cw: false, cwKhz: [], indicativo: 'EA7JRS' }), () => {}, () => {});
+  const t0 = Date.UTC(2026, 10, 22, 12, 0, 0);
+  // un ciclo entero en 14 100: la ranura 14 (CS3B) con señal y su indicativo; la 3 (KH6RS) con señal y otro indicativo
+  for (let s = 0; s < 180; s++) for (let k = 0; k < 5; k++) { const r = Math.floor(s / 10); e.nivelIbp(t0 + s * 1000 + k * 200, -120 + (r === 14 || r === 3 ? 25 : 0)); if (s === 145 && k === 0) e.leerRanura(t0 + 140_000, envDe(sonidoCw('CS3B ____', 22, 12000, 3000, 200, 500, azarFijo(7)))); if (s === 35 && k === 0) e.leerRanura(t0 + 30_000, envDe(sonidoCw('EA7JRS', 22, 12000, 3000, 200, 500, azarFijo(8)))); }
+  e.nivelIbp(t0 + 180_000, -120);
+  const c = e.estado(t0 + 181_000).ibp;
+  assert.equal(c.cuadro[14][0]!.confirmada, true); assert.equal(c.cuadro[14][0]!.oida, true);
+  assert.equal(c.cuadro[3][0]!.oida, true); assert.equal(c.cuadro[3][0]!.confirmada, false);           // hay señal, pero no es KH6RS
+  assert.equal(c.leido!.texto, 'CS3B ____'); assert.equal(c.leido!.confirmada, true);
+});
+
+import { HACKRF_DE_SERIE, HACKRF_DESVIO_HZ, ReceptorFm, argsDirewolfHackrf, argsHackrf, confDirewolfHackrf, gananciasHackrf, mhzHackrfValida, muestrasFm } from '../server/radio/hackrf';
+import { motivoHackrf } from '../server/radio/hackrfEstacion';
+
+test('HackRF: ganancias, frecuencia y órdenes; siempre recibir, nunca emitir', () => {
+  assert.deepEqual(gananciasHackrf(27, 31), { lna: 24, vga: 30 }); assert.deepEqual(gananciasHackrf(99, -5), { lna: 40, vga: 0 }); assert.deepEqual(gananciasHackrf(NaN, 63), { lna: 0, vga: 62 });
+  assert.ok(mhzHackrfValida(144.8) && mhzHackrfValida(432.5) && !mhzHackrfValida(0.5) && !mhzHackrfValida(NaN) && !mhzHackrfValida(7000));
+  const a = argsHackrf({ ...HACKRF_DE_SERIE, mhz: 144.8, lna: 16, vga: 21, amp: true, serie: '0000000000000000a06063c8234e925f' });
+  assert.deepEqual(a, ['-r', '-', '-f', String(144_800_000 - HACKRF_DESVIO_HZ), '-s', '2400000', '-b', '1750000', '-l', '16', '-g', '20', '-a', '1', '-d', '0000000000000000a06063c8234e925f']);
+  assert.ok(!argsHackrf(HACKRF_DE_SERIE).includes('-t') && !argsHackrf(HACKRF_DE_SERIE).includes('-d'));
+  assert.ok(!argsHackrf({ ...HACKRF_DE_SERIE, serie: 'abc; rm -rf /' }).includes('-d'));                       // un número de serie raro no pasa
+  const c = confDirewolfHackrf('ea7jrs-10', 8012);
+  assert.ok(c.includes('ADEVICE stdin null') && c.includes('MYCALL EA7JRS-10') && c.includes('MODEM 1200') && c.includes('KISSPORT 0\nKISSPORT 8012') && !/PTT|DIGIPEAT|IGLOGIN/.test(c));
+  assert.ok(confDirewolfHackrf('lo que sea', 8012).includes('MYCALL N0CALL'));
+  assert.deepEqual(argsDirewolfHackrf('/tmp/x.conf').slice(0, 4), ['-c', '/tmp/x.conf', '-r', '48000']);
+  assert.match(motivoHackrf('hackrf_open() failed: HackRF not found (-5)'), /no se encuentra/);
+  assert.match(motivoHackrf('hackrf_open() failed: Resource busy (-1000)'), /otro programa/);
+  assert.match(motivoHackrf('libusb: Access denied (insufficient permissions)'), /permiso/);
+});
+
+test('HackRF: el receptor de FM devuelve el tono que se moduló, también en trozos impares y con ruido', () => {
+  const n = 9600, tono = new Int16Array(n);
+  for (let i = 0; i < n; i++) tono[i] = Math.round(20000 * Math.sin(2 * Math.PI * 1200 * i / 48000));
+  const medir = (iq: Buffer, trozo: number) => {
+    const rx = new ReceptorFm(), partes: Buffer[] = [];
+    for (let k = 0; k < iq.length; k += trozo) partes.push(rx.dar(iq.subarray(k, k + trozo)));
+    const pcm = Buffer.concat(partes), m = pcm.length >> 1;
+    let re = 0, im = 0, pot = 0;
+    for (let i = 960; i < m; i++) { const v = pcm.readInt16LE(2 * i), f = 2 * Math.PI * 1200 * i / 48000; re += v * Math.cos(f); im += v * Math.sin(f); pot += v * v; }
+    const amp = 2 * Math.hypot(re, im) / (m - 960);
+    return { m, amp, resto: 1 - (amp * amp / 2) / (pot / (m - 960)), nivel: rx.nivel };
+  };
+  const limpio = medir(muestrasFm(tono, 3000, 60, 0), 65536);
+  assert.ok(Math.abs(limpio.m - n) <= 2);                                             // 2,4 MS/s entre 50: las mismas muestras de sonido
+  // ±3 kHz de desviación con el tono al 61 % del fondo de escala: 0,24 rad de giro por muestra, por 26 000
+  assert.ok(Math.abs(limpio.amp - 26000 * 2 * Math.PI * 3000 * (20000 / 32768) / 48000) < 400, `amplitud ${limpio.amp}`);
+  assert.ok(limpio.resto < 0.02, `fuera del tono ${limpio.resto}`);
+  assert.ok(Math.abs(limpio.nivel! - 20 * Math.log10(60 / 127)) < 1);                 // el nivel del canal, respecto al máximo del HackRF
+  const impar = medir(muestrasFm(tono, 3000, 60, 0), 4097);
+  assert.ok(Math.abs(impar.amp - limpio.amp) < 1 && impar.m === limpio.m);            // partir las muestras por donde sea no cambia nada
+  const ruidoso = medir(muestrasFm(tono, 3000, 20, 20, azarFijo(9)), 65536);          // ruido tan fuerte como la señal en los 2,4 MHz
+  assert.ok(Math.abs(ruidoso.amp - limpio.amp) < 1500 && ruidoso.resto < 0.5, `con ruido: ${ruidoso.amp}, ${ruidoso.resto}`);
 });

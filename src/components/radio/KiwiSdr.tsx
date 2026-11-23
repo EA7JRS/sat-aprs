@@ -5,15 +5,18 @@
 import React, { useEffect, useState } from 'react';
 import { customFetch } from '../../utils/customFetch';
 
-interface Medida { baliza: number; banda: number; cuando: number; dbm: number; sobreRuido: number; oida: boolean }
+interface Medida { baliza: number; banda: number; cuando: number; dbm: number; sobreRuido: number; oida: boolean; confirmada?: boolean }
+interface OidaCw { khz: number; indicativo: string; locator: string; snrDb: number; ppm: number; veces: number; ultima: number }
 interface Estado {
   equipo: string; puerto: number; conClave: boolean; posicion: { lat: number; lon: number } | null;
   aprs: { activo: boolean; khz: number; banda: string; estado: string; motivo: string; tramas: number; ultima: number; nivel: number | null };
   ibp: {
     activo: boolean; estado: string; motivo: string; banda: number; ciclos: number; saturado: boolean;
+    leido: null | { baliza: number; banda: number; texto: string; ppm: number; snrDb: number; confirmada: boolean; cuando: number };
     bandas: Array<{ khz: number; nombre: string }>; balizas: Array<{ indicativo: string; pais: string; lugar: string }>;
     ahora: number[]; cuadro: Array<Array<Medida | null>>; ruido: Array<{ dbm: number; cuando: number } | null>;
   };
+  cw: { activo: boolean; lista: number[]; escuchaS: number; estado: string; motivo: string; khz: number; nivel: number | null; leido: string; leidoKhz: number; leidoCuando: number; oidas: OidaCw[] };
 }
 
 const campo = 'min-h-[44px] w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none';
@@ -23,20 +26,20 @@ const fondo = (m: Medida | null) => (!m ? 'bg-slate-900 text-slate-600' : m.sobr
 
 export default function KiwiSdr() {
   const [e, setE] = useState<Estado | null>(null);
-  const [v, setV] = useState({ equipo: '', puerto: '8073', clave: '', aprs: false, aprsKhz: '10147.6', aprsBanda: 'usb', ibp: false });
+  const [v, setV] = useState({ equipo: '', puerto: '8073', clave: '', aprs: false, aprsKhz: '10147.6', aprsBanda: 'usb', ibp: false, cw: false, cwKhz: '' });
   const [cargado, setCargado] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
 
   const leer = () => customFetch('/api/kiwi').then((r) => r.json()).then((j: Estado) => {
     setE(j);
-    if (!cargado) { setV({ equipo: j.equipo, puerto: String(j.puerto), clave: '', aprs: j.aprs.activo, aprsKhz: String(j.aprs.khz), aprsBanda: j.aprs.banda, ibp: j.ibp.activo }); setCargado(true); }
+    if (!cargado) { setV({ equipo: j.equipo, puerto: String(j.puerto), clave: '', aprs: j.aprs.activo, aprsKhz: String(j.aprs.khz), aprsBanda: j.aprs.banda, ibp: j.ibp.activo, cw: j.cw.activo, cwKhz: j.cw.lista.join(', ') }); setCargado(true); }
   }).catch(() => { /* la consola no contesta: se queda lo que había */ });
 
   useEffect(() => { leer(); const t = setInterval(leer, 15000); return () => clearInterval(t); }, [cargado]);
 
   const guardar = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const cuerpo: any = { equipo: v.equipo.trim(), puerto: Number(v.puerto), aprs: v.aprs, aprsKhz: Number(v.aprsKhz.replace(',', '.')), aprsBanda: v.aprsBanda, ibp: v.ibp };
+    const cuerpo: any = { equipo: v.equipo.trim(), puerto: Number(v.puerto), aprs: v.aprs, aprsKhz: Number(v.aprsKhz.replace(',', '.')), aprsBanda: v.aprsBanda, ibp: v.ibp, cw: v.cw, cwKhz: v.cwKhz };
     if (v.clave !== '') cuerpo.clave = v.clave === '-' ? '' : v.clave;        // vacío: se deja la que hay; un guion la quita
     try {
       const r = await customFetch('/api/kiwi/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
@@ -51,7 +54,7 @@ export default function KiwiSdr() {
     <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 flex flex-col gap-4" aria-label="KiwiSDR">
       <div>
         <h3 className="text-lg font-semibold text-slate-100">KiwiSDR: onda corta por la red</h3>
-        <p className="text-sm text-slate-400">Un KiwiSDR recibe de 0 a 30 MHz. Con él la consola recibe APRS de onda corta (300 baudios) y mide qué balizas NCDXF / IARU llegan ahora. Solo recibe. Ocupa dos canales del KiwiSDR de continuo: con uno público, pida permiso a su dueño. No sirve para el APRS de VHF ni para las balizas de 433 MHz.</p>
+        <p className="text-sm text-slate-400">Un KiwiSDR recibe de 0 a 30 MHz. Con él la consola recibe APRS de onda corta (300 baudios), mide qué balizas NCDXF / IARU llegan ahora (y las confirma leyendo su indicativo en telegrafía) y escucha otras balizas de telegrafía. Solo recibe. Ocupa un canal del KiwiSDR de continuo por cada una de las tres cosas: con uno público, pida permiso a su dueño. No sirve para el APRS de VHF ni para las balizas de 433 MHz.</p>
       </div>
 
       <form className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end" onSubmit={guardar}>
@@ -79,12 +82,18 @@ export default function KiwiSdr() {
         <label className="flex items-center gap-3 text-sm text-slate-200 min-h-[44px]">
           <input type="checkbox" className="h-5 w-5" checked={v.ibp} onChange={(x) => setV({ ...v, ibp: x.target.checked })} id="check-kiwi-ibp" /> Medir las balizas NCDXF / IARU
         </label>
+        <label className="flex items-center gap-3 text-sm text-slate-200 min-h-[44px]">
+          <input type="checkbox" className="h-5 w-5" checked={v.cw} onChange={(x) => setV({ ...v, cw: x.target.checked })} id="check-kiwi-cw" /> Escuchar balizas de telegrafía
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-slate-300 md:col-span-3">Sus frecuencias (kHz, hasta ocho, separadas por comas)
+          <input className={`${campo} font-mono`} value={v.cwKhz} onChange={(x) => setV({ ...v, cwKhz: x.target.value })} placeholder="28175, 28200.5" inputMode="text" id="input-kiwi-cw-khz" />
+        </label>
         <button type="submit" className="min-h-[44px] rounded-lg bg-sky-600 px-4 font-semibold text-white md:col-span-4" id="btn-kiwi-guardar">Guardar</button>
       </form>
       {msg && <p className={`text-sm ${msg.ok ? 'text-emerald-400' : 'text-amber-400'}`} role="status">{msg.texto}</p>}
 
       {e && e.equipo && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm" id="kiwi-estado">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm" id="kiwi-estado">
           <div className="rounded-xl border border-slate-700 p-3">
             <p className="font-semibold text-slate-100">APRS de onda corta</p>
             <p className={e.aprs.estado === 'recibiendo' ? 'text-emerald-400' : e.aprs.estado === 'apagado' ? 'text-slate-400' : 'text-amber-400'}>
@@ -98,8 +107,16 @@ export default function KiwiSdr() {
               {e.ibp.estado === 'midiendo' ? `Midiendo en ${e.ibp.bandas[e.ibp.banda].khz} kHz · ahora suena ${e.ibp.balizas[e.ibp.ahora[e.ibp.banda]].indicativo}` : e.ibp.estado === 'apagado' ? 'Apagado' : e.ibp.estado === 'conectando' ? 'Conectando…' : `Sin enlace: ${e.ibp.motivo}`}
             </p>
             {e.ibp.estado === 'midiendo' && <p className="text-slate-400">{e.ibp.ciclos} bandas medidas desde que arrancó; una vuelta a las cinco tarda 15 minutos.{e.ibp.saturado ? ' El KiwiSDR avisa de que su entrada está saturada.' : ''}</p>}
+            {e.ibp.estado === 'midiendo' && e.ibp.leido && <p className="text-slate-400">Última telegrafía leída ({hace(e.ibp.leido.cuando)}, {e.ibp.bandas[e.ibp.leido.banda].khz} kHz): <span className="font-mono text-slate-200">{e.ibp.leido.texto}</span> · {e.ibp.leido.confirmada ? <span className="text-emerald-400">es {e.ibp.balizas[e.ibp.leido.baliza].indicativo}, la que tocaba</span> : <span className="text-amber-400">no es {e.ibp.balizas[e.ibp.leido.baliza].indicativo}, la que tocaba</span>}</p>}
           </div>
-          {e.posicion && <p className="text-slate-400 md:col-span-2">El KiwiSDR dice estar en {e.posicion.lat.toFixed(2)}, {e.posicion.lon.toFixed(2)}: lo que se mide es lo que llega allí, no a la consola.</p>}
+          <div className="rounded-xl border border-slate-700 p-3">
+            <p className="font-semibold text-slate-100">Balizas de telegrafía</p>
+            <p className={e.cw.estado === 'escuchando' ? 'text-emerald-400' : e.cw.estado === 'apagado' ? 'text-slate-400' : 'text-amber-400'}>
+              {e.cw.estado === 'escuchando' ? `Escuchando en ${e.cw.khz} kHz${e.cw.nivel !== null ? ` · señal ${e.cw.nivel} dBm` : ''}` : e.cw.estado === 'apagado' ? (e.cw.activo && !e.cw.lista.length ? 'Sin frecuencias en la lista' : 'Apagado') : e.cw.estado === 'conectando' ? 'Conectando…' : `Sin enlace: ${e.cw.motivo}`}
+            </p>
+            {e.cw.estado === 'escuchando' && <p className="text-slate-400">{e.cw.lista.length > 1 ? `${e.cw.lista.length} frecuencias, un minuto en cada una.` : 'Una frecuencia, de continuo.'}{e.cw.leido ? <> Último texto ({e.cw.leidoKhz} kHz, {hace(e.cw.leidoCuando)}): <span className="font-mono text-slate-200">{e.cw.leido}</span></> : ' Aún no se ha leído nada.'}</p>}
+          </div>
+          {e.posicion && <p className="text-slate-400 md:col-span-3">El KiwiSDR dice estar en {e.posicion.lat.toFixed(2)}, {e.posicion.lon.toFixed(2)}: lo que se mide es lo que llega allí, no a la consola.</p>}
         </div>
       )}
 
@@ -119,8 +136,8 @@ export default function KiwiSdr() {
                     <tr key={b.indicativo}>
                       <td className="pr-2 whitespace-nowrap"><span className="font-mono text-slate-100">{b.indicativo}</span> <span className="text-slate-400">{b.pais}</span></td>
                       {e.ibp.cuadro[i].map((c, f) => (
-                        <td key={f} className={`rounded text-center font-mono ${fondo(c)}`} title={c ? `${c.dbm} dBm · ${hace(c.cuando)}` : 'sin medida reciente'}>
-                          {c ? (c.oida ? `+${Math.round(c.sobreRuido)}` : '·') : ''}
+                        <td key={f} className={`rounded text-center font-mono ${fondo(c)}`} title={c ? `${c.dbm} dBm · ${hace(c.cuando)}${c.confirmada ? ' · indicativo leído en telegrafía' : ''}` : 'sin medida reciente'}>
+                          {c ? (c.oida ? `+${Math.round(c.sobreRuido)}${c.confirmada ? ' ✓' : ''}` : '·') : ''}
                         </td>
                       ))}
                     </tr>
@@ -133,7 +150,24 @@ export default function KiwiSdr() {
               </table>
             </div>
           )}
-          <p className="text-xs text-slate-400">Decibelios sobre el ruido de la banda en la ranura de diez segundos de cada baliza, en las dos últimas horas; un punto es una ranura medida sin señal (menos de 6 dB). La baliza se reconoce por la hora, no por su indicativo: otra señal en la frecuencia cuenta como si fuera ella, y el reloj del equipo debe ir en hora. Mide lo que llega ahora; VOACAP, arriba, da la mediana del mes.</p>
+          <p className="text-xs text-slate-400">Decibelios sobre el ruido de la banda en la ranura de diez segundos de cada baliza, en las dos últimas horas; un punto es una ranura medida sin señal (menos de 6 dB). La marca ✓ dice que además se leyó en telegrafía el indicativo de esa baliza: es ella con seguridad. Sin marca, la baliza se reconoce solo por la hora: otra señal en la frecuencia cuenta como si fuera ella, y el reloj del equipo debe ir en hora. Las señales flojas se miden, pero no llegan para leer el indicativo. Mide lo que llega ahora; VOACAP, arriba, da la mediana del mes.</p>
+        </div>
+      )}
+
+      {e && e.cw.activo && e.cw.oidas.length > 0 && (
+        <div className="overflow-x-auto" id="kiwi-cw">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-slate-400"><th className="py-1 pr-3">kHz</th><th className="pr-3">Baliza</th><th className="pr-3">Localizador</th><th className="pr-3">Señal / ruido</th><th className="pr-3">Velocidad</th><th className="pr-3">Veces</th><th>Última</th></tr></thead>
+            <tbody>
+              {e.cw.oidas.map((o) => (
+                <tr key={`${o.khz}/${o.indicativo}`} className="border-t border-slate-800">
+                  <td className="py-1 pr-3 font-mono text-slate-300">{o.khz}</td><td className="pr-3 font-mono text-slate-100">{o.indicativo}</td><td className="pr-3 font-mono text-slate-300">{o.locator || '—'}</td>
+                  <td className="pr-3 text-slate-300">{o.snrDb} dB</td><td className="pr-3 text-slate-300">{o.ppm} ppm</td><td className="pr-3 text-slate-300">{o.veces}</td><td className="text-slate-400">{hace(o.ultima)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-400 mt-1">Balizas que se identifican con «DE indicativo». Una no cuenta hasta leerla dos veces en la misma frecuencia en media hora: una sola lectura puede ser un error.</p>
         </div>
       )}
     </section>

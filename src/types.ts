@@ -287,6 +287,14 @@ export interface TelemetryConfig {
   kiwiAprsKhz?: number;
   kiwiAprsBanda?: string;
   kiwiIbp?: boolean;
+  kiwiCw?: boolean;
+  kiwiCwKhz?: string;
+  hackrfAprs?: boolean;
+  hackrfMhz?: number;
+  hackrfLna?: number;
+  hackrfVga?: number;
+  hackrfAmp?: boolean;
+  hackrfSerie?: string;
   voacapManchas?: string;
   navtexEstaciones?: string;
   navtexRadioKm?: number;

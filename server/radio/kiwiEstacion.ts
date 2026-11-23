@@ -11,15 +11,18 @@ import path from 'path';
 import { ChildProcess, spawn } from 'child_process';
 import { CanalKiwi } from './kiwi';
 import { AjustesAprsHf, argsDirewolfHf, confDirewolfHf, tramasKiss } from './aprsHf';
-import { BALIZAS, BANDAS_IBP, CICLO_S, CicloIbp, TablaIbp, balizaEn, sintoniaIbp } from './ibp';
+import { BALIZAS, BANDAS_IBP, CICLO_S, RANURA_S, CicloIbp, TablaIbp, balizaEn, ranuraIbp, sintoniaIbp } from './ibp';
+import { Envolvente, OidasCw, confirmaIndicativo, leerCw, sintoniaCw } from './cw';
 
 export interface AjustesEstacionKiwi {
   equipo: string; puerto: number; clave: string;
   aprs: boolean; aprsHf: AjustesAprsHf;
   ibp: boolean;
+  cw: boolean; cwKhz: number[];
   indicativo: string;
 }
 
+const ESCUCHA_CW_S = 60;                // cuánto se escucha cada frecuencia de la lista de balizas de telegrafía
 const REINTENTO_MS = 60_000;           // un KiwiSDR lleno o que corta no se vuelve a pedir cada pocos segundos
 
 export class EstacionKiwi {
@@ -38,7 +41,18 @@ export class EstacionKiwi {
   private cicloN = -1;
   private bandaIbp = 0;
   tabla = new TablaIbp();
-  ibp = { estado: 'apagado', motivo: '', banda: 0, ciclos: 0, saturado: false, desde: 0 };
+  private envIbp = new Envolvente(25);
+  private ranuraN = -1;
+  ibp = { estado: 'apagado', motivo: '', banda: 0, ciclos: 0, saturado: false, desde: 0, leido: null as null | { baliza: number; banda: number; texto: string; ppm: number; snrDb: number; confirmada: boolean; cuando: number } };
+  // otras balizas de telegrafía
+  private canalCw: CanalKiwi | null = null;
+  private relojCw: NodeJS.Timeout | null = null;
+  private turnoCw: NodeJS.Timeout | null = null;
+  private envCw = new Envolvente(ESCUCHA_CW_S + 5);
+  private indiceCw = 0;
+  private desdeCw = 0;
+  oidas = new OidasCw();
+  cw = { estado: 'apagado', motivo: '', khz: 0, nivel: null as number | null, leido: '', leidoKhz: 0, leidoCuando: 0, desde: 0 };
 
   constructor(private ajustes: () => AjustesEstacionKiwi, private alRecibir: (ax25: Buffer) => void, private anotar: (texto: string) => void, private binDirewolf = 'direwolf') {}
 
@@ -49,11 +63,13 @@ export class EstacionKiwi {
     if (!a.equipo) return;
     if (a.aprs) this.abrirAprs();
     if (a.ibp) this.abrirIbp();
+    if (a.cw && a.cwKhz.length) this.abrirCw();
   }
 
   parar() {
-    for (const r of [this.relojAprs, this.relojIbp, this.tic]) if (r) clearTimeout(r);
-    this.relojAprs = this.relojIbp = this.tic = null;
+    for (const r of [this.relojAprs, this.relojIbp, this.tic, this.relojCw, this.turnoCw]) if (r) clearTimeout(r);
+    this.relojAprs = this.relojIbp = this.tic = this.relojCw = this.turnoCw = null;
+    this.canalCw?.removeAllListeners(); this.canalCw?.cerrar(); this.canalCw = null; this.cw.estado = 'apagado'; this.cw.motivo = '';
     this.cerrarAprs(); this.aprs.estado = 'apagado'; this.aprs.motivo = '';
     this.canalIbp?.removeAllListeners(); this.canalIbp?.cerrar(); this.canalIbp = null;
     this.ciclo = null; this.ibp.estado = 'apagado'; this.ibp.motivo = '';
@@ -123,12 +139,13 @@ export class EstacionKiwi {
   private abrirIbp() {
     const a = this.ajustes();
     this.ibp.estado = 'conectando'; this.ibp.motivo = '';
-    this.ciclo = null; this.cicloN = -1;
+    this.ciclo = null; this.cicloN = -1; this.ranuraN = -1; this.envIbp.vaciar();
     // otro número de conexión que el canal de APRS
     const canal = new CanalKiwi({ equipo: a.equipo, puerto: a.puerto, clave: a.clave }, sintoniaIbp(this.bandaIbp), ((Math.floor(Date.now() / 1000) + process.pid + 1) >>> 0));
     this.canalIbp = canal;
     canal.on('posicion', (p) => { this.posicion = p; });
     canal.on('ritmo', () => { this.ibp.estado = 'midiendo'; this.ibp.desde = Date.now(); this.anotar('KiwiSDR: midiendo las balizas NCDXF / IARU'); });
+    canal.on('sonido', (pcm: Buffer) => this.envIbp.dar(pcm, canal.ritmo, Date.now()));
     canal.on('nivel', (dbm: number, saturado: boolean) => { this.ibp.saturado = saturado; this.nivelIbp(Date.now(), dbm); });
     canal.on('fin', (motivo: string) => {
       this.canalIbp = null; this.ciclo = null;
@@ -141,6 +158,12 @@ export class EstacionKiwi {
 
   /** Un nivel del canal de balizas. Cada ciclo de tres minutos se cierra la banda y se pasa a la siguiente. */
   nivelIbp(ms: number, dbm: number) {
+    // al acabar cada ranura de diez segundos se lee su telegrafía: si sale el indicativo de la baliza, queda confirmada
+    const r = Math.floor(ms / (RANURA_S * 1000));
+    if (r !== this.ranuraN) {
+      if (this.ciclo && r === this.ranuraN + 1) this.leerRanura(this.ranuraN * RANURA_S * 1000);
+      this.ranuraN = r;
+    }
     const n = Math.floor(ms / (CICLO_S * 1000));
     if (n !== this.cicloN) {
       if (this.ciclo) {
@@ -157,6 +180,56 @@ export class EstacionKiwi {
     this.ciclo!.anotar(ms, dbm);
   }
 
+  /** Lee la telegrafía de la ranura que empezó en `ms`. */
+  leerRanura(ms: number, env: Float32Array = this.envIbp.tramo(ms, ms + RANURA_S * 1000)) {
+    if (!this.ciclo) return;
+    const l = leerCw(env);
+    if (!l.texto) return;
+    const banda = this.ciclo.banda, baliza = balizaEn(banda, ms);
+    const confirmada = confirmaIndicativo(l.texto, BALIZAS[baliza].indicativo);
+    if (confirmada) this.ciclo.confirmar(ranuraIbp(ms));
+    this.ibp.leido = { baliza, banda, texto: l.texto.slice(0, 40), ppm: l.ppm, snrDb: l.snrDb, confirmada, cuando: ms };
+  }
+
+  // ---- otras balizas de telegrafía: una lista de frecuencias, un minuto en cada una
+
+  private abrirCw() {
+    const a = this.ajustes();
+    this.cw.estado = 'conectando'; this.cw.motivo = '';
+    this.indiceCw = 0; this.envCw.vaciar();
+    const canal = new CanalKiwi({ equipo: a.equipo, puerto: a.puerto, clave: a.clave }, sintoniaCw(a.cwKhz[0]), ((Math.floor(Date.now() / 1000) + process.pid + 2) >>> 0));
+    this.canalCw = canal;
+    canal.on('posicion', (p) => { this.posicion = p; });
+    canal.on('ritmo', () => { this.cw.estado = 'escuchando'; this.cw.desde = Date.now(); this.cw.khz = a.cwKhz[0]; this.desdeCw = Date.now(); this.anotar('KiwiSDR: escuchando balizas de telegrafía'); this.turnoCw = setTimeout(() => this.turnoSiguiente(), ESCUCHA_CW_S * 1000); });
+    canal.on('sonido', (pcm: Buffer) => this.envCw.dar(pcm, canal.ritmo, Date.now()));
+    canal.on('nivel', (dbm: number) => { this.cw.nivel = Math.round(dbm); });
+    canal.on('fin', (motivo: string) => {
+      this.canalCw = null; if (this.turnoCw) clearTimeout(this.turnoCw); this.turnoCw = null;
+      this.cw.estado = 'sin enlace'; this.cw.motivo = motivo || 'se cortó';
+      this.anotar(`KiwiSDR, balizas de telegrafía: ${this.cw.motivo}. Se reintenta en un minuto.`);
+      this.relojCw = setTimeout(() => { const x = this.ajustes(); if (x.cw && x.cwKhz.length && x.equipo) this.abrirCw(); }, REINTENTO_MS);
+    });
+    canal.abrir();
+  }
+
+  /** Lee lo escuchado en la frecuencia que acaba y pasa a la siguiente de la lista. */
+  private turnoSiguiente() {
+    const a = this.ajustes(), ahora = Date.now();
+    if (!this.canalCw || !a.cwKhz.length) return;
+    this.leerCwEn(this.cw.khz, this.envCw.tramo(this.desdeCw + 500, ahora), ahora);
+    this.indiceCw = (this.indiceCw + 1) % a.cwKhz.length;
+    this.cw.khz = a.cwKhz[this.indiceCw]; this.desdeCw = ahora;
+    if (a.cwKhz.length > 1) this.canalCw.sintonizar(sintoniaCw(this.cw.khz));
+    this.turnoCw = setTimeout(() => this.turnoSiguiente(), ESCUCHA_CW_S * 1000);
+  }
+
+  leerCwEn(khz: number, env: Float32Array, ahora: number) {
+    const l = leerCw(env);
+    if (!l.texto) return;
+    this.cw.leido = l.texto.slice(0, 80); this.cw.leidoKhz = khz; this.cw.leidoCuando = ahora;
+    for (const o of this.oidas.anotar(khz, l, ahora)) this.anotar(`KiwiSDR: baliza de telegrafía ${o.indicativo}${o.locator ? ' ' + o.locator : ''} en ${khz} kHz (${o.snrDb} dB, ${o.ppm} ppm)`);
+  }
+
   /** Lo que enseña la consola. */
   estado(ahora = Date.now()) {
     const a = this.ajustes();
@@ -169,6 +242,7 @@ export class EstacionKiwi {
         ahora: BANDAS_IBP.map((_, f) => balizaEn(f, ahora)),
         cuadro: this.tabla.cuadro(ahora), ruido: this.tabla.ruido,
       },
+      cw: { activo: a.cw, lista: a.cwKhz, escuchaS: ESCUCHA_CW_S, ...this.cw, oidas: this.oidas.recientes(ahora) },
     };
   }
 }

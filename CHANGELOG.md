@@ -2,6 +2,12 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [Sin publicar]
+- **KiwiSDR: las balizas NCDXF / IARU se confirman por su indicativo.** La consola lee la telegrafía de cada ranura de diez segundos (`server/radio/cw.ts`: envolvente, umbral que sale de la propia señal, velocidad deducida) y, si sale el indicativo de la baliza que tocaba, la casilla lleva una marca ✓. Sin marca sigue valiendo la hora. Una señal floja se mide, pero no se lee: el lector calla antes que inventar.
+- **KiwiSDR: otras balizas de telegrafía.** Un tercer canal del KiwiSDR escucha una lista de hasta ocho frecuencias (un minuto en cada una) y anota las estaciones que se identifican con «DE indicativo», con su localizador, señal sobre ruido y velocidad. Una baliza no cuenta hasta leerla dos veces en la misma frecuencia en media hora. Ajustes `kiwiCw`, `kiwiCwKhz`.
+- **HackRF One: APRS en FM de VHF y UHF** (solo recepción). `hackrf_transfer` da 2,4 MS/s de 8 bits, la consola saca el sonido (filtro, reducción a 48 kS/s y discriminador, `server/radio/hackrf.ts`) y un tercer Direwolf que solo escucha (KISS en 8012) descodifica a 1200 baudios. Las tramas entran en Tramas y Estaciones como las de radio; no se contestan. Ajustes `hackrfAprs`, `hackrfMhz`, `hackrfLna`, `hackrfVga`, `hackrfAmp`, `hackrfSerie` (`/api/hackrf`, `/api/hackrf/config`, solo el administrador). No descodifica LoRa. Hace falta el paquete `hackrf`.
+- Comprobado con 201 pruebas, comprobación de tipos y compilación; la telegrafía, contra un KiwiSDR de pega que manda el indicativo en su ranura; el HackRF, con tramas de `gen_packets` moduladas en FM con ruido y descodificadas por Direwolf (las mismas 14 de 20 que da el sonido original) a través de un `hackrf_transfer` de pega. **Sin probar con un KiwiSDR ni con un HackRF de verdad**, ni con señales del aire.
+
 ## [v1.53.0] - 2026-11-22
 - **KiwiSDR** (HF y propagación): un receptor de onda corta de la red como fuente, solo de recepción, en dos canales suyos.
   - **APRS de onda corta** a 300 baudios: el sonido va a un segundo Direwolf que solo escucha (sin PTT, KISS en el puerto 8011) y las tramas entran en Tramas y Estaciones como las de radio; no se contestan. De serie 10 147,6 kHz USB.

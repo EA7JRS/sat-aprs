@@ -52,7 +52,7 @@ export function balizaEn(banda: number, ms: number): number {
   return ((ranuraIbp(ms) - banda) % BALIZAS.length + BALIZAS.length) % BALIZAS.length;
 }
 
-export interface MedidaIbp { baliza: number; banda: number; cuando: number; dbm: number; sobreRuido: number; oida: boolean }
+export interface MedidaIbp { baliza: number; banda: number; cuando: number; dbm: number; sobreRuido: number; oida: boolean; confirmada: boolean }
 
 /** Decibelios sobre el ruido a partir de los cuales una ranura se da por «oída». */
 export const UMBRAL_OIDA_DB = 6;
@@ -68,7 +68,11 @@ export const UMBRAL_OIDA_DB = 6;
  */
 export class CicloIbp {
   private lecturas: number[][] = Array.from({ length: BALIZAS.length }, () => []);
+  private leidas = new Set<number>();
   constructor(readonly banda: number) {}
+
+  /** En esa ranura se ha leído en telegrafía el indicativo de la baliza que tocaba. */
+  confirmar(ranura: number) { this.leidas.add(ranura); }
 
   anotar(ms: number, dbm: number) {
     if (!Number.isFinite(dbm)) return;
@@ -95,7 +99,7 @@ export class CicloIbp {
       if (dbm === null) return;
       const baliza = ((ranura - this.banda) % BALIZAS.length + BALIZAS.length) % BALIZAS.length;
       const sobre = Math.round((dbm - ruido) * 10) / 10;
-      fuera.push({ baliza, banda: this.banda, cuando: ahora, dbm: Math.round(dbm * 10) / 10, sobreRuido: sobre, oida: sobre >= UMBRAL_OIDA_DB });
+      fuera.push({ baliza, banda: this.banda, cuando: ahora, dbm: Math.round(dbm * 10) / 10, sobreRuido: sobre, oida: sobre >= UMBRAL_OIDA_DB || this.leidas.has(ranura), confirmada: this.leidas.has(ranura) });
     });
     return fuera;
   }

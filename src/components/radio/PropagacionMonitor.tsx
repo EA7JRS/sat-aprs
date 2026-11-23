@@ -33,6 +33,7 @@ import {
 import { PropagationData } from '../../types';
 import CircuitoHf from './CircuitoHf';
 import KiwiSdr from './KiwiSdr';
+import HackRf from './HackRf';
 import { absorcionRayosX } from '../../../server/propagacion';
 
 // Band propagation condition helper (standard HamClock feature)
@@ -3249,6 +3250,7 @@ export default function PropagacionMonitor({ data }: PropagacionMonitorProps) {
       <CircuitoHf />
 
       <KiwiSdr />
+      <HackRf />
 
     </motion.div>
   );

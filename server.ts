@@ -24,6 +24,9 @@ import { Buzon, ClientePat, MODOS_RMS } from './server/radio/pat';
 import { NOMBRE_TIPO, RegistroTramas, analizarTrama, textoLegible } from './server/radio/tramas';
 import { CONSULTA_HORAS, ConfWeewx, HoraWeewx, consultarWeewx, leerConfWeewx, leerHorasWeewx, resumenHoras } from './server/estacion/weewx';
 import { EstacionKiwi } from './server/radio/kiwiEstacion';
+import { frecuenciasCw } from './server/radio/cw';
+import { EstacionHackrf } from './server/radio/hackrfEstacion';
+import { HACKRF_DE_SERIE, gananciasHackrf, mhzHackrfValida } from './server/radio/hackrf';
 import { APRS_HF_DE_SERIE } from './server/radio/aprsHf';
 import { ConfDirewolf, LectorLog, MonitorDirewolf, NIVEL_ALTO, NIVEL_BAJO, describirTrama, leerConfDirewolf } from './server/radio/direwolf';
 import { NOMBRE_GRUPO, Paso, Satelite, URL_SATELITES, conDoppler, leerSatelites, mirar, orbita, proximoPaso } from './server/radio/satelites';
@@ -384,6 +387,15 @@ let config: TelemetryConfig = {
   kiwiAprsKhz: 10147.6,
   kiwiAprsBanda: 'usb',
   kiwiIbp: false,
+  kiwiCw: false,
+  kiwiCwKhz: '',
+  // HackRF One: APRS en FM de VHF o UHF (solo recepción)
+  hackrfAprs: false,
+  hackrfMhz: 144.8,
+  hackrfLna: 24,
+  hackrfVga: 30,
+  hackrfAmp: false,
+  hackrfSerie: '',
   // Dar al receptor la posición de la estación cuando él no tiene GPS
   navtexPosicion: true,
   navtexEstaciones: '',
@@ -5042,6 +5054,7 @@ const estacionKiwi = new EstacionKiwi(
     aprs: config.kiwiAprs === true,
     aprsHf: { khz: Number(config.kiwiAprsKhz) >= 1800 && Number(config.kiwiAprsKhz) <= 30000 ? Number(config.kiwiAprsKhz) : APRS_HF_DE_SERIE.khz, banda: config.kiwiAprsBanda === 'lsb' ? 'lsb' : 'usb', puertoKiss: APRS_HF_DE_SERIE.puertoKiss },
     ibp: config.kiwiIbp === true,
+    cw: config.kiwiCw === true, cwKhz: frecuenciasCw(String(config.kiwiCwKhz ?? '')),
     indicativo: String(config.callsign ?? ''),
   }),
   (ax25) => {
@@ -5057,6 +5070,48 @@ const estacionKiwi = new EstacionKiwi(
   },
   (texto) => addLog('SYS', 'KIWI', 'LOCAL', 'HF', texto, true, 'KiwiSDR'),
 );
+// ---------------------------------------------------------------------------
+// HackRF One: APRS en FM (VHF / UHF), solo recepción
+// ---------------------------------------------------------------------------
+const estacionHackrf = new EstacionHackrf(
+  () => ({
+    activo: config.hackrfAprs === true,
+    radio: {
+      mhz: mhzHackrfValida(Number(config.hackrfMhz)) ? Number(config.hackrfMhz) : HACKRF_DE_SERIE.mhz,
+      ...gananciasHackrf(Number(config.hackrfLna ?? HACKRF_DE_SERIE.lna), Number(config.hackrfVga ?? HACKRF_DE_SERIE.vga)),
+      amp: config.hackrfAmp === true, serie: /^[0-9a-fA-F]{4,32}$/.test(String(config.hackrfSerie ?? '')) ? String(config.hackrfSerie) : '', puertoKiss: HACKRF_DE_SERIE.puertoKiss,
+    },
+    indicativo: String(config.callsign ?? ''),
+  }),
+  (ax25) => {
+    // Una trama oída con el HackRF: entra como las de radio, pero no se contesta ni se cuenta en el Direwolf de la emisora
+    const texto = decodeAx25Frame(ax25);
+    const m = texto ? texto.match(/^([^>]+)>([^,:]+)([^:]*):(.*)$/) : null;
+    if (!m) return;
+    const ruta = m[3] ? m[3].replace(/^,/, '') : '';
+    addLog('RX', m[1], m[2], ruta || 'RF', m[4], true, `[HackRF] Recibido en ${config.hackrfMhz} MHz`);
+    estacionesOidas.anotar(m[1], m[2], m[4], 'RF');
+    registroTramas.anotar('RF', m[1], m[2], ruta, m[4]);
+    grupoOido(m[1], m[2], m[4], 'RF');
+  },
+  (texto) => addLog('SYS', 'HACKRF', 'LOCAL', 'RF', texto, true, 'HackRF'),
+);
+app.get('/api/hackrf', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(estacionHackrf.estado());
+});
+app.post('/api/hackrf/config', (req, res) => {
+  if (!isAuthorizedRequest(req)) return res.status(403).json({ error: 'solo el administrador' });
+  const b = req.body ?? {};
+  if (b.activo !== undefined) config.hackrfAprs = b.activo === true;
+  if (b.mhz !== undefined) { const f = Number(b.mhz); if (mhzHackrfValida(f)) config.hackrfMhz = Math.round(f * 10000) / 10000; else return res.status(400).json({ error: 'frecuencia fuera de 28 a 1300 MHz' }); }
+  if (b.lna !== undefined || b.vga !== undefined) { const g = gananciasHackrf(Number(b.lna ?? config.hackrfLna), Number(b.vga ?? config.hackrfVga)); config.hackrfLna = g.lna; config.hackrfVga = g.vga; }
+  if (b.amp !== undefined) config.hackrfAmp = b.amp === true;
+  if (b.serie !== undefined) { const t = String(b.serie).trim(); if (t === '' || /^[0-9a-fA-F]{4,32}$/.test(t)) config.hackrfSerie = t; else return res.status(400).json({ error: 'número de serie no válido (cifras hexadecimales)' }); }
+  guardarConfig();
+  estacionHackrf.aplicar();
+  res.json(estacionHackrf.estado());
+});
 app.get('/api/kiwi', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(estacionKiwi.estado());
@@ -5072,6 +5127,8 @@ app.post('/api/kiwi/config', (req, res) => {
   if (b.aprsKhz !== undefined) { const k = Number(b.aprsKhz); if (k >= 1800 && k <= 30000) config.kiwiAprsKhz = Math.round(k * 100) / 100; else return res.status(400).json({ error: 'frecuencia fuera de la onda corta' }); }
   if (b.aprsBanda !== undefined) config.kiwiAprsBanda = b.aprsBanda === 'lsb' ? 'lsb' : 'usb';
   if (b.ibp !== undefined) config.kiwiIbp = b.ibp === true;
+  if (b.cw !== undefined) config.kiwiCw = b.cw === true;
+  if (b.cwKhz !== undefined) { const t = String(b.cwKhz).trim(); if (t.length <= 120 && (t === '' || frecuenciasCw(t).length)) config.kiwiCwKhz = frecuenciasCw(t).join(', '); else return res.status(400).json({ error: 'lista de frecuencias no válida (kHz, de 100 a 30000)' }); }
   guardarConfig();
   estacionKiwi.aplicar();
   res.json(estacionKiwi.estado());
@@ -7511,6 +7568,7 @@ async function initServer() {
   }
 
   estacionKiwi.aplicar();
+  estacionHackrf.aplicar();
   app.listen(PORT, HOST, () => {
     console.log(`[S.A.T.-APRS+ SERVER] Running on ${HOST}:${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
     console.log(TX_ENABLED

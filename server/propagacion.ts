@@ -81,6 +81,26 @@ export function absorcionRayosX(xrayFlux: number | undefined | null, elevDeg: nu
 }
 
 // ---------------------------------------------------------------------------
+// Viento solar de L1 (DSCOVR / ACE): tormenta geomagnética y absorción auroral
+// ---------------------------------------------------------------------------
+/**
+ * Nivel de tormenta 0..9 (tipo Kp) estimado del viento solar que mide la sonda de L1 (DSCOVR / ACE, a 1,5 millones de km hacia
+ * el Sol): un Bz sur con viento rápido impulsa la perturbación, unos 15-60 min antes de que llegue a la Tierra y suba el Kp de
+ * 3 h. Campo eléctrico del viento solar rectificado Ey = -Bz·V (mV/m). 0 si el Bz es norte o falta.
+ */
+export function tormentaVientoSolar(bzNt: number | undefined | null, velocidadKms: number | undefined | null): number {
+  if (typeof bzNt !== 'number' || !Number.isFinite(bzNt) || bzNt >= 0) return 0;
+  const v = (typeof velocidadKms === 'number' && velocidadKms > 0) ? velocidadKms : 400;
+  return Math.min(9, Math.max(0, -bzNt * v * 1e-3));
+}
+
+/** MHz que suben la LUF por absorción auroral/polar cuando el viento solar de L1 impulsa una tormenta (nivel > 4). */
+export function absorcionVientoSolar(bzNt: number | undefined | null, velocidadKms: number | undefined | null): number {
+  const t = tormentaVientoSolar(bzNt, velocidadKms);
+  return t > 4 ? 0.3 * (t - 4) : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Ionosondas (red GIRO, a través del servicio de KC2G)
 // ---------------------------------------------------------------------------
 export const URL_IONOSONDAS = 'https://prop.kc2g.com/api/stations.json';

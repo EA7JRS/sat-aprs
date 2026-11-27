@@ -87,7 +87,7 @@ import { balizaPosicion, intervaloBalizaMs, validarPerfil, PerfilEstacion } from
 import { Observacion, elegirObservacion, intervaloMeteoMs, leerArchivoWxnow, leerWeewx, parteMeteoAprs, validarParte } from './server/estacion/meteo';
 import { gcDistanceKm } from './server/formulas/geo';
 import { sunPosition, sunTimes, unixToUtc } from './server/formulas/astro';
-import { Ionosonda, absorcionRayosX, descargarIonosondas, estadoBandas, ionosondaCercana, mejorBanda } from './server/propagacion';
+import { Ionosonda, absorcionRayosX, absorcionVientoSolar, descargarIonosondas, estadoBandas, ionosondaCercana, mejorBanda } from './server/propagacion';
 import { 
   GPSDStatus, 
   NTPSECStatus, 
@@ -3820,7 +3820,7 @@ function calculateMufAndBands(sfi: number, lat: number, lon: number) {
   }
 }
 
-function calculateLuf(sfi: number, xrayFlux: number, lat: number, lon: number): number {
+function calculateLuf(sfi: number, xrayFlux: number, lat: number, lon: number, bzNt?: number | null, velocidadKms?: number | null): number {
   try {
     const elevationRad = calculateSolarElevation(lat, lon);
     const elevationDeg = (elevationRad * 180) / Math.PI;
@@ -3839,7 +3839,9 @@ function calculateLuf(sfi: number, xrayFlux: number, lat: number, lon: number): 
     
     // Rayos X: absorción de la capa D solo de día (D-RAP de SWPC; server/propagacion.ts)
     lufTotal += absorcionRayosX(xrayFlux, elevationDeg);
-    
+    // Viento solar de L1 (DSCOVR / ACE): absorción auroral/polar con Bz sur y viento rápido, antes de que suba el Kp de 3 h
+    lufTotal += absorcionVientoSolar(bzNt, velocidadKms);
+
     return parseFloat(Math.max(0.5, lufTotal).toFixed(2));
   } catch (err) {
     return 2.0;
@@ -3928,7 +3930,7 @@ async function getPropagationData(isEco: boolean = false) {
         xrayClass: hayRayosX ? getXrayClass(xrayFlux) : '',
         // Estimaciones que dependen del flujo solar: solo si se ha leído
         muf: haySolar ? calculateMufAndBands(sfiLeido, gpsLat, gpsLon).muf : undefined,
-        luf: haySolar ? calculateLuf(sfiLeido, xrayFlux, gpsLat, gpsLon) : undefined,
+        luf: haySolar ? calculateLuf(sfiLeido, xrayFlux, gpsLat, gpsLon, hayViento ? rtswResult.bz : null, hayViento ? rtswResult.speed : null) : undefined,
       },
       rtsw: hayViento ? rtswResult : null,
     };
@@ -3943,7 +3945,7 @@ async function getPropagationData(isEco: boolean = false) {
 
   const { rScale, sScale, gScale } = getNoaaScales(xrayFlux, protonFlux, kpVal);
   const mufBands = calculateMufAndBands(sfiVal, gpsLat, gpsLon);
-  const lufVal = calculateLuf(sfiVal, xrayFlux, gpsLat, gpsLon);
+  const lufVal = calculateLuf(sfiVal, xrayFlux, gpsLat, gpsLon, rtswResult.bz, rtswResult.speed);
   const delayL1 = (1500000.0 / rtswResult.speed) / 60.0;
 
   cachedPropagation = {

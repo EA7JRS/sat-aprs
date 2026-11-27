@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Manuel - EA7JRS
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { absorcionRayosX, estadoBandas, ionosondaCercana, leerIonosondas, mejorBanda } from '../server/propagacion';
+import { absorcionRayosX, absorcionVientoSolar, estadoBandas, ionosondaCercana, leerIonosondas, mejorBanda, tormentaVientoSolar } from '../server/propagacion';
 
 const T = Date.parse('2026-11-14T13:00:00Z');
 const SEVILLA = { lat: 37.3891, lon: -5.9845 };
@@ -62,4 +62,15 @@ test('rayos X: absorción de la capa D solo de día, con cos(cenit)^0,75 (D-RAP)
   assert.equal(absorcionRayosX(3.1e-6, -20), 0);               // de noche no hay capa D
   assert.equal(absorcionRayosX(5e-8, 90), 0);                  // clase A
   assert.equal(absorcionRayosX(undefined, 90), 0);
+});
+
+test('viento solar de L1 (DSCOVR/ACE): Bz sur con viento rápido sube la LUF', () => {
+  // Ey = -Bz·V (mV/m): Bz -10 nT, 500 km/s -> 5
+  assert.equal(tormentaVientoSolar(-10, 500), 5);
+  assert.equal(tormentaVientoSolar(5, 600), 0);           // Bz norte: sin coupling
+  assert.equal(tormentaVientoSolar(undefined, 600), 0);   // sin Bz
+  assert.equal(tormentaVientoSolar(-30, 800), 9);         // acotado a 9
+  // la LUF solo sube con nivel > 4: Bz -20, 600 km/s -> 12 (acotado 9) -> 0,3·(9-4) = 1,5
+  assert.equal(absorcionVientoSolar(-20, 600), 1.5);
+  assert.equal(absorcionVientoSolar(-10, 300), 0);        // nivel 3 (-(-10)*300e-3): sin absorción
 });

@@ -20,6 +20,10 @@ export interface DatosEquipo {
     objetivoAz: number | null; objetivoEl: number | null; moviendo: boolean | null; fallo: string; tieneElevacion: boolean | null; nombre: string;
     /** El rotor va en un vehículo o barco: se trabaja en acimut verdadero. */
     movil: boolean; azVerdadero: number | null; objetivoVerdadero: number | null;
+    /** La caja tiene GPS propio y su posición está congelada por el filtro de equipo parado («fijo»). */
+    gps: boolean; fijo: boolean;
+    /** Compensación de actitud de la caja (escora / cabeceo / giro del mástil); null si no la da. */
+    actitud: { on: boolean; roll: number; pitch: number; yaw: number; viejo: boolean } | null;
   };
   estacion: { gps: boolean; lat: number; lon: number; velocidadKmh: number; proa: number | null; proaCuando: number | null };
   seguimiento: null | {
@@ -349,6 +353,20 @@ export function PanelRotor({ datos, admin, config, onGuardar, onCambio }: { dato
               {r!.movil && <div><div className="text-xs text-slate-400">Respecto a la proa</div><div className="font-mono text-lg text-slate-200" id="rotor-relativo">{r!.az === null ? '—' : `${Math.round(r!.az)}°`}</div></div>}
             </div>
           </div>
+          {(r!.gps || r!.actitud) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs" id="rotor-estado-caja">
+              {r!.gps && (
+                <span className={`px-2 py-0.5 rounded ${r!.fijo ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`} title="GPS de la caja: con el equipo parado, la posición se congela para que el apuntado no baile con el baile del fix">
+                  GPS {r!.fijo ? 'fijo (parado)' : 'en vivo'}
+                </span>
+              )}
+              {r!.actitud && (
+                <span className={`px-2 py-0.5 rounded font-mono ${r!.actitud.on ? (r!.actitud.viejo ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300') : 'bg-slate-600/30 text-slate-400'}`} title="Compensación de actitud: la antena sigue apuntando aunque la plataforma escore o cabecee o el mástil gire con el viento">
+                  {r!.actitud.on ? `Actitud ${Math.round(r!.actitud.roll)}° / ${Math.round(r!.actitud.pitch)}° / ${Math.round(r!.actitud.yaw)}°${r!.actitud.viejo ? ' (viejo)' : ''}` : 'Actitud off'}
+                </span>
+              )}
+            </div>
+          )}
           {admin && (
             <>
               <div className="flex flex-wrap gap-2">

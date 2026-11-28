@@ -2,6 +2,9 @@
 
 Historial de versiones de la consola S.A.T.-APRS+.
 
+## [v1.57.0] - 2026-11-28
+- **Rotor: estado de GPS y actitud de la caja APRS LoRa+ Rotor.** La caja gana en su 5.5.1 el soporte GPS (gpsd / NMEA en red y u-blox local por UART, con filtro de equipo parado y static hold) y la compensación de actitud también en sus placas ESP32. La consola, que ya maneja la caja por TCP 4534, lee ahora esos campos de su protocolo de control (`gps.held` del evento `info`, `att` del evento `pos`) y los muestra en **Radio · Principal → Rotor**: una etiqueta **GPS fijo (parado) / en vivo** y otra de **Actitud** con la escora / el cabeceo / el giro del mástil (o «off»). Es solo lectura: la lógica vive en el firmware del rotor. Pruebas de `aplicarEventoCaja` ampliadas.
+
 ## [v1.56.0] - 2026-11-23
 - **KiwiSDR: las balizas NCDXF / IARU se confirman por su indicativo.** La consola lee la telegrafía de cada ranura de diez segundos (`server/radio/cw.ts`: envolvente, umbral que sale de la propia señal, velocidad deducida) y, si sale el indicativo de la baliza que tocaba, la casilla lleva una marca ✓. Sin marca sigue valiendo la hora. Una señal floja se mide, pero no se lee: el lector calla antes que inventar.
 - **KiwiSDR: otras balizas de telegrafía.** Un tercer canal del KiwiSDR escucha una lista de hasta ocho frecuencias (un minuto en cada una) y anota las estaciones que se identifican con «DE indicativo», con su localizador, señal sobre ruido y velocidad. Una baliza no cuenta hasta leerla dos veces en la misma frecuencia en media hora. Ajustes `kiwiCw`, `kiwiCwKhz`.

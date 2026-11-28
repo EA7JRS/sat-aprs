@@ -218,6 +218,8 @@ Dos formas de conectarlo:
 
 La **esfera** muestra el acimut, el objetivo, la proa (si la estación se mueve) y la elevación. Hay botones para ir a un acimut, parar y aparcar.
 
+Con la **caja APRS LoRa+ Rotor** (5.5.1 o posterior), debajo de la esfera aparecen, cuando la caja los da, dos indicadores: **GPS fijo (parado) / en vivo** —la caja tiene GPS propio (gpsd o un u-blox local) y, con el equipo parado, congela la posición para que el apuntado no baile con el baile del fix— y **Actitud** —escora / cabeceo / giro del mástil cuando la caja compensa la plataforma móvil o el mástil girado por el viento—. Son solo informativos; esa lógica corre en el firmware del rotor.
+
 **Seguimiento**: el rotor sigue a un objetivo y se resitúa cada vez que cambia 2° o más. Objetivos posibles:
 - una estación APRS;
 - un barco (AIS), por MMSI o nombre;

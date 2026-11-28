@@ -168,6 +168,15 @@ test('rotor: eventos de la caja APRS LoRa+ Rotor', () => {
   assert.equal(aplicarEventoCaja(e, { e: 'pos', az: 10, mv: false, f: 'WIND' }, 3).el, null);
   assert.equal(aplicarEventoCaja(e, { e: 'pos', az: 10, mv: false, f: 'WIND' }, 3).fallo, 'WIND');
   assert.equal(aplicarEventoCaja(e, 'basura', 3), e);
+  // GPS propio de la caja con la posición congelada (equipo parado) -> «fijo»
+  const g = aplicarEventoCaja(e, { e: 'info', gps: { lines: 842, lat: 36.72, lon: -4.42, held: true } }, 4);
+  assert.equal(g.gps, true);
+  assert.equal(g.fijo, true);
+  assert.equal(aplicarEventoCaja(e, { e: 'info' }, 5).gps, false);
+  // Compensación de actitud (escora / cabeceo / giro del mástil)
+  const a = aplicarEventoCaja(e, { e: 'pos', az: 10, att: { on: true, r: 5.2, p: -3.1, y: 12, age: 1 } }, 6);
+  assert.ok(a.actitud && a.actitud.on === true && Math.abs(a.actitud.roll - 5.2) < 0.01 && a.actitud.pitch < -3 && a.actitud.viejo === false);
+  assert.equal(aplicarEventoCaja(e, { e: 'pos', az: 10 }, 7).actitud, null);
 });
 
 test('Hamlib: equipo y rotor contra demonios simulados', async () => {

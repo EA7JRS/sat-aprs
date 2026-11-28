@@ -277,9 +277,14 @@ export interface EstadoRotor {
   fallo: string;
   tieneElevacion: boolean | null;
   nombre: string;
+  /** La caja tiene GPS propio (red o u-blox local) y su posición está congelada por el filtro de equipo parado. */
+  gps: boolean;
+  fijo: boolean;
+  /** Compensación de actitud de la caja (escora / cabeceo / giro del mástil); null si no la da. */
+  actitud: { on: boolean; roll: number; pitch: number; yaw: number; viejo: boolean } | null;
 }
 
-const ROTOR_VACIO = (): EstadoRotor => ({ enlace: false, error: '', leido: 0, az: null, el: null, objetivoAz: null, objetivoEl: null, moviendo: null, fallo: '', tieneElevacion: null, nombre: '' });
+const ROTOR_VACIO = (): EstadoRotor => ({ enlace: false, error: '', leido: 0, az: null, el: null, objetivoAz: null, objetivoEl: null, moviendo: null, fallo: '', tieneElevacion: null, nombre: '', gps: false, fijo: false, actitud: null });
 
 export type ModoRotor = 'rotctld' | 'caja';
 
@@ -294,10 +299,19 @@ export function aplicarEventoCaja(estado: EstadoRotor, evento: any, ahora = Date
       objetivoEl: evento.tel === undefined ? estado.objetivoEl : num(String(evento.tel)),
       moviendo: typeof evento.mv === 'boolean' ? evento.mv : null,
       fallo: typeof evento.f === 'string' ? evento.f : '',
+      actitud: evento.att && typeof evento.att === 'object'
+        ? { on: evento.att.on === true, roll: num(String(evento.att.r ?? '')) ?? 0, pitch: num(String(evento.att.p ?? '')) ?? 0, yaw: num(String(evento.att.y ?? '')) ?? 0, viejo: evento.att.old === true }
+        : null,
     };
   }
   if (evento.e === 'info') {
-    return { ...estado, tieneElevacion: typeof evento.hasEl === 'boolean' ? evento.hasEl : estado.tieneElevacion, nombre: [evento.dev, evento.name].filter(Boolean).join(' · ').slice(0, 60) };
+    const gps = evento.gps && typeof evento.gps === 'object';
+    return {
+      ...estado,
+      tieneElevacion: typeof evento.hasEl === 'boolean' ? evento.hasEl : estado.tieneElevacion,
+      nombre: [evento.dev, evento.name].filter(Boolean).join(' · ').slice(0, 60),
+      gps: !!gps, fijo: !!gps && evento.gps.held === true,
+    };
   }
   return estado;
 }
